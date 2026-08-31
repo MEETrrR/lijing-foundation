@@ -1,13 +1,13 @@
-type DependencyStatus = "up" | "degraded" | "down";
+export type DependencyStatus = "up" | "degraded" | "down";
 
-interface DependencyHealth {
+export interface DependencyHealth {
   dependency: string;
   status: DependencyStatus;
   latency_ms: number;
   reason_code: string;
 }
 
-interface CachePort {
+export interface Cache {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<boolean>;
@@ -32,7 +32,7 @@ function healthResult(
   return { dependency, status, latency_ms: Math.max(0, Math.round(latency_ms)), reason_code };
 }
 
-class InMemoryCache implements CachePort {
+class InMemoryCache implements Cache {
   private readonly values = new Map<string, CacheEntry>();
   private readonly defaultTtlSeconds: number;
   private readonly configuredHealth: DependencyHealth;

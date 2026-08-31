@@ -1,8 +1,8 @@
-interface SecretProvider {
+export interface SecretProvider {
   getSecret(name: string): Promise<SecretLookup>;
 }
 
-type SecretLookup =
+export type SecretLookup =
   | { status: "found"; name: string; value: string }
   | { status: "not_found"; name: string; reason_code: "secret_not_found" };
 

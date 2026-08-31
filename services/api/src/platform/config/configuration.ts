@@ -1,9 +1,12 @@
 const ENVIRONMENTS = new Set(["local", "staging", "production"]);
 const LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const SECRET_PROVIDER_MODES = new Set(["in-memory", "reference"]);
+const CONFIG_SOURCES = new Set(["example", "runtime"]);
+const PLACEHOLDER_VALUE_PATTERN = /\.example\.invalid\b|(?:^|[-_/.])(?:example|placeholder|dummy|fake|test-secret|change[-_]?me|replace[-_]?me|not[-_]?a[-_]?real)(?:$|[-_/.])/i;
 
 const REQUIRED_ENVIRONMENT_VARIABLES = Object.freeze([
   "APP_ENV",
+  "CONFIG_SOURCE",
   "APP_NAME",
   "APP_VERSION",
   "LOG_LEVEL",
@@ -211,6 +214,9 @@ function loadConfiguration(input = process.env) {
   if (!issues.length && !SECRET_PROVIDER_MODES.has(values.SECRET_PROVIDER_MODE)) {
     issues.push("SECRET_PROVIDER_MODE must be in-memory or reference");
   }
+  if (!issues.length && !CONFIG_SOURCES.has(values.CONFIG_SOURCE)) {
+    issues.push("CONFIG_SOURCE must be example or runtime");
+  }
 
   const parsed = {
     appName: nonEmptyString(values, "APP_NAME", issues, 64),
@@ -231,6 +237,24 @@ function loadConfiguration(input = process.env) {
 
   if (ENVIRONMENTS.has(environment)) {
     validateEnvironmentIdentity(values, environment, issues);
+    if (environment === "production") {
+      if (values.CONFIG_SOURCE === "example") {
+        issues.push("production cannot load an example configuration");
+      }
+      const placeholderFields = [
+        "OBJECT_STORAGE_ENDPOINT",
+        "DATABASE_CREDENTIAL_REF",
+        "REDIS_CREDENTIAL_REF",
+        "OBJECT_STORAGE_CREDENTIAL_REF",
+        "MESSAGE_BUS_CREDENTIAL_REF",
+        "AI_PROVIDER_CREDENTIAL_REF",
+      ];
+      for (const field of placeholderFields) {
+        if (PLACEHOLDER_VALUE_PATTERN.test(values[field])) {
+          issues.push(`${field} contains a production placeholder identity`);
+        }
+      }
+    }
     if (environment === "production") {
       if (values.SECRET_PROVIDER_MODE !== "reference") {
         issues.push("production requires SECRET_PROVIDER_MODE=reference");

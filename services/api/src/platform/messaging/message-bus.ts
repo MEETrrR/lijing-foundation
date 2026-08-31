@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 
-interface MessageEnvelope<T = unknown> {
+export interface MessageEnvelope<T = unknown> {
   event_id: string;
   event_type: string;
   event_version: number;
@@ -10,7 +10,7 @@ interface MessageEnvelope<T = unknown> {
   payload: T;
 }
 
-interface DeadLetterRecord {
+export interface DeadLetterRecord {
   event_id: string;
   event_type: string;
   consumer_id: string;
@@ -18,14 +18,36 @@ interface DeadLetterRecord {
   reason_code: "handler_failed";
 }
 
+export interface SubscriptionOptions {
+  consumerId?: string;
+  maxAttempts?: number;
+  retryDelayMs?: number;
+}
+
+export type MessageHandler<T = unknown> = (message: MessageEnvelope<T>) => Promise<void> | void;
+
+export interface MessageBus {
+  publish<T>(message: MessageEnvelope<T>): Promise<PublishResult>;
+  subscribe<T>(eventType: string, handler: MessageHandler<T>, options?: SubscriptionOptions): () => void;
+  getDeadLetters(): DeadLetterRecord[];
+  healthCheck(): Promise<DependencyHealth>;
+}
+
+export interface DependencyHealth {
+  dependency: string;
+  status: "up" | "degraded" | "down";
+  latency_ms: number;
+  reason_code: string;
+}
+
 interface Subscription<T = unknown> {
   consumerId: string;
-  handler: (message: MessageEnvelope<T>) => Promise<void> | void;
+  handler: MessageHandler<T>;
   maxAttempts: number;
   retryDelayMs: number;
 }
 
-interface PublishResult {
+export interface PublishResult {
   delivered: number;
   duplicates: number;
   dead_lettered: number;
@@ -48,16 +70,18 @@ function validateMessage(message) {
 }
 
 function payloadFingerprint(payload) {
-  return crypto.createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+  return crypto.createHash("sha256").update(JSON.stringify(payload) ?? "undefined", "utf8").digest("hex");
 }
 
-class InMemoryMessageBus {
+class InMemoryMessageBus implements MessageBus {
   private readonly subscriptions = new Map<string, Array<Subscription>>();
   private readonly completed = new Set<string>();
   private readonly deadLettered = new Set<string>();
+  private readonly inFlight = new Map<string, Promise<PublishResult>>();
   private readonly deadLetters: DeadLetterRecord[] = [];
   private readonly defaultMaxAttempts: number;
   private readonly defaultRetryDelayMs: number;
+  private nextConsumerNumber = 1;
 
   constructor(options: { defaultMaxAttempts?: number; retryDelayMs?: number } = {}) {
     this.defaultMaxAttempts = boundedInteger(options.defaultMaxAttempts ?? 3, 1, 5, "defaultMaxAttempts");
@@ -66,13 +90,13 @@ class InMemoryMessageBus {
 
   subscribe<T>(
     eventType: string,
-    handler: (message: MessageEnvelope<T>) => Promise<void> | void,
-    options: { consumerId?: string; maxAttempts?: number; retryDelayMs?: number } = {},
+    handler: MessageHandler<T>,
+    options: SubscriptionOptions = {},
   ): () => void {
     if (typeof eventType !== "string" || !eventType.trim()) throw new TypeError("eventType is required");
     if (typeof handler !== "function") throw new TypeError("handler is required");
     const subscription: Subscription<T> = {
-      consumerId: options.consumerId ?? `consumer-${this.subscriptions.size + 1}`,
+      consumerId: options.consumerId ?? `consumer-${this.nextConsumerNumber++}`,
       handler,
       maxAttempts: boundedInteger(options.maxAttempts ?? this.defaultMaxAttempts, 1, 5, "maxAttempts"),
       retryDelayMs: boundedInteger(options.retryDelayMs ?? this.defaultRetryDelayMs, 0, 60000, "retryDelayMs"),
@@ -104,6 +128,26 @@ class InMemoryMessageBus {
     if (this.completed.has(deliveryKey) || this.deadLettered.has(deliveryKey)) {
       return { delivered: 0, duplicates: 1, dead_lettered: 0 };
     }
+    const inFlightDelivery = this.inFlight.get(deliveryKey);
+    if (inFlightDelivery) {
+      await inFlightDelivery;
+      return { delivered: 0, duplicates: 1, dead_lettered: 0 };
+    }
+
+    const deliveryPromise = this.processDelivery(message, subscription, deliveryKey);
+    this.inFlight.set(deliveryKey, deliveryPromise);
+    try {
+      return await deliveryPromise;
+    } finally {
+      this.inFlight.delete(deliveryKey);
+    }
+  }
+
+  private async processDelivery<T>(
+    message: MessageEnvelope<T>,
+    subscription: Subscription<T>,
+    deliveryKey: string,
+  ): Promise<PublishResult> {
     for (let attempt = 1; attempt <= subscription.maxAttempts; attempt += 1) {
       try {
         await subscription.handler(message);

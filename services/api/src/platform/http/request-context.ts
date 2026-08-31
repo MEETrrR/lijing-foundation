@@ -1,10 +1,23 @@
 const crypto = require("node:crypto");
 
-const CORRELATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const W3C_TRACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
 
-function normalizeCorrelationId(value) {
-  if (typeof value === "string" && CORRELATION_ID_PATTERN.test(value.trim())) return value.trim();
+function hasNonZeroHex(value) {
+  return /[1-9a-f]/i.test(value);
+}
+
+function normalizeRequestId(value) {
+  if (typeof value === "string" && UUID_V4_PATTERN.test(value.trim()) && hasNonZeroHex(value.trim())) return value.trim();
+  return crypto.randomUUID();
+}
+
+function normalizeTraceId(value) {
+  if (typeof value !== "string") return crypto.randomUUID();
+  const normalized = value.trim();
+  if (UUID_V4_PATTERN.test(normalized) && hasNonZeroHex(normalized)) return normalized;
+  if (W3C_TRACE_ID_PATTERN.test(normalized) && hasNonZeroHex(normalized)) return normalized;
   return crypto.randomUUID();
 }
 
@@ -12,6 +25,7 @@ function normalizeClientVersion(value) {
   if (typeof value !== "string") return "unknown";
   const normalized = value.trim();
   if (!normalized || normalized.length > 64 || /[\r\n]/.test(normalized)) return "unknown";
+  if (/bearer\s|authorization|password|secret|token|cookie|conversation|prompt|response|sk-[a-z0-9]/i.test(normalized)) return "unknown";
   if (!/^[A-Za-z0-9][A-Za-z0-9._+/-]*$/.test(normalized)) return "unknown";
   return normalized;
 }
@@ -25,6 +39,7 @@ function safeIdentifier(value) {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   if (!normalized || /^\+?\d{7,15}$/.test(normalized)) return undefined;
+  if (/\d{7,15}/.test(normalized)) return undefined;
   if (/bearer\s|authorization|password|secret|token|cookie|conversation|prompt|response|sk-[a-z0-9]/i.test(normalized)) {
     return undefined;
   }
@@ -33,8 +48,8 @@ function safeIdentifier(value) {
 
 class RequestContext {
   constructor({ traceId, requestId, clientVersion, deviceIdHash, actorId }) {
-    this.traceId = traceId;
-    this.requestId = requestId;
+    this.traceId = normalizeTraceId(traceId);
+    this.requestId = normalizeRequestId(requestId);
     this.clientVersion = clientVersion;
     this.deviceIdHash = deviceIdHash;
     this.actorId = actorId;
@@ -56,8 +71,8 @@ class RequestContext {
 function createRequestContext(input = {}, options = {}) {
   const source = input ?? {};
   return new RequestContext({
-    traceId: normalizeCorrelationId(source.traceId ?? source.trace_id),
-    requestId: normalizeCorrelationId(source.requestId ?? source.request_id),
+    traceId: source.traceId ?? source.trace_id,
+    requestId: source.requestId ?? source.request_id,
     clientVersion: normalizeClientVersion(source.clientVersion ?? source.client_version),
     deviceIdHash: anonymizeDeviceFingerprint(
       source.deviceFingerprint ?? source.device_fingerprint,

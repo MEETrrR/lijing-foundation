@@ -59,7 +59,7 @@ function cloneEnvironment(environment) {
 }
 
 test("environment examples load with explicit isolated resource identities", () => {
-  for (const environment of environmentNames) {
+  for (const environment of ["local", "staging"]) {
     const values = readEnvironmentExample(environment);
     const configuration = loadConfiguration(values);
 
@@ -76,6 +76,19 @@ test("environment examples load with explicit isolated resource identities", () 
     assert.doesNotMatch(serialized, /sk-[A-Za-z0-9]{16,}/);
     assert.doesNotMatch(serialized, /-----BEGIN [A-Z ]+-----/);
   }
+
+  const productionExample = readEnvironmentExample("production");
+  assert.throws(
+    () => loadConfiguration(productionExample),
+    (error) => error instanceof ConfigurationError && /placeholder|example|production/i.test(error.message),
+  );
+
+  const localInStaging = readEnvironmentExample("local");
+  localInStaging.APP_ENV = "staging";
+  assert.throws(
+    () => loadConfiguration(localInStaging),
+    (error) => error instanceof ConfigurationError && /environment identity|DATABASE_RESOURCE_ID/i.test(error.message),
+  );
 });
 
 test("configuration rejects missing, malformed, out-of-range, and cross-environment values", () => {
@@ -135,6 +148,19 @@ test("request context produces traceable but safe log fields", () => {
   assert.doesNotMatch(serialized, /device-fingerprint-that-must-not-be-logged/);
   assert.doesNotMatch(serialized, /13800138000/);
   assert.doesNotMatch(serialized, /password|authorization|bearer|conversation/i);
+});
+
+test("request context replaces malformed, reserved, and path-like correlation IDs", () => {
+  for (const value of ["Authorization", "req/../../prod", "not-a-uuid"]) {
+    const context = createRequestContext({ traceId: value, requestId: value });
+    const safeFields = context.toSafeLogFields();
+
+    assert.match(safeFields.trace_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.match(safeFields.request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.notEqual(safeFields.trace_id, value);
+    assert.notEqual(safeFields.request_id, value);
+    assert.doesNotMatch(JSON.stringify(safeFields), /Authorization|req\/\.\.\/\.\.\/prod|not-a-uuid/);
+  }
 });
 
 test("error catalog maps internal failures to stable safe responses", () => {
@@ -255,6 +281,30 @@ test("message bus deduplicates successful delivery and dead-letters after bounde
   assert.doesNotMatch(JSON.stringify(bus.getDeadLetters()), /private failure|provider body|correct/i);
 });
 
+test("message bus serializes concurrent duplicate delivery per consumer and event", async () => {
+  const bus = new InMemoryMessageBus({ defaultMaxAttempts: 3, retryDelayMs: 0 });
+  let executions = 0;
+  bus.subscribe("ConcurrentFact", async () => {
+    executions += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }, { consumerId: "mastery" });
+
+  const event = {
+    event_id: "88888888-8888-4888-8888-888888888888",
+    event_type: "ConcurrentFact",
+    event_version: 1,
+    aggregate_id: "fact-concurrent",
+    request_id: "99999999-9999-4999-8999-999999999999",
+    occurred_at: "2026-08-31T00:00:00.000Z",
+    payload: { result_code: "correct" },
+  };
+
+  const results = await Promise.all([bus.publish(event), bus.publish(event)]);
+  assert.equal(executions, 1);
+  assert.equal(results.filter((result) => result.delivered === 1).length, 1);
+  assert.equal(results.filter((result) => result.duplicates === 1).length, 1);
+});
+
 test("telemetry records required dimensions and redacts sensitive labels", () => {
   const telemetry = new InMemoryTelemetry({ serviceName: "lijing-api", environment: "local" });
   telemetry.incrementCounter("api_requests_total", 1, {
@@ -284,4 +334,31 @@ test("telemetry records required dimensions and redacts sensitive labels", () =>
   assert.equal(snapshot.histograms[0].labels.dependency, "application");
   assert.equal(snapshot.traces[0].labels.trace_id, "77777777-7777-4777-8777-777777777777");
   assert.doesNotMatch(serialized, /full conversation|13800138000|Bearer test|authorization/i);
+});
+
+test("telemetry rejects personal, path-like, and identifier-bearing dimension values", () => {
+  const telemetry = new InMemoryTelemetry({ serviceName: "lijing-api", environment: "local" });
+  telemetry.incrementCounter("safe_dimensions_total", 1, {
+    feature: "assistant.explain",
+    model: "gpt-5",
+    source: "reviewed_content",
+    route: "/api/v1/health",
+  });
+  telemetry.incrementCounter("unsafe_dimensions_total", 1, {
+    feature: "user@example.com",
+    model: "../../prod",
+    source: "account-123456789",
+    route: "/api/v1/accounts/123456789",
+    operation: "Authorization",
+  });
+
+  const snapshot = telemetry.snapshot();
+  const safeLabels = snapshot.counters.find((counter) => counter.name === "safe_dimensions_total").labels;
+  const unsafeLabels = snapshot.counters.find((counter) => counter.name === "unsafe_dimensions_total").labels;
+  assert.equal(safeLabels.feature, "assistant.explain");
+  assert.equal(safeLabels.model, "gpt-5");
+  assert.equal(safeLabels.source, "reviewed_content");
+  assert.equal(safeLabels.route, "/api/v1/health");
+  for (const key of ["feature", "model", "source", "route", "operation"]) assert.equal(unsafeLabels[key], undefined);
+  assert.doesNotMatch(JSON.stringify(snapshot), /user@example\.com|\.\.\/prod|123456789|Authorization/);
 });

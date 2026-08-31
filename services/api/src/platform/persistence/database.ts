@@ -1,16 +1,17 @@
-type DependencyStatus = "up" | "degraded" | "down";
+export type DependencyStatus = "up" | "degraded" | "down";
 
-interface DependencyHealth {
+export interface DependencyHealth {
   dependency: string;
   status: DependencyStatus;
   latency_ms: number;
   reason_code: string;
 }
 
-interface DatabasePort {
+export interface Database {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
+  transaction<T>(work: (database: Database) => Promise<T> | T): Promise<T>;
   healthCheck(): Promise<DependencyHealth>;
 }
 
@@ -27,7 +28,7 @@ function healthResult(
   return { dependency, status, latency_ms: Math.max(0, Math.round(latency_ms)), reason_code };
 }
 
-class InMemoryDatabase implements DatabasePort {
+class InMemoryDatabase implements Database {
   private readonly values = new Map<string, unknown>();
   private readonly configuredHealth: DependencyHealth;
 
@@ -52,7 +53,7 @@ class InMemoryDatabase implements DatabasePort {
     return this.values.delete(key);
   }
 
-  async transaction<T>(work: (database: DatabasePort) => Promise<T> | T): Promise<T> {
+  async transaction<T>(work: (database: Database) => Promise<T> | T): Promise<T> {
     return work(this);
   }
 
