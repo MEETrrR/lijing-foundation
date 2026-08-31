@@ -237,6 +237,24 @@ test("direct RequestContext construction sanitizes client version and device has
   assert.equal(safeActorContext.toSafeLogFields().actor_id, "actor.internal:1");
 });
 
+test("request context safe log fields revalidate correlation IDs after mutation", () => {
+  const context = new RequestContext({
+    traceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    clientVersion: "1.2.3",
+  });
+
+  context.traceId = "Authorization";
+  context.requestId = "req/../../prod";
+
+  const safeFields = context.toSafeLogFields();
+  const serialized = JSON.stringify(safeFields);
+
+  assert.match(safeFields.trace_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.match(safeFields.request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.doesNotMatch(serialized, /Authorization|req\/\.\.\/\.\.\/prod/);
+});
+
 test("error catalog maps internal failures to stable safe responses", () => {
   const requestId = "33333333-3333-4333-8333-333333333333";
   const internalFailure = new PlatformError(
@@ -295,6 +313,81 @@ test("health checks distinguish application, database, cache, queue, and object 
   }
 });
 
+test("health checks sanitize dependency failures and exceptions", async () => {
+  const health = await new PlatformHealthChecker({
+    database: {
+      async healthCheck() {
+        return { dependency: "spoofed", status: "degraded", latency_ms: 4.4, reason_code: "pool_exhausted" };
+      },
+    },
+    cache: {
+      async healthCheck() {
+        throw new Error("provider password body must not leak");
+      },
+    },
+    queue: {
+      async healthCheck() {
+        return { dependency: "queue", status: "invalid", latency_ms: -1, reason_code: "../secret" };
+      },
+    },
+    objectStorage: {
+      async healthCheck() {
+        return { dependency: "object_storage", status: "up", latency_ms: 2, reason_code: "ok" };
+      },
+    },
+  }).check();
+
+  assert.equal(health.status, "down");
+  assert.deepEqual(health.dependencies.database, {
+    dependency: "database",
+    status: "degraded",
+    latency_ms: 4,
+    reason_code: "pool_exhausted",
+  });
+  assert.deepEqual(health.dependencies.cache, {
+    dependency: "cache",
+    status: "down",
+    latency_ms: 0,
+    reason_code: "dependency_unavailable",
+  });
+  assert.deepEqual(health.dependencies.queue, {
+    dependency: "queue",
+    status: "down",
+    latency_ms: 0,
+    reason_code: "unknown",
+  });
+  assert.doesNotMatch(JSON.stringify(health), /provider|password|body|secret/i);
+});
+
+test("health checks time out a hanging dependency probe", async () => {
+  const hangingProbe = {
+    healthCheck() {
+      return new Promise(() => {});
+    },
+  };
+  const objectStorage = {
+    async healthCheck() {
+      return { dependency: "object_storage", status: "up", latency_ms: 0, reason_code: "ok" };
+    },
+  };
+  const startedAt = Date.now();
+  const health = await new PlatformHealthChecker({
+    database: hangingProbe,
+    cache: new InMemoryCache(),
+    queue: new InMemoryMessageBus(),
+    objectStorage,
+  }, { timeoutMs: 15 }).check();
+
+  assert.ok(Date.now() - startedAt < 500);
+  assert.deepEqual(health.dependencies.database, {
+    dependency: "database",
+    status: "down",
+    latency_ms: 15,
+    reason_code: "dependency_timeout",
+  });
+  assert.doesNotMatch(JSON.stringify(health), /provider|password|secret|timed out/i);
+});
+
 test("secret, database, and cache ports use deterministic in-memory adapters", async () => {
   const secrets = new InMemorySecretProvider({ "test/reference": "synthetic-value" });
   assert.deepEqual(await secrets.getSecret("test/reference"), {
@@ -317,6 +410,31 @@ test("secret, database, and cache ports use deterministic in-memory adapters", a
   assert.deepEqual(await cache.get("progress:account-1"), { level: 2 });
   assert.equal(await cache.delete("progress:account-1"), true);
   assert.equal(await cache.get("progress:account-1"), undefined);
+});
+
+test("database transactions commit on success and restore the previous state on failure", async () => {
+  const database = new InMemoryDatabase();
+  await database.set("progress:account-1", { level: 2, streak: 4 });
+
+  await assert.rejects(
+    database.transaction(async (transaction) => {
+      await transaction.set("progress:account-1", { level: 99, streak: 0 });
+      await transaction.set("temporary-write", { should: "rollback" });
+      throw new Error("synthetic transaction failure");
+    }),
+    /synthetic transaction failure/,
+  );
+
+  assert.deepEqual(await database.get("progress:account-1"), { level: 2, streak: 4 });
+  assert.equal(await database.get("temporary-write"), undefined);
+
+  const result = await database.transaction(async (transaction) => {
+    await transaction.set("progress:account-1", { level: 3, streak: 5 });
+    return "committed";
+  });
+
+  assert.equal(result, "committed");
+  assert.deepEqual(await database.get("progress:account-1"), { level: 3, streak: 5 });
 });
 
 test("message bus deduplicates successful delivery and dead-letters after bounded retries", async () => {
@@ -389,6 +507,91 @@ test("message bus serializes concurrent duplicate delivery per consumer and even
   assert.equal(results.filter((result) => result.duplicates === 1).length, 1);
 });
 
+test("message bus rejects duplicate consumer IDs for the same event type", () => {
+  const bus = new InMemoryMessageBus();
+  const handler = () => {};
+
+  bus.subscribe("DuplicateConsumerFact", handler, { consumerId: "mastery" });
+  assert.throws(
+    () => bus.subscribe("DuplicateConsumerFact", handler, { consumerId: "mastery" }),
+    /consumerId.*already registered/i,
+  );
+  assert.doesNotThrow(() => bus.subscribe("OtherConsumerFact", handler, { consumerId: "mastery" }));
+});
+
+test("message bus retries concurrent permanent failures with bounded delay", async () => {
+  const retryDelayMs = 10;
+  const bus = new InMemoryMessageBus({ defaultMaxAttempts: 3, retryDelayMs });
+  const attempts = new Map();
+  const attemptTimes = new Map();
+  let activeHandlers = 0;
+  let maxActiveHandlers = 0;
+
+  bus.subscribe("PermanentFailureFact", async (message) => {
+    const eventId = message.event_id;
+    const eventAttempts = attempts.get(eventId) ?? 0;
+    attempts.set(eventId, eventAttempts + 1);
+    const timestamps = attemptTimes.get(eventId) ?? [];
+    timestamps.push(Date.now());
+    attemptTimes.set(eventId, timestamps);
+    activeHandlers += 1;
+    maxActiveHandlers = Math.max(maxActiveHandlers, activeHandlers);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    activeHandlers -= 1;
+    throw new Error("synthetic permanent failure");
+  }, { consumerId: "retry-worker" });
+
+  const events = ["aaaa", "bbbb"].map((eventId) => ({
+    event_id: eventId,
+    event_type: "PermanentFailureFact",
+    event_version: 1,
+    aggregate_id: `aggregate-${eventId}`,
+    request_id: `request-${eventId}`,
+    occurred_at: "2026-08-31T00:00:00.000Z",
+    payload: { result_code: "rejected" },
+  }));
+  const results = await Promise.all(events.map((event) => bus.publish(event)));
+
+  assert.deepEqual([...attempts.values()], [3, 3]);
+  assert.ok(maxActiveHandlers >= 2);
+  for (const timestamps of attemptTimes.values()) {
+    assert.equal(timestamps.length, 3);
+    assert.ok(timestamps[1] - timestamps[0] >= retryDelayMs - 2);
+    assert.ok(timestamps[2] - timestamps[1] >= retryDelayMs - 2);
+  }
+  assert.deepEqual(results.map((result) => result.dead_lettered), [1, 1]);
+  assert.equal(bus.getDeadLetters().length, 2);
+});
+
+test("in-memory message bus bounds completed and dead-letter retention", async () => {
+  const bus = new InMemoryMessageBus({ defaultMaxAttempts: 1, retentionMaxEntries: 2 });
+  bus.subscribe("RetainedSuccessFact", () => {}, { consumerId: "success-worker" });
+  bus.subscribe("RetainedFailureFact", () => {
+    throw new Error("synthetic permanent failure");
+  }, { consumerId: "failure-worker" });
+
+  const createEvent = (eventType, eventId) => ({
+    event_id: eventId,
+    event_type: eventType,
+    event_version: 1,
+    aggregate_id: `aggregate-${eventId}`,
+    request_id: `request-${eventId}`,
+    occurred_at: "2026-08-31T00:00:00.000Z",
+    payload: { result_code: "rejected" },
+  });
+
+  for (let index = 0; index < 6; index += 1) {
+    await bus.publish(createEvent("RetainedSuccessFact", `success-${index}`));
+    await bus.publish(createEvent("RetainedFailureFact", `failure-${index}`));
+  }
+
+  const retention = bus.getRetentionStats();
+  assert.ok(retention.completed <= 2);
+  assert.ok(retention.dead_lettered <= 2);
+  assert.ok(retention.dead_letters <= 2);
+  assert.deepEqual(bus.getDeadLetters().map((record) => record.event_id), ["failure-4", "failure-5"]);
+});
+
 test("telemetry records required dimensions and redacts sensitive labels", () => {
   const telemetry = new InMemoryTelemetry({ serviceName: "lijing-api", environment: "local" });
   telemetry.incrementCounter("api_requests_total", 1, {
@@ -445,4 +648,25 @@ test("telemetry rejects personal, path-like, and identifier-bearing dimension va
   assert.equal(safeLabels.route, "/api/v1/health");
   for (const key of ["feature", "model", "source", "route", "operation"]) assert.equal(unsafeLabels[key], undefined);
   assert.doesNotMatch(JSON.stringify(snapshot), /user@example\.com|\.\.\/prod|123456789|Authorization/);
+});
+
+test("telemetry rejects unsafe high-cardinality trace names", () => {
+  const telemetry = new InMemoryTelemetry({ serviceName: "lijing-api", environment: "local" });
+  const invalidTraceNames = [
+    "http/request",
+    "trace\nsecret",
+    "Bearer provider-token",
+    "learner@example.com",
+    "request_123456789",
+    "11111111-1111-4111-8111-111111111111",
+    "v".repeat(65),
+  ];
+
+  for (const invalidTraceName of invalidTraceNames) {
+    assert.throws(() => telemetry.startTrace(invalidTraceName), /trace name is invalid/);
+  }
+
+  const trace = telemetry.startTrace("http_request");
+  trace.end();
+  assert.equal(telemetry.snapshot().traces[0].name, "http_request");
 });

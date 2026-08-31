@@ -46,6 +46,8 @@ Escalate when scope, cost, privacy impact, or recovery uncertainty increases. Do
 5. Replay only an approved time-bounded batch using the original event IDs and an audited operator identity. Keep the dead-letter snapshot and replay manifest.
 6. Verify queue depth, processing latency, dead-letter rate, idempotency outcomes, and downstream ledger counts after replay.
 
+The in-memory message-bus adapter is test-only and uses bounded retention. Production adapters must use durable TTL-backed idempotency and dead-letter storage with an environment-specific retention and replay policy.
+
 ## Database failure or connection exhaustion
 
 1. Check the dependency health result, connection used/available metrics, error rate, migration state, and recent deployment. Do not include connection strings or provider error bodies in the incident record.

@@ -1,8 +1,33 @@
-const ENVIRONMENTS = new Set(["local", "staging", "production"]);
+const ENVIRONMENT_NAMES = Object.freeze(["local", "staging", "production"]);
+const ENVIRONMENTS = new Set(ENVIRONMENT_NAMES);
 const LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const SECRET_PROVIDER_MODES = new Set(["in-memory", "reference"]);
 const CONFIG_SOURCES = new Set(["example", "runtime"]);
 const PLACEHOLDER_VALUE_PATTERN = /\.example\.invalid\b|(?:^|[-_/.])(?:example|placeholder|dummy|fake|test-secret|change[-_]?me|replace[-_]?me|not[-_]?a[-_]?real)(?:$|[-_/.])/i;
+
+const ENVIRONMENT_RESOURCE_DESCRIPTORS = Object.freeze([
+  Object.freeze({ field: "DATABASE_RESOURCE_ID", expectedPrefix: (environment) => `lijing-${environment}-` }),
+  Object.freeze({ field: "REDIS_RESOURCE_ID", expectedPrefix: (environment) => `lijing-${environment}-` }),
+  Object.freeze({ field: "OBJECT_STORAGE_RESOURCE_ID", expectedPrefix: (environment) => `lijing-${environment}-` }),
+  Object.freeze({ field: "MESSAGE_BUS_RESOURCE_ID", expectedPrefix: (environment) => `lijing-${environment}-` }),
+]);
+
+const ENVIRONMENT_EXACT_DESCRIPTORS = Object.freeze([
+  Object.freeze({ field: "DATABASE_NAME", expected: (environment) => `lijing_${environment}` }),
+  Object.freeze({ field: "REDIS_NAMESPACE", expected: (environment) => `lijing-${environment}` }),
+  Object.freeze({ field: "MESSAGE_BUS_TOPIC", expected: (environment) => `lijing-${environment}-events` }),
+  Object.freeze({ field: "AI_PROVIDER_PROJECT_ID", expected: (environment) => `lijing-${environment}-ai` }),
+  Object.freeze({ field: "AI_BUDGET_ID", expected: (environment) => `budget.lijing.${environment}` }),
+  Object.freeze({ field: "SECRET_NAMESPACE", expected: (environment) => `lijing/${environment}` }),
+]);
+
+const ENVIRONMENT_CREDENTIAL_FIELDS = Object.freeze([
+  "DATABASE_CREDENTIAL_REF",
+  "REDIS_CREDENTIAL_REF",
+  "OBJECT_STORAGE_CREDENTIAL_REF",
+  "MESSAGE_BUS_CREDENTIAL_REF",
+  "AI_PROVIDER_CREDENTIAL_REF",
+]);
 
 const REQUIRED_ENVIRONMENT_VARIABLES = Object.freeze([
   "APP_ENV",
@@ -118,57 +143,37 @@ function parseBoolean(values, name, issues) {
 
 function containsForeignEnvironmentIdentity(value, environment) {
   if (typeof value !== "string") return false;
-  return ["local", "staging", "production"].some((candidate) =>
+  return ENVIRONMENT_NAMES.some((candidate) =>
     candidate !== environment && new RegExp(`(?:^|[-/.])${candidate}(?:$|[-/.])`, "i").test(value),
   );
 }
 
 function validateEnvironmentIdentity(values, environment, issues) {
-  const resourceFields = [
-    "DATABASE_RESOURCE_ID",
-    "REDIS_RESOURCE_ID",
-    "OBJECT_STORAGE_RESOURCE_ID",
-    "MESSAGE_BUS_RESOURCE_ID",
-  ];
-  for (const field of resourceFields) {
-    const expectedPrefix = `lijing-${environment}-`;
-    if (!values[field].startsWith(expectedPrefix)) {
-      issues.push(`${field} must start with ${expectedPrefix}`);
+  for (const { field, expectedPrefix } of ENVIRONMENT_RESOURCE_DESCRIPTORS) {
+    const expected = expectedPrefix(environment);
+    if (!values[field].startsWith(expected)) {
+      issues.push(`${field} must start with ${expected}`);
     }
   }
 
-  const exactIdentities = {
-    DATABASE_NAME: `lijing_${environment}`,
-    REDIS_NAMESPACE: `lijing-${environment}`,
-    MESSAGE_BUS_TOPIC: `lijing-${environment}-events`,
-    AI_PROVIDER_PROJECT_ID: `lijing-${environment}-ai`,
-    AI_BUDGET_ID: `budget.lijing.${environment}`,
-    SECRET_NAMESPACE: `lijing/${environment}`,
-  };
-  for (const [field, expected] of Object.entries(exactIdentities)) {
+  for (const { field, expected: expectedValue } of ENVIRONMENT_EXACT_DESCRIPTORS) {
+    const expected = expectedValue(environment);
     if (values[field] !== expected) {
       issues.push(`${field} must equal ${expected}`);
     }
   }
 
-  const credentialFields = [
-    "DATABASE_CREDENTIAL_REF",
-    "REDIS_CREDENTIAL_REF",
-    "OBJECT_STORAGE_CREDENTIAL_REF",
-    "MESSAGE_BUS_CREDENTIAL_REF",
-    "AI_PROVIDER_CREDENTIAL_REF",
-  ];
   const expectedCredentialPrefix = `secret://lijing/${environment}/`;
-  for (const field of credentialFields) {
+  for (const field of ENVIRONMENT_CREDENTIAL_FIELDS) {
     if (!values[field].startsWith(expectedCredentialPrefix)) {
       issues.push(`${field} must use the ${environment} secret namespace`);
     }
   }
 
   const identityFields = [
-    ...resourceFields,
-    ...Object.keys(exactIdentities),
-    ...credentialFields,
+    ...ENVIRONMENT_RESOURCE_DESCRIPTORS.map(({ field }) => field),
+    ...ENVIRONMENT_EXACT_DESCRIPTORS.map(({ field }) => field),
+    ...ENVIRONMENT_CREDENTIAL_FIELDS,
     "OBJECT_STORAGE_BUCKET",
     "OBJECT_STORAGE_ENDPOINT",
   ];

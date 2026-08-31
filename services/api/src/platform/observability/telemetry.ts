@@ -9,6 +9,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SAFE_SLUG_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/i;
 const ROUTE_PATTERN = /^\/(?:api\/v[1-9][0-9]*|internal)(?:\/(?:[a-z][a-z0-9_-]*|\{[a-z][a-z0-9_]*\}|:[a-z][a-z0-9_]*))*$/i;
 const VERSION_PATTERN = /^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][a-z0-9.-]+)?$/i;
+const TRACE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:[._:-][A-Za-z0-9]+)*$/;
+const HIGH_CARDINALITY_TRACE_TOKEN_PATTERN = /(?:^|[._:-])[a-f0-9]{16,}(?:$|[._:-])/i;
 const ALLOWED_LABEL_KEYS = new Set([
   "environment",
   "service",
@@ -68,6 +70,17 @@ function safeMetricName(name) {
     throw new TypeError("metric name must contain only metric-safe characters");
   }
   return name;
+}
+
+function normalizeTraceName(value) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 64 || /[\r\n]/.test(normalized)) return undefined;
+  if (EMAIL_VALUE_PATTERN.test(normalized) || SECRET_VALUE_PATTERN.test(normalized)) return undefined;
+  if (UUID_PATTERN.test(normalized) || /^\+?\d{7,15}$/.test(normalized) || /\d{7,15}/.test(normalized)) return undefined;
+  if (HIGH_CARDINALITY_TRACE_TOKEN_PATTERN.test(normalized)) return undefined;
+  if (/[\\/]/.test(normalized) || normalized.includes("://") || normalized.includes("..")) return undefined;
+  return TRACE_NAME_PATTERN.test(normalized) ? normalized : undefined;
 }
 
 function isValidDeviceHash(value) {
@@ -154,7 +167,8 @@ class InMemoryTelemetry implements Telemetry {
   }
 
   startTrace(name: string, attributes: Record<string, unknown> = {}): TelemetrySpan {
-    if (typeof name !== "string" || !name.trim() || name.length > 128) throw new TypeError("trace name is invalid");
+    const traceName = normalizeTraceName(name);
+    if (!traceName) throw new TypeError("trace name is invalid");
     const requestedTraceId = attributes.trace_id ?? attributes.traceId;
     const traceId = isValidTraceId(requestedTraceId) ? requestedTraceId : crypto.randomUUID();
     const labels = { ...this.baseLabels, ...sanitizeTraceAttributes({ ...attributes, trace_id: traceId }) };
@@ -166,7 +180,7 @@ class InMemoryTelemetry implements Telemetry {
         if (ended) return;
         ended = true;
         this.traces.push({
-          name: name.trim(),
+          name: traceName,
           trace_id: traceId,
           labels,
           status: SAFE_SLUG_PATTERN.test(status) ? status : "unknown",

@@ -46,9 +46,11 @@ class RequestContext {
   }
 
   toSafeLogFields() {
+    const traceId = normalizeTraceId(this.traceId);
+    const requestId = normalizeRequestId(this.requestId);
     const fields = {
-      trace_id: this.traceId,
-      request_id: this.requestId,
+      trace_id: traceId,
+      request_id: requestId,
       client_version: normalizeClientVersion(this.clientVersion),
     };
     const deviceIdHash = normalizeDeviceIdHash(this.deviceIdHash);
