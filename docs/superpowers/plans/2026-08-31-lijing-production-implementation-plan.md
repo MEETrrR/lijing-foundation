@@ -71,29 +71,29 @@ tests/
 - Create: `infra/environments/environment-matrix.md`
 - Test: `tests/contract/contract-lint.test.ts`
 
-- [ ] **Step 1: 初始化仓库边界与开发规范**
+- [x] **Step 1: 初始化仓库边界与开发规范**
 
   创建 monorepo 目录、统一命名规则、环境变量命名规则、日志字段规范和模块依赖规则。README 必须明确：客户端不可信、奖励由服务端结算、AI 不可直连 Provider、模块不得跨表写入。
 
-- [ ] **Step 2: 定义 API 与领域事件版本规则**
+- [x] **Step 2: 定义 API 与领域事件版本规则**
 
   在 `packages/contracts/openapi.yaml` 中约定 `/api/v1`，每个写入用例必须支持 `request_id` 和幂等键；在事件 Schema 中固定 `event_id`、`event_type`、`event_version`、`aggregate_id`、`actor_id`、`request_id`、`occurred_at`、`schema_version` 和 `payload`。
 
-- [ ] **Step 3: 定义数据分类与日志脱敏规则**
+- [x] **Step 3: 定义数据分类与日志脱敏规则**
 
   将账户识别信息、设备摘要、学习事实、AI 请求、上传文件、审计记录和运营统计分级。明确任何日志不得出现密码、访问 Token、模型密钥、完整手机号、完整对话原文和公开对象存储签名地址。
 
-- [ ] **Step 4: 写出 AI 防刷与事故处置策略**
+- [x] **Step 4: 写出 AI 防刷与事故处置策略**
 
   `default-policy.yaml` 固定服务端可调整的起始值：新账户前 24 小时每日 5 次、普通账户每日 20 次、10 分钟 3 次、单用户并发 1、单次输入 4,000 Token、单次输出 1,000 Token、图片每次 2 张且每张 5 MB、复杂视觉/长文每日 3 次。策略必须带版本、有效期、调整人和审计理由。
 
-- [ ] **Step 5: 编写契约校验测试并运行**
+- [x] **Step 5: 编写契约校验测试并运行**
 
   Run: `pnpm contract:lint`
 
   Expected: OpenAPI、事件 Schema 和 AI policy 均通过校验；缺少版本、幂等字段或必需审计字段时测试失败。
 
-- [ ] **Step 6: 提交基线变更**
+- [x] **Step 6: 提交基线变更**
 
   当仓库完成 Git 初始化后，提交：`chore: establish architecture and security contracts`。
 
@@ -117,29 +117,29 @@ tests/
 - Create: `docs/runbooks/incident-response.md`
 - Create: `tests/integration/platform-health.test.ts`
 
-- [ ] **Step 1: 定义 local、staging、production 三套配置边界**
+- [x] **Step 1: 定义 local、staging、production 三套配置边界**
 
   三套环境分别使用独立数据库、Redis、对象存储、队列、AI 凭证和预算。示例文件只写变量名和安全说明，不写真实密钥。
 
-- [ ] **Step 2: 实现统一请求上下文与错误目录**
+- [x] **Step 2: 实现统一请求上下文与错误目录**
 
   每个请求生成或继承 `trace_id`、`request_id`、客户端版本和匿名设备摘要。错误响应只返回用户可理解的错误码与重试建议，内部堆栈只能进入受控日志。
 
-- [ ] **Step 3: 建立数据库、缓存、消息和密钥适配器**
+- [x] **Step 3: 建立数据库、缓存、消息和密钥适配器**
 
   业务模块只能依赖接口，不直接依赖某一家云厂商 SDK。缓存不可作为唯一事实；消息消费必须支持幂等、重试和死信。
 
-- [ ] **Step 4: 建立基础监控看板与告警**
+- [x] **Step 4: 建立基础监控看板与告警**
 
   至少包含 API 成功率、P95/P99、5xx、限流、队列积压、数据库连接、AI 请求量、Token、成本、拒绝率、降级率和客户端崩溃率。
 
-- [ ] **Step 5: 写健康检查与配置泄露测试**
+- [x] **Step 5: 写健康检查与配置泄露测试**
 
   Run: `pnpm test tests/integration/platform-health.test.ts`
 
   Expected: 健康检查能区分应用、数据库、缓存、队列和对象存储；测试必须确认日志和错误响应不会泄露密钥或完整个人信息。
 
-- [ ] **Step 6: 提交基础设施变更**
+- [x] **Step 6: 提交基础设施变更**
 
   提交：`chore: add production platform and observability baseline`。
 
