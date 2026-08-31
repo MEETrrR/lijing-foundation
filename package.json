@@ -1,6 +1,13 @@
 {
   "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
-    "contract:lint": "node --no-warnings --experimental-strip-types --test tests/contract/contract-lint.test.ts"
+    "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts"
+  },
+  "devDependencies": {
+    "@redocly/openapi-core": "2.49.0",
+    "yaml": "2.9.0"
   }
 }
