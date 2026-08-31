@@ -8,6 +8,7 @@ const {
   loadConfiguration,
 } = require("../../services/api/src/platform/config/configuration.ts");
 const {
+  RequestContext,
   createRequestContext,
 } = require("../../services/api/src/platform/http/request-context.ts");
 const {
@@ -171,6 +172,44 @@ test("request context replaces malformed, reserved, and path-like correlation ID
     assert.notEqual(safeFields.request_id, value);
     assert.doesNotMatch(JSON.stringify(safeFields), /Authorization|req\/\.\.\/\.\.\/prod|not-a-uuid/);
   }
+});
+
+test("direct RequestContext construction sanitizes client version and device hash before logging", () => {
+  const validTraceId = "44444444-4444-4444-8444-444444444444";
+  const validRequestId = "55555555-5555-4555-8555-555555555555";
+  const invalidValues = [
+    "Bearer super-secret-token",
+    "learner@example.com",
+    "client/../../prod",
+    "v".repeat(65),
+    "1.2.3$malformed",
+  ];
+
+  for (const invalidValue of invalidValues) {
+    const context = new RequestContext({
+      traceId: validTraceId,
+      requestId: validRequestId,
+      clientVersion: invalidValue,
+      deviceIdHash: invalidValue,
+    });
+    const safeFields = context.toSafeLogFields();
+    const serialized = JSON.stringify(safeFields);
+
+    assert.equal(safeFields.client_version, "unknown");
+    assert.equal(safeFields.device_id_hash, undefined);
+    assert.doesNotMatch(serialized, new RegExp(invalidValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  const validContext = new RequestContext({
+    traceId: validTraceId,
+    requestId: validRequestId,
+    clientVersion: "1.2.3",
+    deviceIdHash: `sha256:${"a".repeat(64)}`,
+  });
+  const validSafeFields = validContext.toSafeLogFields();
+
+  assert.equal(validSafeFields.client_version, "1.2.3");
+  assert.equal(validSafeFields.device_id_hash, `sha256:${"a".repeat(64)}`);
 });
 
 test("error catalog maps internal failures to stable safe responses", () => {

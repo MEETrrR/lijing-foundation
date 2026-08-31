@@ -2,14 +2,22 @@ const crypto = require("node:crypto");
 const { normalizeRequestId, normalizeTraceId } = require("./correlation-id.ts");
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
+const CLIENT_VERSION_PATTERN = /^[A-Za-z0-9]+(?:[._+-][A-Za-z0-9]+)*$/;
+const DEVICE_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 function normalizeClientVersion(value) {
   if (typeof value !== "string") return "unknown";
   const normalized = value.trim();
   if (!normalized || normalized.length > 64 || /[\r\n]/.test(normalized)) return "unknown";
   if (/bearer\s|authorization|password|secret|token|cookie|conversation|prompt|response|sk-[a-z0-9]/i.test(normalized)) return "unknown";
-  if (!/^[A-Za-z0-9][A-Za-z0-9._+/-]*$/.test(normalized)) return "unknown";
+  if (!CLIENT_VERSION_PATTERN.test(normalized)) return "unknown";
   return normalized;
+}
+
+function normalizeDeviceIdHash(value) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return DEVICE_HASH_PATTERN.test(normalized) ? normalized : undefined;
 }
 
 function anonymizeDeviceFingerprint(value, hashKey = "lijing-device-fingerprint-v1") {
@@ -32,8 +40,8 @@ class RequestContext {
   constructor({ traceId, requestId, clientVersion, deviceIdHash, actorId }) {
     this.traceId = normalizeTraceId(traceId);
     this.requestId = normalizeRequestId(requestId);
-    this.clientVersion = clientVersion;
-    this.deviceIdHash = deviceIdHash;
+    this.clientVersion = normalizeClientVersion(clientVersion);
+    this.deviceIdHash = normalizeDeviceIdHash(deviceIdHash);
     this.actorId = actorId;
   }
 
@@ -41,9 +49,10 @@ class RequestContext {
     const fields = {
       trace_id: this.traceId,
       request_id: this.requestId,
-      client_version: this.clientVersion,
+      client_version: normalizeClientVersion(this.clientVersion),
     };
-    if (this.deviceIdHash) fields.device_id_hash = this.deviceIdHash;
+    const deviceIdHash = normalizeDeviceIdHash(this.deviceIdHash);
+    if (deviceIdHash) fields.device_id_hash = deviceIdHash;
     const actorId = safeIdentifier(this.actorId);
     if (actorId) fields.actor_id = actorId;
     return fields;
