@@ -259,7 +259,6 @@ components:
               readOnly: true
     AiRequestResponse:
       type: object
-      additionalProperties: false
       oneOf:
         - $ref: '#/components/schemas/AiRequestAcceptedResponse'
         - $ref: '#/components/schemas/AiRequestQueuedResponse'

@@ -57,7 +57,7 @@ node --no-warnings --test tests/contract/contract-lint.test.ts
 
 The command validates the OpenAPI version/write metadata, the required event envelope fields, and the AI policy limits and governance fields. It is deterministic and exits non-zero when a required file or field is missing.
 
-The contract test intentionally remains at `tests/contract/contract-lint.test.ts` because the Task 1 file contract names that path. The repository declares Node `>=22.18.0`, where the native TypeScript test path runs without the experimental strip-types flag. The test uses exact, lockfile-pinned `yaml` and `@redocly/openapi-core` dev dependencies; it does not require a TypeScript build or runtime dependency installation beyond the package manager install.
+The contract test intentionally remains at `tests/contract/contract-lint.test.ts` because the Task 1 file contract names that path. The repository declares Node `>=22.18.0`, where the native TypeScript test path runs without the experimental strip-types flag. The test uses exact, lockfile-pinned `yaml`, `@redocly/openapi-core`, `ajv`, and `ajv-formats` dev dependencies; it does not require a TypeScript build or runtime dependency installation beyond the package manager install.
 
 ## Development rules
 

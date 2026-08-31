@@ -3,6 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const YAML = require("yaml");
+const Ajv2020 = require("ajv/dist/2020");
+const addFormats = require("ajv-formats");
 const { createConfig, lintFromString } = require("@redocly/openapi-core");
 
 const repositoryRoot = path.resolve(__dirname, "../..");
@@ -81,6 +83,46 @@ function resolveLocalRef(root, ref) {
     .split("/")
     .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
     .reduce((current, segment) => current?.[segment], root);
+}
+
+function createJsonSchemaValidator() {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  addFormats(ajv);
+  // OpenAPI's discriminator is an annotation; oneOf and const perform validation.
+  ajv.addKeyword({ keyword: "discriminator", schemaType: "object" });
+  return ajv;
+}
+
+function rewriteOpenApiRefs(value) {
+  if (Array.isArray(value)) return value.map(rewriteOpenApiRefs);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => {
+    if (key === "$ref" && typeof child === "string" && child.startsWith("#/components/schemas/")) {
+      return [key, child.replace("#/components/schemas/", "#/$defs/")];
+    }
+    return [key, rewriteOpenApiRefs(child)];
+  }));
+}
+
+function compileOpenApiSchema(api, schemaName) {
+  const ajv = createJsonSchemaValidator();
+  const definitions = rewriteOpenApiRefs(api.components.schemas);
+  return ajv.compile({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: `https://contracts.example.invalid/lijing/openapi/${schemaName}.schema.json`,
+    $ref: `#/$defs/${schemaName}`,
+    $defs: definitions,
+  });
+}
+
+function schemaErrorText(validate) {
+  return JSON.stringify(validate.errors ?? [], null, 2);
+}
+
+function compileEventEnvelopeSchema() {
+  const ajv = createJsonSchemaValidator();
+  return ajv.compile(JSON.parse(readRequired("packages/contracts/events/event-envelope.schema.json")));
 }
 
 test("OpenAPI is parsed and validated as a versioned, secured use-case contract", async () => {
@@ -168,6 +210,48 @@ test("AI response variants require completed data only for completed status", as
   assert.equal(response.discriminator.propertyName, "status");
   assert.ok(schemas.AiResult);
 
+  const validate = compileOpenApiSchema(api, "AiRequestResponse");
+  const validFixtures = [
+    {
+      request_id: "11111111-1111-4111-8111-111111111111",
+      status: "accepted",
+      policy_version: "2026-08-31.1",
+    },
+    {
+      request_id: "22222222-2222-4222-8222-222222222222",
+      status: "queued",
+      policy_version: "2026-08-31.1",
+      poll_after_seconds: 5,
+    },
+    {
+      request_id: "33333333-3333-4333-8333-333333333333",
+      status: "completed",
+      policy_version: "2026-08-31.1",
+      result: { text: "Review the worked example.", source_type: "reviewed_content" },
+    },
+    {
+      request_id: "44444444-4444-4444-8444-444444444444",
+      status: "degraded",
+      policy_version: "2026-08-31.1",
+      fallback_mode: "template",
+    },
+    {
+      request_id: "55555555-5555-4555-8555-555555555555",
+      status: "rejected",
+      policy_version: "2026-08-31.1",
+      reason_code: "quota_exhausted",
+    },
+  ];
+  for (const fixture of validFixtures) {
+    assert.equal(validate(fixture), true, `valid AI response fixture was rejected: ${schemaErrorText(validate)}`);
+  }
+  const completedWithoutResult = {
+    request_id: "66666666-6666-4666-8666-666666666666",
+    status: "completed",
+    policy_version: "2026-08-31.1",
+  };
+  assert.equal(validate(completedWithoutResult), false);
+
   for (const status of ["accepted", "queued", "completed", "degraded", "rejected"]) {
     const schemaName = `AiRequest${status[0].toUpperCase()}${status.slice(1)}Response`;
     const schema = schemas[schemaName];
@@ -202,6 +286,37 @@ test("learning settlement and write intent schemas are explicit", async () => {
   assert.equal(energySettlement.properties.delta.type, "integer");
 });
 
+test("event envelope compiles as Draft 2020-12 and rejects missing or extra fields", () => {
+  const validate = compileEventEnvelopeSchema();
+  const validEnvelope = {
+    event_id: "77777777-7777-4777-8777-777777777777",
+    event_type: "MasteryUpdated",
+    event_version: 1,
+    aggregate_type: "knowledge_point",
+    aggregate_id: "kp-001",
+    actor_id: "account-001",
+    request_id: "88888888-8888-4888-8888-888888888888",
+    occurred_at: "2026-08-31T04:00:00.000Z",
+    schema_version: "1.0.0",
+    payload: { state: "LEARNING", rule_version: "mastery-1" },
+  };
+
+  assert.equal(validate(validEnvelope), true, schemaErrorText(validate));
+
+  const missingRequestId = { ...validEnvelope };
+  delete missingRequestId.request_id;
+  assert.equal(validate(missingRequestId), false);
+  assert.ok(validate.errors.some((error) =>
+    error.keyword === "required" && error.params.missingProperty === "request_id",
+  ));
+
+  const extraProperty = { ...validEnvelope, unexpected: "must be rejected" };
+  assert.equal(validate(extraProperty), false);
+  assert.ok(validate.errors.some((error) =>
+    error.keyword === "additionalProperties" && error.params.additionalProperty === "unexpected",
+  ));
+});
+
 test("AI policy uses strict YAML and includes security, fallback, and governance controls", () => {
   const policy = parseStrictYaml(readRequired("packages/ai-policy/default-policy.yaml"), "AI policy");
 
@@ -215,7 +330,9 @@ test("AI policy uses strict YAML and includes security, fallback, and governance
   assert.equal(policy.server_configurable, true);
 
   assert.equal(policy.controls.require_authentication, true);
+  assert.equal(policy.controls.require_idempotency_key, true);
   assert.equal(policy.controls.allow_direct_provider_access, false);
+  assert.equal(policy.controls.allow_unbounded_retry, false);
   assert.equal(policy.controls.output_validation_required, true);
   assert.equal(policy.controls.source_provenance_required, true);
   assert.equal(policy.controls.global_kill_switch, true);
