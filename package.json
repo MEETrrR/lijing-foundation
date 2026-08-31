@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "contract:lint": "node --no-warnings --experimental-strip-types --test tests/contract/contract-lint.test.ts"
+  }
+}
