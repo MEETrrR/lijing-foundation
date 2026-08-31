@@ -151,17 +151,43 @@ paths:
                     maxLength: 200
       responses:
         '202':
-          description: Accepted for synchronous or asynchronous AI Gateway processing.
+          description: Accepted for synchronous or asynchronous AI Gateway processing; rejection is represented by 422 or 429.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRequestProcessingResponse'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/AiRateLimited'
+        '422':
+          $ref: '#/components/responses/AiPolicyRejected'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ai/requests/{request_id}:
+    get:
+      tags: [ai]
+      operationId: getAiRequest
+      summary: Read the state of an AI Gateway request
+      description: Poll an accepted AI Gateway request using the server-owned request state and result contract.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current server-owned AI Gateway request state.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AiRequestResponse'
-        '409':
-          $ref: '#/components/responses/IdempotencyConflict'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '422':
-          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -273,6 +299,20 @@ components:
           completed: '#/components/schemas/AiRequestCompletedResponse'
           degraded: '#/components/schemas/AiRequestDegradedResponse'
           rejected: '#/components/schemas/AiRequestRejectedResponse'
+    AiRequestProcessingResponse:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/AiRequestAcceptedResponse'
+        - $ref: '#/components/schemas/AiRequestQueuedResponse'
+        - $ref: '#/components/schemas/AiRequestCompletedResponse'
+        - $ref: '#/components/schemas/AiRequestDegradedResponse'
+      discriminator:
+        propertyName: status
+        mapping:
+          accepted: '#/components/schemas/AiRequestAcceptedResponse'
+          queued: '#/components/schemas/AiRequestQueuedResponse'
+          completed: '#/components/schemas/AiRequestCompletedResponse'
+          degraded: '#/components/schemas/AiRequestDegradedResponse'
     AiRequestAcceptedResponse:
       type: object
       additionalProperties: false
@@ -331,18 +371,53 @@ components:
           enum: [template, cached, low_cost_model, async_queue]
     AiRequestRejectedResponse:
       type: object
+      oneOf:
+        - $ref: '#/components/schemas/AiRequestPolicyRejectedResponse'
+        - $ref: '#/components/schemas/AiRequestRateLimitedResponse'
+      discriminator:
+        propertyName: rejection_class
+        mapping:
+          policy: '#/components/schemas/AiRequestPolicyRejectedResponse'
+          rate_limit: '#/components/schemas/AiRequestRateLimitedResponse'
+    AiRequestPolicyRejectedResponse:
+      type: object
       additionalProperties: false
-      required: [request_id, status, policy_version, reason_code]
+      required: [request_id, status, rejection_class, policy_version, reason_code]
       properties:
         request_id:
           type: string
           format: uuid
         status:
           const: rejected
+        rejection_class:
+          const: policy
         policy_version:
           type: string
         reason_code:
           type: string
+          minLength: 1
+          maxLength: 100
+    AiRequestRateLimitedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, rejection_class, policy_version, reason_code, retry_after_seconds]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: rejected
+        rejection_class:
+          const: rate_limit
+        policy_version:
+          type: string
+        reason_code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        retry_after_seconds:
+          type: integer
+          minimum: 1
     AiResult:
       type: object
       additionalProperties: false
@@ -422,8 +497,14 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    RateLimited:
-      description: A policy, quota, concurrency, or budget gate rejected the request.
+    AiPolicyRejected:
+      description: The AI Gateway rejected the request because policy or input validation did not permit processing.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiRequestPolicyRejectedResponse'
+    AiRateLimited:
+      description: The AI Gateway rejected the request because a rate, concurrency, quota, or budget limit was reached.
       headers:
         Retry-After:
           schema:
@@ -432,7 +513,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/AiRequestRateLimitedResponse'
   securitySchemes:
     bearerAuth:
       type: http

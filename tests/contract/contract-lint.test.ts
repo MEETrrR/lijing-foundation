@@ -11,6 +11,13 @@ const repositoryRoot = path.resolve(__dirname, "../..");
 const openApiPath = path.join(repositoryRoot, "packages/contracts/openapi.yaml");
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 const WRITE_METHODS = new Set(["put", "post", "delete", "patch"]);
+const OPERATION_SECURITY = {
+  "GET /api/v1/health": "public",
+  "GET /api/v1/me/progress": "bearer",
+  "POST /api/v1/learning/attempts": "bearer",
+  "POST /api/v1/ai/requests": "bearer",
+  "GET /api/v1/ai/requests/{request_id}": "bearer",
+};
 const openApiConfigPromise = createConfig(
   { extends: ["recommended"] },
   { configPath: openApiPath },
@@ -148,13 +155,21 @@ test("OpenAPI is parsed and validated as a versioned, secured use-case contract"
 
   const operations = listOperations(api);
   assert.ok(operations.length > 0);
+  assert.deepEqual(
+    new Set(operations.map(({ method, pathTemplate }) => `${method.toUpperCase()} ${pathTemplate}`)),
+    new Set(Object.keys(OPERATION_SECURITY)),
+  );
   for (const { method, operation, pathTemplate } of operations) {
     assert.ok(operation.responses && typeof operation.responses === "object");
-    if (pathTemplate === "/api/v1/health") {
+    const securityMode = OPERATION_SECURITY[`${method.toUpperCase()} ${pathTemplate}`];
+    assert.ok(securityMode, `missing explicit security metadata for ${method.toUpperCase()} ${pathTemplate}`);
+    if (securityMode === "public") {
       assert.deepEqual(operation.security, []);
-    } else {
+    } else if (securityMode === "bearer") {
       assert.ok(Array.isArray(operation.security) && operation.security.length > 0);
       assert.ok(operation.security.some((requirement) => Object.hasOwn(requirement, "bearerAuth")));
+    } else {
+      assert.fail(`unsupported security metadata for ${method.toUpperCase()} ${pathTemplate}`);
     }
 
     if (!WRITE_METHODS.has(method)) continue;
@@ -206,12 +221,25 @@ test("AI response variants require completed data only for completed status", as
     "#/components/schemas/AiRequestRejectedResponse",
   ];
 
-  assert.deepEqual(response.oneOf.map((variant) => variant.$ref), expectedVariants);
+  assert.deepEqual(new Set(response.oneOf.map((variant) => variant.$ref)), new Set(expectedVariants));
   assert.equal(response.discriminator.propertyName, "status");
   assert.ok(schemas.AiResult);
 
-  const validate = compileOpenApiSchema(api, "AiRequestResponse");
-  const validFixtures = [
+  const processingVariants = [
+    "#/components/schemas/AiRequestAcceptedResponse",
+    "#/components/schemas/AiRequestQueuedResponse",
+    "#/components/schemas/AiRequestCompletedResponse",
+    "#/components/schemas/AiRequestDegradedResponse",
+  ];
+  assert.deepEqual(
+    new Set(schemas.AiRequestProcessingResponse.oneOf.map((variant) => variant.$ref)),
+    new Set(processingVariants),
+  );
+  assert.equal(schemas.AiRequestProcessingResponse.discriminator.propertyName, "status");
+
+  const validateResponse = compileOpenApiSchema(api, "AiRequestResponse");
+  const validateProcessing = compileOpenApiSchema(api, "AiRequestProcessingResponse");
+  const processingFixtures = [
     {
       request_id: "11111111-1111-4111-8111-111111111111",
       status: "accepted",
@@ -235,24 +263,40 @@ test("AI response variants require completed data only for completed status", as
       policy_version: "2026-08-31.1",
       fallback_mode: "template",
     },
-    {
-      request_id: "55555555-5555-4555-8555-555555555555",
-      status: "rejected",
-      policy_version: "2026-08-31.1",
-      reason_code: "quota_exhausted",
-    },
   ];
-  for (const fixture of validFixtures) {
-    assert.equal(validate(fixture), true, `valid AI response fixture was rejected: ${schemaErrorText(validate)}`);
-  }
-  const completedWithoutResult = {
+  const policyRejectedFixture = {
+    request_id: "55555555-5555-4555-8555-555555555555",
+    status: "rejected",
+    rejection_class: "policy",
+    policy_version: "2026-08-31.1",
+    reason_code: "unsafe_input",
+  };
+  const rateLimitedFixture = {
     request_id: "66666666-6666-4666-8666-666666666666",
+    status: "rejected",
+    rejection_class: "rate_limit",
+    policy_version: "2026-08-31.1",
+    reason_code: "quota_exhausted",
+    retry_after_seconds: 60,
+  };
+
+  for (const fixture of processingFixtures) {
+    assert.equal(validateResponse(fixture), true, `valid AI response fixture was rejected: ${schemaErrorText(validateResponse)}`);
+    assert.equal(validateProcessing(fixture), true, `valid processing fixture was rejected: ${schemaErrorText(validateProcessing)}`);
+  }
+  for (const fixture of [policyRejectedFixture, rateLimitedFixture]) {
+    assert.equal(validateResponse(fixture), true, `valid rejection fixture was rejected: ${schemaErrorText(validateResponse)}`);
+    assert.equal(validateProcessing(fixture), false);
+  }
+
+  const completedWithoutResult = {
+    request_id: "77777777-7777-4777-8777-777777777777",
     status: "completed",
     policy_version: "2026-08-31.1",
   };
-  assert.equal(validate(completedWithoutResult), false);
+  assert.equal(validateResponse(completedWithoutResult), false);
 
-  for (const status of ["accepted", "queued", "completed", "degraded", "rejected"]) {
+  for (const status of ["accepted", "queued", "completed", "degraded"]) {
     const schemaName = `AiRequest${status[0].toUpperCase()}${status.slice(1)}Response`;
     const schema = schemas[schemaName];
     assert.equal(schema.properties.status.const, status);
@@ -264,6 +308,37 @@ test("AI response variants require completed data only for completed status", as
       assert.equal(schema.properties?.result, undefined);
     }
   }
+
+  const rejected = schemas.AiRequestRejectedResponse;
+  assert.deepEqual(
+    new Set(rejected.oneOf.map((variant) => variant.$ref)),
+    new Set([
+      "#/components/schemas/AiRequestPolicyRejectedResponse",
+      "#/components/schemas/AiRequestRateLimitedResponse",
+    ]),
+  );
+  assert.equal(rejected.discriminator.propertyName, "rejection_class");
+  assert.equal(schemas.AiRequestPolicyRejectedResponse.properties.rejection_class.const, "policy");
+  assert.equal(schemas.AiRequestRateLimitedResponse.properties.rejection_class.const, "rate_limit");
+});
+
+test("AI HTTP responses map processing and rejection statuses unambiguously", async () => {
+  const api = await parseAndValidateOpenApi(readRequired("packages/contracts/openapi.yaml"));
+  const responses = api.paths["/api/v1/ai/requests"].post.responses;
+  const resolveResponse = (status) => {
+    const response = responses[status];
+    return response?.$ref ? resolveLocalRef(api, response.$ref) : response;
+  };
+  const schemaRef = (status) => resolveResponse(status).content["application/json"].schema.$ref;
+
+  assert.equal(schemaRef("202"), "#/components/schemas/AiRequestProcessingResponse");
+  assert.equal(schemaRef("422"), "#/components/schemas/AiRequestPolicyRejectedResponse");
+  assert.equal(schemaRef("429"), "#/components/schemas/AiRequestRateLimitedResponse");
+  assert.equal(responses["422"].$ref, "#/components/responses/AiPolicyRejected");
+  assert.equal(responses["429"].$ref, "#/components/responses/AiRateLimited");
+  assert.equal(api.components.schemas.AiRequestPolicyRejectedResponse.properties.status.const, "rejected");
+  assert.equal(api.components.schemas.AiRequestRateLimitedResponse.properties.status.const, "rejected");
+  assert.equal(api.components.schemas.AiRequestProcessingResponse.oneOf.length, 4);
 });
 
 test("learning settlement and write intent schemas are explicit", async () => {
