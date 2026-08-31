@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts"
+  },
+  "devDependencies": {
+    "@redocly/openapi-core": "2.49.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.9.0"
+  }
+}

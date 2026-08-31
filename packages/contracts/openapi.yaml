@@ -1,0 +1,521 @@
+openapi: 3.1.0
+info:
+  title: Lijing API
+  version: 1.0.0
+  description: Versioned use-case contract for the Lijing learning platform.
+  license:
+    name: Lijing internal product contract
+    identifier: Lijing-Internal-Contract
+servers:
+  - url: https://api.example.invalid
+    description: Reserved documentation host; deployment hosts are environment-specific.
+tags:
+  - name: platform
+    description: Platform health and request context operations.
+  - name: learning
+    description: Server-authoritative learning and progress operations.
+  - name: ai
+    description: AI Gateway mediated learning assistance operations.
+paths:
+  /api/v1/health:
+    get:
+      tags: [platform]
+      operationId: getHealth
+      summary: Check API health
+      security: []
+      responses:
+        '200':
+          description: Service health summary without infrastructure credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/me/progress:
+    get:
+      tags: [learning]
+      operationId: getMyProgress
+      summary: Read my learning progress
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current server-owned progress projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProgressResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/learning/attempts:
+    post:
+      tags: [learning]
+      operationId: recordLearningAttempt
+      summary: Record and evaluate a learning attempt
+      description: The server-authoritative use case evaluates the submitted intent and settles learning state after validation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - request_id
+                - attempt_id
+                - question_id
+                - answer
+                - action
+              properties:
+                request_id:
+                  type: string
+                  format: uuid
+                attempt_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                question_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                answer:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                action:
+                  type: string
+                  enum: [submit]
+      responses:
+        '201':
+          description: Evaluated attempt and server-settled result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningAttemptResponse'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ai/requests:
+    post:
+      tags: [ai]
+      operationId: submitAiUseCase
+      summary: Submit an AI Gateway use case
+      description: All model access is mediated by the server AI Gateway, which applies policy, quota, audit, and output validation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - request_id
+                - feature
+                - input
+              properties:
+                request_id:
+                  type: string
+                  format: uuid
+                feature:
+                  type: string
+                  enum:
+                    - concept_explanation
+                    - wrong_answer_hint
+                    - study_plan_suggestion
+                    - progress_query
+                    - emotional_support
+                input:
+                  type: string
+                  minLength: 1
+                  maxLength: 16000
+                image_object_ids:
+                  type: array
+                  maxItems: 2
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 200
+      responses:
+        '202':
+          description: Accepted for synchronous or asynchronous AI Gateway processing; rejection is represented by 422 or 429.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRequestProcessingResponse'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '429':
+          $ref: '#/components/responses/AiRateLimited'
+        '422':
+          $ref: '#/components/responses/AiPolicyRejected'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/ai/requests/{request_id}:
+    get:
+      tags: [ai]
+      operationId: getAiRequest
+      summary: Read the state of an AI Gateway request
+      description: Poll an accepted AI Gateway request using the server-owned request state and result contract.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current server-owned AI Gateway request state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRequestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated retry key scoped by actor, route, and operation family.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, request_id]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        request_id:
+          type: string
+          format: uuid
+    ProgressResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, account_level, mastery_summary, energy]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        account_level:
+          type: integer
+          minimum: 1
+        mastery_summary:
+          type: object
+          additionalProperties: false
+          required: [mastered, review_due]
+          properties:
+            mastered:
+              type: integer
+              minimum: 0
+            review_due:
+              type: integer
+              minimum: 0
+        energy:
+          type: object
+          additionalProperties: false
+          required: [current, maximum]
+          properties:
+            current:
+              type: integer
+              minimum: 0
+            maximum:
+              type: integer
+              minimum: 0
+    LearningAttemptResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, attempt_id, evaluation, settlement]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+        evaluation:
+          type: object
+          additionalProperties: false
+          required: [correct, content_version]
+          properties:
+            correct:
+              type: boolean
+              readOnly: true
+            content_version:
+              type: string
+              readOnly: true
+        settlement:
+          type: object
+          additionalProperties: false
+          required: [mastery_state, reward_summary, energy]
+          properties:
+            mastery_state:
+              type: string
+              readOnly: true
+            reward_summary:
+              $ref: '#/components/schemas/RewardSummary'
+              readOnly: true
+            energy:
+              $ref: '#/components/schemas/EnergySettlement'
+              readOnly: true
+    AiRequestResponse:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/AiRequestAcceptedResponse'
+        - $ref: '#/components/schemas/AiRequestQueuedResponse'
+        - $ref: '#/components/schemas/AiRequestCompletedResponse'
+        - $ref: '#/components/schemas/AiRequestDegradedResponse'
+        - $ref: '#/components/schemas/AiRequestRejectedResponse'
+      discriminator:
+        propertyName: status
+        mapping:
+          accepted: '#/components/schemas/AiRequestAcceptedResponse'
+          queued: '#/components/schemas/AiRequestQueuedResponse'
+          completed: '#/components/schemas/AiRequestCompletedResponse'
+          degraded: '#/components/schemas/AiRequestDegradedResponse'
+          rejected: '#/components/schemas/AiRequestRejectedResponse'
+    AiRequestProcessingResponse:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/AiRequestAcceptedResponse'
+        - $ref: '#/components/schemas/AiRequestQueuedResponse'
+        - $ref: '#/components/schemas/AiRequestCompletedResponse'
+        - $ref: '#/components/schemas/AiRequestDegradedResponse'
+      discriminator:
+        propertyName: status
+        mapping:
+          accepted: '#/components/schemas/AiRequestAcceptedResponse'
+          queued: '#/components/schemas/AiRequestQueuedResponse'
+          completed: '#/components/schemas/AiRequestCompletedResponse'
+          degraded: '#/components/schemas/AiRequestDegradedResponse'
+    AiRequestAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, policy_version]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: accepted
+        policy_version:
+          type: string
+    AiRequestQueuedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, policy_version, poll_after_seconds]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: queued
+        policy_version:
+          type: string
+        poll_after_seconds:
+          type: integer
+          minimum: 1
+    AiRequestCompletedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, policy_version, result]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: completed
+        policy_version:
+          type: string
+        result:
+          $ref: '#/components/schemas/AiResult'
+    AiRequestDegradedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, policy_version, fallback_mode]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: degraded
+        policy_version:
+          type: string
+        fallback_mode:
+          type: string
+          enum: [template, cached, low_cost_model, async_queue]
+    AiRequestRejectedResponse:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/AiRequestPolicyRejectedResponse'
+        - $ref: '#/components/schemas/AiRequestRateLimitedResponse'
+      discriminator:
+        propertyName: rejection_class
+        mapping:
+          policy: '#/components/schemas/AiRequestPolicyRejectedResponse'
+          rate_limit: '#/components/schemas/AiRequestRateLimitedResponse'
+    AiRequestPolicyRejectedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, rejection_class, policy_version, reason_code]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: rejected
+        rejection_class:
+          const: policy
+        policy_version:
+          type: string
+        reason_code:
+          type: string
+          minLength: 1
+          maxLength: 100
+    AiRequestRateLimitedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, rejection_class, policy_version, reason_code, retry_after_seconds]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: rejected
+        rejection_class:
+          const: rate_limit
+        policy_version:
+          type: string
+        reason_code:
+          type: string
+          minLength: 1
+          maxLength: 100
+        retry_after_seconds:
+          type: integer
+          minimum: 1
+    AiResult:
+      type: object
+      additionalProperties: false
+      required: [text, source_type]
+      properties:
+        text:
+          type: string
+        source_type:
+          type: string
+          enum: [system_course, reviewed_content, ai_assisted, user_upload, mixed]
+    RewardSummary:
+      type: object
+      additionalProperties: false
+      required: [experience, coins, item_ids]
+      properties:
+        experience:
+          type: integer
+          minimum: 0
+        coins:
+          type: integer
+          minimum: 0
+        item_ids:
+          type: array
+          items:
+            type: string
+        title_granted:
+          type: string
+    EnergySettlement:
+      type: object
+      additionalProperties: false
+      required: [current, maximum, delta]
+      properties:
+        current:
+          type: integer
+          minimum: 0
+        maximum:
+          type: integer
+          minimum: 0
+        delta:
+          type: integer
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, code, message, retryable]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+  responses:
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: The authenticated actor is not allowed to use this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: The intent is malformed, out of bounds, or not allowed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    IdempotencyConflict:
+      description: The idempotency key was already used with a different request fingerprint.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    AiPolicyRejected:
+      description: The AI Gateway rejected the request because policy or input validation did not permit processing.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiRequestPolicyRejectedResponse'
+    AiRateLimited:
+      description: The AI Gateway rejected the request because a rate, concurrency, quota, or budget limit was reached.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiRequestRateLimitedResponse'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
