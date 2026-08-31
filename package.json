@@ -4,7 +4,8 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts"
+    "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts",
+    "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts"
   },
   "devDependencies": {
     "@redocly/openapi-core": "2.49.0",

@@ -1,0 +1,287 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const {
+  ConfigurationError,
+  loadConfiguration,
+} = require("../../services/api/src/platform/config/configuration.ts");
+const {
+  createRequestContext,
+} = require("../../services/api/src/platform/http/request-context.ts");
+const {
+  PlatformError,
+  toPublicErrorResponse,
+} = require("../../services/api/src/platform/errors/error-catalog.ts");
+const {
+  InMemorySecretProvider,
+} = require("../../services/api/src/platform/security/secret-provider.ts");
+const {
+  InMemoryTelemetry,
+} = require("../../services/api/src/platform/observability/telemetry.ts");
+const {
+  InMemoryDatabase,
+} = require("../../services/api/src/platform/persistence/database.ts");
+const {
+  InMemoryCache,
+} = require("../../services/api/src/platform/cache/cache.ts");
+const {
+  InMemoryMessageBus,
+} = require("../../services/api/src/platform/messaging/message-bus.ts");
+const {
+  PlatformHealthChecker,
+} = require("../../services/api/src/platform/health.ts");
+
+const repositoryRoot = path.resolve(__dirname, "../..");
+const environmentNames = ["local", "staging", "production"];
+
+function readEnvironmentExample(environment) {
+  const source = fs.readFileSync(
+    path.join(repositoryRoot, "infra", "environments", `${environment}.env.example`),
+    "utf8",
+  );
+  return Object.fromEntries(
+    source
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => {
+        const separator = line.indexOf("=");
+        assert.ok(separator > 0, `invalid environment line: ${line}`);
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+}
+
+function cloneEnvironment(environment) {
+  return { ...readEnvironmentExample(environment) };
+}
+
+test("environment examples load with explicit isolated resource identities", () => {
+  for (const environment of environmentNames) {
+    const values = readEnvironmentExample(environment);
+    const configuration = loadConfiguration(values);
+
+    assert.equal(configuration.environment, environment);
+    assert.match(configuration.resources.databaseResourceId, new RegExp(`^lijing-${environment}-`));
+    assert.match(configuration.resources.redisResourceId, new RegExp(`^lijing-${environment}-`));
+    assert.match(configuration.resources.objectStorageResourceId, new RegExp(`^lijing-${environment}-`));
+    assert.match(configuration.resources.messageBusResourceId, new RegExp(`^lijing-${environment}-`));
+    assert.equal(configuration.ai.providerProjectId, `lijing-${environment}-ai`);
+    assert.equal(configuration.ai.budgetId, `budget.lijing.${environment}`);
+    assert.equal(configuration.security.secretNamespace, `lijing/${environment}`);
+
+    const serialized = JSON.stringify(values);
+    assert.doesNotMatch(serialized, /sk-[A-Za-z0-9]{16,}/);
+    assert.doesNotMatch(serialized, /-----BEGIN [A-Z ]+-----/);
+  }
+});
+
+test("configuration rejects missing, malformed, out-of-range, and cross-environment values", () => {
+  const missing = cloneEnvironment("local");
+  delete missing.DATABASE_RESOURCE_ID;
+  assert.throws(
+    () => loadConfiguration(missing),
+    (error) => error instanceof ConfigurationError && /DATABASE_RESOURCE_ID/.test(error.message),
+  );
+
+  const invalidNumber = cloneEnvironment("local");
+  invalidNumber.MESSAGE_MAX_ATTEMPTS = "0";
+  assert.throws(
+    () => loadConfiguration(invalidNumber),
+    (error) => error instanceof ConfigurationError && /MESSAGE_MAX_ATTEMPTS/.test(error.message),
+  );
+
+  const invalidBoolean = cloneEnvironment("local");
+  invalidBoolean.OBJECT_STORAGE_PRIVATE = "sometimes";
+  assert.throws(
+    () => loadConfiguration(invalidBoolean),
+    (error) => error instanceof ConfigurationError && /OBJECT_STORAGE_PRIVATE/.test(error.message),
+  );
+
+  const crossEnvironment = cloneEnvironment("staging");
+  crossEnvironment.DATABASE_CREDENTIAL_REF = "secret://lijing/production/database";
+  assert.throws(
+    () => loadConfiguration(crossEnvironment),
+    (error) => error instanceof ConfigurationError && /production identity/i.test(error.message),
+  );
+
+  const invalidProduction = cloneEnvironment("production");
+  invalidProduction.REDIS_RESOURCE_ID = "lijing-staging-cache";
+  assert.throws(
+    () => loadConfiguration(invalidProduction),
+    (error) => error instanceof ConfigurationError && /REDIS_RESOURCE_ID/.test(error.message),
+  );
+});
+
+test("request context produces traceable but safe log fields", () => {
+  const context = createRequestContext({
+    traceId: "11111111-1111-4111-8111-111111111111",
+    requestId: "22222222-2222-4222-8222-222222222222",
+    clientVersion: "1.2.3",
+    deviceFingerprint: "device-fingerprint-that-must-not-be-logged",
+    actorId: "13800138000",
+  }, { deviceHashKey: "test-only-device-hash-key" });
+
+  const safeFields = context.toSafeLogFields();
+  const serialized = JSON.stringify(safeFields);
+
+  assert.equal(safeFields.trace_id, "11111111-1111-4111-8111-111111111111");
+  assert.equal(safeFields.request_id, "22222222-2222-4222-8222-222222222222");
+  assert.equal(safeFields.client_version, "1.2.3");
+  assert.match(safeFields.device_id_hash, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(safeFields.actor_id, undefined);
+  assert.doesNotMatch(serialized, /device-fingerprint-that-must-not-be-logged/);
+  assert.doesNotMatch(serialized, /13800138000/);
+  assert.doesNotMatch(serialized, /password|authorization|bearer|conversation/i);
+});
+
+test("error catalog maps internal failures to stable safe responses", () => {
+  const requestId = "33333333-3333-4333-8333-333333333333";
+  const internalFailure = new PlatformError(
+    "INTERNAL_ERROR",
+    "provider key sk-live-not-for-logs caused a stack trace",
+    { cause: new Error("private provider response body") },
+  );
+  const response = toPublicErrorResponse(internalFailure, requestId);
+
+  assert.deepEqual(response, {
+    request_id: requestId,
+    code: "internal_error",
+    message: "Something went wrong.",
+    retryable: true,
+  });
+  assert.doesNotMatch(JSON.stringify(response), /provider|sk-live|stack|private/i);
+
+  const rateLimited = toPublicErrorResponse(new PlatformError("RATE_LIMITED"), requestId);
+  assert.equal(rateLimited.code, "rate_limited");
+  assert.equal(rateLimited.retryable, true);
+});
+
+test("health checks distinguish application, database, cache, queue, and object storage", async () => {
+  const database = new InMemoryDatabase();
+  const cache = new InMemoryCache();
+  const messageBus = new InMemoryMessageBus();
+  const objectStorage = {
+    async healthCheck() {
+      return { dependency: "object_storage", status: "up", latency_ms: 0, reason_code: "ok" };
+    },
+  };
+  const health = await new PlatformHealthChecker({ database, cache, queue: messageBus, objectStorage }).check();
+
+  assert.equal(health.status, "up");
+  assert.deepEqual(Object.keys(health.dependencies).sort(), [
+    "application",
+    "cache",
+    "database",
+    "object_storage",
+    "queue",
+  ]);
+  for (const dependency of Object.values(health.dependencies)) {
+    assert.equal(dependency.status, "up");
+    assert.equal(typeof dependency.latency_ms, "number");
+    assert.match(dependency.reason_code, /^[a-z0-9_]+$/);
+  }
+});
+
+test("secret, database, and cache ports use deterministic in-memory adapters", async () => {
+  const secrets = new InMemorySecretProvider({ "test/reference": "synthetic-value" });
+  assert.deepEqual(await secrets.getSecret("test/reference"), {
+    status: "found",
+    name: "test/reference",
+    value: "synthetic-value",
+  });
+  assert.deepEqual(await secrets.getSecret("missing/reference"), {
+    status: "not_found",
+    name: "missing/reference",
+    reason_code: "secret_not_found",
+  });
+
+  const database = new InMemoryDatabase();
+  await database.set("account-1", { state: "active" });
+  assert.deepEqual(await database.get("account-1"), { state: "active" });
+
+  const cache = new InMemoryCache({ defaultTtlSeconds: 60 });
+  await cache.set("progress:account-1", { level: 2 });
+  assert.deepEqual(await cache.get("progress:account-1"), { level: 2 });
+  assert.equal(await cache.delete("progress:account-1"), true);
+  assert.equal(await cache.get("progress:account-1"), undefined);
+});
+
+test("message bus deduplicates successful delivery and dead-letters after bounded retries", async () => {
+  const bus = new InMemoryMessageBus({ defaultMaxAttempts: 3, retryDelayMs: 0 });
+  let successfulAttempts = 0;
+  let failedAttempts = 0;
+
+  bus.subscribe("LearningFactRecorded", async () => {
+    successfulAttempts += 1;
+    if (successfulAttempts < 3) throw new Error("provider body must not be retained");
+  }, { consumerId: "mastery" });
+  bus.subscribe("LearningFactRejected", async () => {
+    failedAttempts += 1;
+    throw new Error("private failure detail");
+  }, { consumerId: "review" });
+
+  const successfulEvent = {
+    event_id: "44444444-4444-4444-8444-444444444444",
+    event_type: "LearningFactRecorded",
+    event_version: 1,
+    aggregate_id: "fact-1",
+    request_id: "55555555-5555-4555-8555-555555555555",
+    occurred_at: "2026-08-31T00:00:00.000Z",
+    payload: { result_code: "correct" },
+  };
+  const failedEvent = {
+    ...successfulEvent,
+    event_id: "66666666-6666-4666-8666-666666666666",
+    event_type: "LearningFactRejected",
+  };
+
+  await bus.publish(successfulEvent);
+  await bus.publish(successfulEvent);
+  await bus.publish(failedEvent);
+
+  assert.equal(successfulAttempts, 3);
+  assert.equal(failedAttempts, 3);
+  assert.equal(bus.getDeadLetters().length, 1);
+  assert.deepEqual(bus.getDeadLetters()[0], {
+    event_id: failedEvent.event_id,
+    event_type: failedEvent.event_type,
+    consumer_id: "review",
+    attempts: 3,
+    reason_code: "handler_failed",
+  });
+  assert.doesNotMatch(JSON.stringify(bus.getDeadLetters()), /private failure|provider body|correct/i);
+});
+
+test("telemetry records required dimensions and redacts sensitive labels", () => {
+  const telemetry = new InMemoryTelemetry({ serviceName: "lijing-api", environment: "local" });
+  telemetry.incrementCounter("api_requests_total", 1, {
+    route: "/api/v1/health",
+    outcome: "success",
+    status_code: "200",
+    prompt: "full conversation body must not be recorded",
+    phone: "13800138000",
+  });
+  telemetry.observeHistogram("api_latency_ms", 12, {
+    route: "/api/v1/health",
+    outcome: "success",
+    dependency: "application",
+  });
+  const trace = telemetry.startTrace("http_request", {
+    trace_id: "77777777-7777-4777-8777-777777777777",
+    authorization: "Bearer test",
+  });
+  trace.end("ok");
+
+  const snapshot = telemetry.snapshot();
+  const serialized = JSON.stringify(snapshot);
+  assert.equal(snapshot.counters[0].labels.environment, "local");
+  assert.equal(snapshot.counters[0].labels.service, "lijing-api");
+  assert.equal(snapshot.counters[0].labels.route, "/api/v1/health");
+  assert.equal(snapshot.counters[0].labels.outcome, "success");
+  assert.equal(snapshot.histograms[0].labels.dependency, "application");
+  assert.equal(snapshot.traces[0].labels.trace_id, "77777777-7777-4777-8777-777777777777");
+  assert.doesNotMatch(serialized, /full conversation|13800138000|Bearer test|authorization/i);
+});
