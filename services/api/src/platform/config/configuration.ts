@@ -138,6 +138,7 @@ function validateEnvironmentIdentity(values, environment, issues) {
   }
 
   const exactIdentities = {
+    DATABASE_NAME: `lijing_${environment}`,
     REDIS_NAMESPACE: `lijing-${environment}`,
     MESSAGE_BUS_TOPIC: `lijing-${environment}-events`,
     AI_PROVIDER_PROJECT_ID: `lijing-${environment}-ai`,

@@ -128,6 +128,16 @@ test("configuration rejects missing, malformed, out-of-range, and cross-environm
   );
 });
 
+test("configuration rejects a database name from another environment", () => {
+  const staging = cloneEnvironment("staging");
+  staging.DATABASE_NAME = "lijing_production";
+
+  assert.throws(
+    () => loadConfiguration(staging),
+    (error) => error instanceof ConfigurationError && /DATABASE_NAME/.test(error.message),
+  );
+});
+
 test("request context produces traceable but safe log fields", () => {
   const context = createRequestContext({
     traceId: "11111111-1111-4111-8111-111111111111",
@@ -183,6 +193,16 @@ test("error catalog maps internal failures to stable safe responses", () => {
   const rateLimited = toPublicErrorResponse(new PlatformError("RATE_LIMITED"), requestId);
   assert.equal(rateLimited.code, "rate_limited");
   assert.equal(rateLimited.retryable, true);
+});
+
+test("public error responses replace invalid request IDs with fresh UUIDs", () => {
+  for (const invalidRequestId of ["Authorization", "req/../../prod", "not-a-uuid"]) {
+    const response = toPublicErrorResponse(new PlatformError("INTERNAL_ERROR"), invalidRequestId);
+
+    assert.match(response.request_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.notEqual(response.request_id, invalidRequestId);
+    assert.doesNotMatch(JSON.stringify(response), /Authorization|req\/\.\.\/\.\.\/prod|not-a-uuid/);
+  }
 });
 
 test("health checks distinguish application, database, cache, queue, and object storage", async () => {

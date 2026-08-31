@@ -1,4 +1,4 @@
-const crypto = require("node:crypto");
+const { normalizeRequestId } = require("../http/correlation-id.ts");
 
 const ERROR_CATALOG = Object.freeze({
   INVALID_REQUEST: Object.freeze({ publicCode: "invalid_request", publicMessage: "The request is invalid.", retryable: false, httpStatus: 400 }),
@@ -30,10 +30,10 @@ function catalogEntryFor(error) {
   return ERROR_CATALOG.INTERNAL_ERROR;
 }
 
-function toPublicErrorResponse(error, requestId = crypto.randomUUID()) {
+function toPublicErrorResponse(error, requestId) {
   const definition = catalogEntryFor(error);
   return {
-    request_id: typeof requestId === "string" ? requestId : crypto.randomUUID(),
+    request_id: normalizeRequestId(requestId),
     code: definition.publicCode,
     message: definition.publicMessage,
     retryable: definition.retryable,

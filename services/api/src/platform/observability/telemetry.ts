@@ -1,12 +1,11 @@
 const crypto = require("node:crypto");
+const { isValidRequestId, isValidTraceId } = require("../http/correlation-id.ts");
 
 const SENSITIVE_LABEL_KEYS = /authorization|cookie|password|token|secret|credential|api[_-]?key|phone|mobile|prompt|response|conversation|body|content|url|query/i;
 const EMAIL_VALUE_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SECRET_VALUE_PATTERN = /bearer(?:\s|$)|authorization|password|secret|token|credential|api[_-]?key|-----BEGIN|sk-[a-z0-9]/i;
 const IDENTIFIER_VALUE_PATTERN = /(?:^|[-_.:])(account|actor|device|member|user|phone|email)(?:[-_.:]|$)/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const W3C_TRACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_SLUG_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/i;
 const ROUTE_PATTERN = /^\/(?:api\/v[1-9][0-9]*|internal)(?:\/(?:[a-z][a-z0-9_-]*|\{[a-z][a-z0-9_]*\}|:[a-z][a-z0-9_]*))*$/i;
 const VERSION_PATTERN = /^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][a-z0-9.-]+)?$/i;
@@ -69,20 +68,6 @@ function safeMetricName(name) {
     throw new TypeError("metric name must contain only metric-safe characters");
   }
   return name;
-}
-
-function hasNonZeroHex(value) {
-  return /[1-9a-f]/i.test(value);
-}
-
-function isValidRequestId(value) {
-  return typeof value === "string" && UUID_V4_PATTERN.test(value) && hasNonZeroHex(value);
-}
-
-function isValidTraceId(value) {
-  return typeof value === "string" &&
-    ((UUID_V4_PATTERN.test(value) && hasNonZeroHex(value)) ||
-      (W3C_TRACE_ID_PATTERN.test(value) && hasNonZeroHex(value)));
 }
 
 function isValidDeviceHash(value) {

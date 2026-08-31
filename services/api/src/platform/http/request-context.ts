@@ -1,25 +1,7 @@
 const crypto = require("node:crypto");
+const { normalizeRequestId, normalizeTraceId } = require("./correlation-id.ts");
 
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const W3C_TRACE_ID_PATTERN = /^[0-9a-f]{32}$/i;
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
-
-function hasNonZeroHex(value) {
-  return /[1-9a-f]/i.test(value);
-}
-
-function normalizeRequestId(value) {
-  if (typeof value === "string" && UUID_V4_PATTERN.test(value.trim()) && hasNonZeroHex(value.trim())) return value.trim();
-  return crypto.randomUUID();
-}
-
-function normalizeTraceId(value) {
-  if (typeof value !== "string") return crypto.randomUUID();
-  const normalized = value.trim();
-  if (UUID_V4_PATTERN.test(normalized) && hasNonZeroHex(normalized)) return normalized;
-  if (W3C_TRACE_ID_PATTERN.test(normalized) && hasNonZeroHex(normalized)) return normalized;
-  return crypto.randomUUID();
-}
 
 function normalizeClientVersion(value) {
   if (typeof value !== "string") return "unknown";
