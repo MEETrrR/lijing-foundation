@@ -210,6 +210,31 @@ test("direct RequestContext construction sanitizes client version and device has
 
   assert.equal(validSafeFields.client_version, "1.2.3");
   assert.equal(validSafeFields.device_id_hash, `sha256:${"a".repeat(64)}`);
+
+  for (const unsafeActorId of ["learner@example.com", "req/../../prod", "Bearer secret-token", "13800138000"]) {
+    const unsafeActorContext = new RequestContext({
+      traceId: validTraceId,
+      requestId: validRequestId,
+      clientVersion: "1.2.3",
+      actorId: unsafeActorId,
+    });
+    const unsafeActorFields = unsafeActorContext.toSafeLogFields();
+    const serialized = JSON.stringify(unsafeActorFields);
+
+    assert.equal(unsafeActorContext.actorId, undefined);
+    assert.equal(unsafeActorFields.actor_id, undefined);
+    assert.doesNotMatch(serialized, new RegExp(unsafeActorId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  const safeActorContext = new RequestContext({
+    traceId: validTraceId,
+    requestId: validRequestId,
+    clientVersion: "1.2.3",
+    actorId: "actor.internal:1",
+  });
+
+  assert.equal(safeActorContext.actorId, "actor.internal:1");
+  assert.equal(safeActorContext.toSafeLogFields().actor_id, "actor.internal:1");
 });
 
 test("error catalog maps internal failures to stable safe responses", () => {

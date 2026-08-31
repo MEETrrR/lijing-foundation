@@ -42,7 +42,7 @@ class RequestContext {
     this.requestId = normalizeRequestId(requestId);
     this.clientVersion = normalizeClientVersion(clientVersion);
     this.deviceIdHash = normalizeDeviceIdHash(deviceIdHash);
-    this.actorId = actorId;
+    this.actorId = safeIdentifier(actorId);
   }
 
   toSafeLogFields() {
