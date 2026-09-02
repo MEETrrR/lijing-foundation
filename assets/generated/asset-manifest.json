@@ -1,0 +1,50 @@
+{
+  "manifest_version": "0.1.0",
+  "generated_at": "2026-08-31",
+  "world": "starforged-frontier",
+  "review_status": "candidate",
+  "assets": [
+    {
+      "asset_id": "assistant-portrait-v1",
+      "path": "assets/generated/source/assistant-portrait-v1.png",
+      "role": "runtime-candidate",
+      "usage": ["assistant_avatar", "welcome_state", "ai_companion"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1254,
+      "height": 1254,
+      "sha256": "8c2bd5cc34b5e0caecde0b1c051556dc68efec2ac342c14339c3bc835ad58475",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "Directly usable as a square portrait. Create a transparent cutout only as a derived asset after the visual direction is approved."
+    },
+    {
+      "asset_id": "assistant-character-sheet-v1",
+      "path": "assets/generated/source/assistant-character-sheet-v1.png",
+      "role": "reference-only",
+      "usage": ["character_consistency_reference", "future_expression_generation", "future_equipment_generation"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "56a9387886adecbee47176533fff4866c13c5f0c9f2e14b779af49379692fa0d",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "Keep as the canonical character reference. Do not display the full sheet in the production user flow."
+    },
+    {
+      "asset_id": "worldbuilding-board-v1",
+      "path": "assets/generated/source/worldbuilding-board-v1.png",
+      "role": "reference-only",
+      "usage": ["world_style_reference", "future_scene_generation", "future_map_generation"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1254,
+      "height": 1254,
+      "sha256": "cddb55bffcd8d2be3990ff1e86aca49b20303469ebb8d4072cfd30c8a45c5c0c",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "A 3x3 worldbuilding board, not a final world-map background. Generate individual scene backgrounds from it later."
+    }
+  ]
+}
