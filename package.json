@@ -8,7 +8,6 @@
     "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts",
     "image:config:check": "node --no-warnings tools/image-generation/cli.mjs config:check",
     "image:generate": "node --no-warnings tools/image-generation/cli.mjs generate",
-    "image:register": "node --no-warnings tools/image-generation/cli.mjs register",
     "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs"
   },
   "devDependencies": {
