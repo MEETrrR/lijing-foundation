@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,6 +17,19 @@ test("loads config and redacts secrets", () => {
   assert.equal(summary.hasApiKey, true);
   assert.equal(summary.model, "gpt-image-test");
   assert.doesNotMatch(JSON.stringify(summary), /test-secret/);
+});
+
+test("uses repoRoot for default env file and validates timeout", () => {
+  const config = loadImageConfig({ repoRoot, env: env({ IMAGE_GENERATION_TIMEOUT_MS: "7" }), envFilePath: null });
+  assert.equal(config.timeoutMs, 7);
+  for (const timeout of ["0", "1.5", "Infinity", "-1"]) {
+    assert.throws(() => loadImageConfig({ env: env({ IMAGE_GENERATION_TIMEOUT_MS: timeout }), envFilePath: null }), /IMAGE_GENERATION_TIMEOUT_MS must be a positive integer/);
+  }
+});
+
+test("preserves equals signs in parsed argument values", async () => {
+  const parsed = parseArgs(["generate", "--prompt=a=b=c"]);
+  assert.equal(parsed.prompt, "a=b=c");
 });
 
 test("rejects invalid endpoint and missing selected key", () => {
@@ -51,5 +64,24 @@ test("reports provider status without leaking key or response", async () => {
   await tempOutput(async () => {
     const key = "private-key";
     await assert.rejects(runGenerate({ env: env({ GPT_IMAGE_API_KEY: key }), envFilePath: null, prompt: "failure", outputPath: "assets/generated/failure.png", fetchImpl: async () => new Response(`details ${key}`, { status: 429 }) }), (error) => /gpt.*429/.test(error.message) && !error.message.includes(key) && !error.message.includes("details"));
+  });
+});
+
+test("rejects output through a symlink when supported", async (t) => {
+  await tempOutput(async (dir) => {
+    const outside = await mkdtemp(path.join(tmpdir(), "image-generation-outside-"));
+    const link = path.join(dir, "linked");
+    try {
+      await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      await rm(outside, { recursive: true, force: true });
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip(`symlink unavailable: ${error.code}`);
+      throw error;
+    }
+    try {
+      await assert.rejects(runGenerate({ env: env(), repoRoot, envFilePath: null, prompt: "escape", outputPath: path.relative(repoRoot, path.join(link, "image.png")), fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { status: 200 }) }), /output path must stay inside repository root/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

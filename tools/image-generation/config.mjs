@@ -14,7 +14,8 @@ export function parseEnvText(text) {
 }
 
 export function loadImageConfig(options = {}) {
-  const envFilePath = options.envFilePath === undefined ? path.resolve("infra/environments/image-generation.env") : options.envFilePath;
+  const repoRoot = path.resolve(options.repoRoot || path.resolve(import.meta.dirname, "../.."));
+  const envFilePath = options.envFilePath === undefined ? path.join(repoRoot, "infra/environments/image-generation.env") : options.envFilePath;
   let fileEnv = {};
   if (envFilePath) { try { fileEnv = parseEnvText(readFileSync(envFilePath, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; } }
   const values = { ...fileEnv, ...(options.env || process.env) };
@@ -27,7 +28,9 @@ export function loadImageConfig(options = {}) {
   try { const url = new URL(endpoint); if (!["http:", "https:"].includes(url.protocol)) throw new Error(); } catch { throw new Error(`${prefix}_IMAGE_API_ENDPOINT must be an http or https URL`); }
   if (!apiKey.trim()) throw new Error(`${prefix}_IMAGE_API_KEY is required`);
   if (!model.trim()) throw new Error(`${prefix}_IMAGE_MODEL is required`);
-  return { provider, endpoint, apiKey, model, authHeader: values[`${prefix}_IMAGE_AUTH_HEADER`] || "Authorization", authPrefix: values[`${prefix}_IMAGE_AUTH_PREFIX`] ?? "Bearer", outputDir: values.IMAGE_GENERATION_OUTPUT_DIR || "assets/generated/source", size: values.IMAGE_GENERATION_DEFAULT_SIZE || "1024x1024", quality: values.IMAGE_GENERATION_DEFAULT_QUALITY || "auto", timeoutMs: Number(values.IMAGE_GENERATION_TIMEOUT_MS || 120000), repoRoot: path.resolve(options.repoRoot || ".") };
+  const timeoutMs = Number(values.IMAGE_GENERATION_TIMEOUT_MS || 120000);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error("IMAGE_GENERATION_TIMEOUT_MS must be a positive integer");
+  return { provider, endpoint, apiKey, model, authHeader: values[`${prefix}_IMAGE_AUTH_HEADER`] || "Authorization", authPrefix: values[`${prefix}_IMAGE_AUTH_PREFIX`] ?? "Bearer", outputDir: values.IMAGE_GENERATION_OUTPUT_DIR || "assets/generated/source", size: values.IMAGE_GENERATION_DEFAULT_SIZE || "1024x1024", quality: values.IMAGE_GENERATION_DEFAULT_QUALITY || "auto", timeoutMs, repoRoot };
 }
 
 export function redactedSummary(config) {

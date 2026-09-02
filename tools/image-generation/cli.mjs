@@ -1,10 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadImageConfig, redactedSummary } from "./config.mjs";
 
 export function parseArgs(argv) {
   const result = { command: argv[0] };
-  for (let i = 1; i < argv.length; i += 1) { const item = argv[i]; if (!item.startsWith("--")) continue; const [key, inline] = item.slice(2).split("=", 2); const value = inline ?? argv[++i]; result[{ provider: "provider", prompt: "prompt", output: "output", size: "size", quality: "quality", envFile: "envFilePath" }[key] || key] = value; }
+  for (let i = 1; i < argv.length; i += 1) { const item = argv[i]; if (!item.startsWith("--")) continue; const raw = item.slice(2); const equals = raw.indexOf("="); const key = equals < 0 ? raw : raw.slice(0, equals); const inline = equals < 0 ? undefined : raw.slice(equals + 1); const value = inline ?? argv[++i]; result[{ provider: "provider", prompt: "prompt", output: "output", size: "size", quality: "quality", envFile: "envFilePath" }[key] || key] = value; }
   return result;
 }
 
@@ -15,8 +15,11 @@ export async function runGenerate(options = {}) {
   const config = loadImageConfig(options);
   const output = options.outputPath || options.output || path.join(config.outputDir, "image.png");
   const absolute = path.resolve(config.repoRoot, output);
-  const root = path.resolve(config.repoRoot);
-  if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root");
+  const root = await realpath(config.repoRoot);
+  await mkdir(path.dirname(absolute), { recursive: true });
+  const parent = await realpath(path.dirname(absolute));
+  if (parent !== root && !parent.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root");
+  try { const existing = await realpath(absolute); if (existing !== absolute && !existing.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root"); } catch (error) { if (error.code !== "ENOENT") throw error; }
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
     const auth = config.authPrefix.trim() ? `${config.authPrefix.trim()} ${config.apiKey}` : config.apiKey;
@@ -26,7 +29,7 @@ export async function runGenerate(options = {}) {
     if (item?.b64_json) bytes = Buffer.from(item.b64_json, "base64");
     else if (item?.url) { const image = await (options.fetchImpl || fetch)(item.url, { signal: controller.signal }); if (!image.ok) throw new Error(`${config.provider} provider returned HTTP ${image.status}`); bytes = Buffer.from(await image.arrayBuffer()); }
     else throw new Error(`${config.provider} provider returned no usable image data`);
-    await mkdir(path.dirname(absolute), { recursive: true }); await writeFile(absolute, bytes);
+    await writeFile(absolute, bytes);
     const relative = path.relative(root, absolute).replaceAll(path.sep, "/"); console.log(`saved ${relative}`); return [relative];
   } catch (error) { if (/provider returned HTTP/.test(error.message)) throw error; throw new Error(`${config.provider} provider request failed`); } finally { clearTimeout(timer); }
 }
