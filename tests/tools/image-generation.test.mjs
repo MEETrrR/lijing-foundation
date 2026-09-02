@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { access, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -69,7 +68,7 @@ test("reports provider status without leaking key or response", async () => {
 
 test("rejects output through a symlink when supported", async (t) => {
   await tempOutput(async (dir) => {
-    const outside = await mkdtemp(path.join(tmpdir(), "image-generation-outside-"));
+    const outside = await mkdtemp(path.join(path.dirname(repoRoot), "image-generation-outside-"));
     const link = path.join(dir, "linked");
     try {
       await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
@@ -79,7 +78,9 @@ test("rejects output through a symlink when supported", async (t) => {
       throw error;
     }
     try {
-      await assert.rejects(runGenerate({ env: env(), repoRoot, envFilePath: null, prompt: "escape", outputPath: path.relative(repoRoot, path.join(link, "image.png")), fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { status: 200 }) }), /output path must stay inside repository root/);
+      const missingParent = path.join(link, "missing-parent");
+      await assert.rejects(runGenerate({ env: env(), repoRoot, envFilePath: null, prompt: "escape", outputPath: path.relative(repoRoot, path.join(missingParent, "image.png")), fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: "aW1hZ2U=" }] }), { status: 200 }) }), /output path must stay inside repository root/);
+      await assert.rejects(access(path.join(outside, "missing-parent")), /ENOENT/);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }

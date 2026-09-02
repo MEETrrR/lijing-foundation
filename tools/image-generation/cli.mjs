@@ -16,10 +16,21 @@ export async function runGenerate(options = {}) {
   const output = options.outputPath || options.output || path.join(config.outputDir, "image.png");
   const absolute = path.resolve(config.repoRoot, output);
   const root = await realpath(config.repoRoot);
-  await mkdir(path.dirname(absolute), { recursive: true });
-  const parent = await realpath(path.dirname(absolute));
-  if (parent !== root && !parent.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root");
+  let candidate = path.dirname(absolute);
+  while (true) {
+    try {
+      const existing = await realpath(candidate);
+      if (existing !== root && !existing.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root");
+      break;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const parent = path.dirname(candidate);
+      if (parent === candidate) throw new Error("output path must stay inside repository root");
+      candidate = parent;
+    }
+  }
   try { const existing = await realpath(absolute); if (existing !== absolute && !existing.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root"); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  await mkdir(path.dirname(absolute), { recursive: true });
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
     const auth = config.authPrefix.trim() ? `${config.authPrefix.trim()} ${config.apiKey}` : config.apiKey;
