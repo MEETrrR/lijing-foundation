@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { loadImageConfig, redactedSummary } from "../../tools/image-generation/config.mjs";
-import { runGenerate } from "../../tools/image-generation/cli.mjs";
+import { parseArgs, runGenerate } from "../../tools/image-generation/cli.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 function env(overrides = {}) { return { IMAGE_GENERATION_PROVIDER: "gpt", GPT_IMAGE_API_ENDPOINT: "https://gpt.example.test/images", GPT_IMAGE_API_KEY: "test-secret", GPT_IMAGE_MODEL: "gpt-image-test", GPT_IMAGE_AUTH_HEADER: "Authorization", GPT_IMAGE_AUTH_PREFIX: "Bearer", ...overrides }; }
@@ -35,6 +35,15 @@ test("posts auth and body, then saves base64 response", async () => {
     assert.deepEqual(JSON.parse(request.init.body), { model: "gpt-image-test", prompt: "a red kite", n: 1, size: "512x512", quality: "high" });
     assert.equal(new Headers(request.init.headers).get("authorization"), "Bearer test-secret");
     assert.equal((await readFile(path.join(dir, "image.png"))).toString(), "image-bytes");
+  });
+});
+
+test("honors the output path parsed from the CLI", async () => {
+  await tempOutput(async (dir) => {
+    const parsed = parseArgs(["generate", "--prompt", "parsed path", "--output", path.relative(repoRoot, path.join(dir, "parsed.png"))]);
+    const saved = await runGenerate({ ...parsed, env: env(), envFilePath: null, fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("parsed").toString("base64") }] }), { status: 200 }) });
+    assert.equal(saved[0], parsed.output.replaceAll(path.sep, "/"));
+    assert.equal((await readFile(path.join(dir, "parsed.png"))).toString(), "parsed");
   });
 });
 

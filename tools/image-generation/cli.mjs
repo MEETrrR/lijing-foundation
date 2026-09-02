@@ -13,7 +13,7 @@ export async function runConfigCheck(options = {}) { const summary = redactedSum
 export async function runGenerate(options = {}) {
   if (!options.prompt?.trim()) throw new Error("--prompt is required");
   const config = loadImageConfig(options);
-  const output = options.outputPath || path.join(config.outputDir, "image.png");
+  const output = options.outputPath || options.output || path.join(config.outputDir, "image.png");
   const absolute = path.resolve(config.repoRoot, output);
   const root = path.resolve(config.repoRoot);
   if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`)) throw new Error("output path must stay inside repository root");
