@@ -2,7 +2,7 @@
 
 **版本：** v1.0
 **日期：** 2026-09-03
-**状态：** 已获用户确认，待规格复核
+**状态：** 已获用户确认，已进入实施计划
 **适用范围：** 砺境考研目标选择、目标评估、院校专业推荐、学习计划与提醒自律联动
 
 ## 1. 目标
@@ -126,7 +126,7 @@
 - 院校、专业、地区、学科门类、考试科目、学制、费用和报考条件。
 - 分数线、招生规模、复试比例等指标及其统计年份。
 - 就业方向、薪资区间和样本范围；没有可靠数据时为空并附原因。
-- `source_type`：`official`、`market_sample` 或 `inferred`。
+- `source_type`：`official`、`market_sample`、`inferred` 或 `demo`；`demo` 只能用于明确标注的合成数据。
 - `source_reference`、`data_year`、`observed_at`、`updated_at`、`data_snapshot_id`。
 
 ### 6.2 用户考研画像
