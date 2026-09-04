@@ -2,6 +2,7 @@ const PATHS = {
   arrow: '<path d="M5 12h13M13 6l6 6-6 6"/>',
   chevron: '<path d="m8 5 7 7-7 7"/>',
   compass: '<circle cx="12" cy="12" r="8.5"/><path d="m15.7 8.3-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z"/>',
+  search: '<circle cx="10.8" cy="10.8" r="6.3"/><path d="m16 16 4.5 4.5"/>',
   mountain: '<path d="m3 19 6.2-9 3.1 4.1 2.3-3.2L21 19"/><path d="M8 19h13"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
   check: '<path d="m5 12 4 4L19 6"/>',

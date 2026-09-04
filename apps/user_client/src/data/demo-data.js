@@ -5,6 +5,39 @@ export const DEMO_STATE = {
     title: "初见山门",
     avatarAssetId: "assistant-portrait-v1",
   },
+  guide: {
+    selectedAssetId: "lijing-guide-heavenly-book-v1",
+    options: [
+      {
+        assetId: "lijing-guide-heavenly-book-v1",
+        kind: "book",
+        name: "天书 · 知解",
+        detail: "把复杂的问题拆成可理解的路径",
+        mark: "知",
+      },
+      {
+        assetId: "lijing-guide-pagoda-v1",
+        kind: "pagoda",
+        name: "宝塔 · 守门",
+        detail: "先立边界，再找到下一步",
+        mark: "守",
+      },
+      {
+        assetId: "lijing-guide-ding-v1",
+        kind: "ding",
+        name: "重鼎 · 镇心",
+        detail: "收住心神，稳稳走完这一阶",
+        mark: "定",
+      },
+      {
+        assetId: "lijing-guide-fan-v1",
+        kind: "fan",
+        name: "折扇 · 启思",
+        detail: "换一个角度，让思路重新流动",
+        mark: "启",
+      },
+    ],
+  },
   mountain: {
     currentHeight: 1280,
     summitHeight: 8848,
@@ -19,6 +52,9 @@ export const DEMO_STATE = {
     recovery: 48,
     energy: 64,
   },
+  activeKnowledgeId: "limits-continuity",
+  knowledgeComposerOpen: false,
+  knowledgeCaptureDraft: null,
   today: {
     completed: 2,
     total: 4,
@@ -37,10 +73,12 @@ export const DEMO_STATE = {
     { id: "goal-life", title: "建立稳定的生活节律", detail: "先照顾好脚下，再走得更远", selected: false, icon: "息" },
   ],
   knowledge: [
-    { title: "极限与连续", domain: "数学 · 当前山段", mastery: 78, state: "稳固", gua: "☲", color: "gold" },
-    { title: "导数的几何意义", domain: "数学 · 待巩固", mastery: 46, state: "回望", gua: "☵", color: "cinnabar" },
-    { title: "函数建模", domain: "应用 · 已连通", mastery: 62, state: "连通", gua: "☴", color: "blue" },
-    { title: "错题归因", domain: "方法 · 新路径", mastery: 25, state: "初探", gua: "☶", color: "rock" },
+    { id: "limits-continuity", title: "极限与连续", domain: "数学 · 当前山段", strand: "微积分基础", mastery: 78, state: "稳固", gua: "☲", color: "gold", source: "攀登 · 第 03 段", updated: "今天 09:24", summary: "连续描述的是函数在一点附近没有断开，极限则是我判断这种稳定性的入口。", note: "我现在会先看‘靠近时发生什么’，再决定要不要使用连续性的结论。", relatedIds: ["function-basics", "derivative-geometry", "error-attribution"], position: "north" },
+    { id: "function-basics", title: "函数基础", domain: "数学 · 已连通", strand: "微积分基础", mastery: 88, state: "稳固", gua: "☰", color: "blue", source: "入山 · 基础营", updated: "昨天 20:10", summary: "把输入、输出和变化关系说清楚，后面的极限与导数才有落脚处。", note: "函数不是公式本身，而是我描述关系的一种方式。", relatedIds: ["limits-continuity", "function-modeling"], position: "northwest" },
+    { id: "derivative-geometry", title: "导数的几何意义", domain: "数学 · 待巩固", strand: "微积分基础", mastery: 46, state: "回望", gua: "☵", color: "cinnabar", source: "回望 · 错题 02", updated: "今天 08:40", summary: "导数把局部变化翻译成斜率，是从‘函数是什么’走向‘函数怎样变化’的一步。", note: "我容易把导数记成公式，下一次要先画出切线，再写表达式。", relatedIds: ["limits-continuity", "function-modeling"], position: "northeast" },
+    { id: "error-attribution", title: "错题归因", domain: "方法 · 新路径", strand: "学习方法", mastery: 25, state: "初探", gua: "☶", color: "rock", source: "回望 · 归因卡 01", updated: "今天 07:55", summary: "错题不是终点，它告诉我究竟是概念、步骤还是注意力在某处断开。", note: "先标记错误发生的层级，再决定是补概念还是重走一遍步骤。", relatedIds: ["limits-continuity", "review-cycle"], position: "southwest" },
+    { id: "function-modeling", title: "函数建模", domain: "应用 · 已连通", strand: "迁移应用", mastery: 62, state: "连通", gua: "☴", color: "blue", source: "行旅 · 应用营", updated: "9 月 3 日", summary: "把现实问题翻译成变量和关系，知识才真正离开纸面，开始解释世界。", note: "建模时先问‘哪些量在变化’，再问‘它们为什么这样变化’。", relatedIds: ["function-basics", "derivative-geometry"], position: "south" },
+    { id: "review-cycle", title: "回环复习", domain: "方法 · 已建立", strand: "学习方法", mastery: 54, state: "连通", gua: "☵", color: "gold", source: "回望 · 本周节律", updated: "9 月 2 日", summary: "复习不是重复抄写，而是沿着遗忘出现的地方重新建立连接。", note: "把‘我忘了什么’写出来，比盯着正确率更能帮我找到下一步。", relatedIds: ["error-attribution", "limits-continuity"], position: "southeast" },
   ],
   achievements: [
     { title: "七日不息", detail: "连续七天留下有效学习记录", unlocked: true, mark: "01" },
