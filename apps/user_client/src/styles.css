@@ -1168,3 +1168,131 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 1ms !important; }
   .reveal-item { opacity: 1; transform: none; }
 }
+
+/* Module system v2: the world stays shared, while each kind of content gets its own posture. */
+:root {
+  --font-display: "FZKai-Z03", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
+  --font-reading: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --font-interface: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+}
+
+body, button, input, textarea, select { font-family: var(--font-interface); }
+.page-intro h1,
+.home-overview h2,
+.home-next h2,
+.task-row h3,
+.plan-route__label strong,
+.study-focus__title h2,
+.study-question h3,
+.evidence-submit .section-title h2,
+.review-top__copy h2,
+.evidence-review .section-title h2,
+.knowledge-library__heading h2,
+.knowledge-detail h2,
+.knowledge-card h3,
+.knowledge-row h3,
+.assistant-guide-card__copy strong,
+.growth-hero__copy h2,
+.achievement h3,
+.summit-tease h2,
+.map-node strong,
+.profile-card__top h2,
+.panel-heading h2,
+.state-scene h1 { font-family: var(--font-display); font-weight: 400; }
+
+.section-title h2,
+.study-focus__title p,
+.study-question h3,
+.review-top__copy p,
+.knowledge-detail__summary,
+.assistant-guide-card__copy p,
+.assistant-aside__note p,
+.growth-hero__copy p,
+.summit-tease p,
+.map-stage__caption { font-family: var(--font-reading); }
+
+.section-title h2 { font-size: 38px; line-height: 1.15; }
+.section-title { position: relative; }
+.section-title::before { content: ""; position: absolute; top: 4px; bottom: 3px; left: -16px; width: 1px; background: var(--red); opacity: .7; }
+
+/* The home overview is a spread: a red-edged reading sheet beside a dark ledger. */
+.home-overview { background: transparent; }
+.home-overview__lead { position: relative; overflow: hidden; background: rgba(247, 244, 237, .98); border-top: 1px solid rgba(169, 75, 64, .55); }
+.home-overview__lead::before { content: "今日行旅"; position: absolute; top: 39px; right: 28px; color: rgba(169, 75, 64, .4); font-family: var(--font-display); font-size: 18px; writing-mode: vertical-rl; }
+.home-overview__lead::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: var(--red); opacity: .75; }
+.home-overview__stats { color: var(--paper); background: rgba(13, 23, 26, .93); border-left: 1px solid rgba(228, 189, 112, .55); }
+.home-overview__stats .meta-line { border-color: rgba(238, 234, 224, .17); }
+.home-overview__stats .meta-line span { color: rgba(238, 234, 224, .48); }
+.home-overview__stats .meta-line strong { color: var(--paper); font-family: var(--font-display); font-size: 20px; }
+.home-overview__stats .home-overview__seal span { color: rgba(238, 234, 224, .48); }
+
+/* Large work surfaces stop behaving like identical cards. */
+.goal-selection,
+.study-focus,
+.assistant-dialog,
+.profile-card,
+.settings-list,
+.plan-head__progress,
+.plan-head__balance,
+.review-top,
+.evidence-review,
+.knowledge-detail,
+.growth-hero { box-shadow: none; }
+.goal-selection { position: relative; clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%); }
+.goal-selection::after { content: "定向"; position: absolute; top: 25px; right: 27px; color: rgba(169, 75, 64, .42); font-family: var(--font-display); font-size: 17px; writing-mode: vertical-rl; pointer-events: none; }
+.study-focus { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%); }
+.assistant-dialog { border-top-width: 1px; border-bottom: 1px solid rgba(13, 23, 26, .2); }
+.profile-card { border-top: 1px solid rgba(169, 75, 64, .46); border-bottom: 3px double rgba(189, 141, 67, .5); }
+.settings-list { border-left: 1px dashed rgba(189, 141, 67, .5); border-bottom: 1px solid rgba(13, 23, 26, .18); }
+.plan-head__progress { position: relative; background: rgba(247, 244, 237, .96); border-top: 1px solid rgba(169, 75, 64, .52); border-bottom: 1px solid var(--line-dark); }
+.plan-head__progress::after { content: "山脚 / 山脊 / 主峰"; position: absolute; right: 29px; top: 28px; color: rgba(169, 75, 64, .38); font-family: ui-monospace, monospace; font-size: 8px; writing-mode: vertical-rl; }
+.plan-head__balance { border-left: 3px solid var(--gold-light); }
+.review-top { position: relative; background: rgba(247, 244, 237, .96); border-left: 3px solid var(--red); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%); }
+.review-top::after { content: "回环"; position: absolute; top: 28px; right: 31px; color: rgba(169, 75, 64, .4); font-family: var(--font-display); font-size: 19px; writing-mode: vertical-rl; pointer-events: none; }
+.knowledge-detail { border-left: 1px solid rgba(169, 75, 64, .45); border-top-width: 1px; }
+.growth-hero { position: relative; background: rgba(247, 244, 237, .97); border-top: 1px solid rgba(189, 141, 67, .62); border-bottom: 1px solid var(--line-dark); }
+
+/* Small modules become lines, tickets, and labels instead of a repeated gray rectangle. */
+.goal-option,
+.answer-line,
+.evidence-level { background: transparent; border: 0; border-bottom: 1px solid var(--line-dark); border-left: 2px solid transparent; }
+.goal-option:hover,
+.goal-option.is-selected,
+.answer-line:hover,
+.answer-line.is-selected,
+.evidence-level:hover,
+.evidence-level.is-selected { background: rgba(247, 244, 237, .72); border-color: transparent transparent var(--line-dark) var(--red); transform: translateX(5px); }
+.goal-option__icon,
+.answer-line > span:first-child,
+.evidence-level__number { border-radius: 50%; font-family: var(--font-display); }
+.answer-line { padding-top: 14px; padding-bottom: 14px; }
+.answer-line > span:first-child { width: 29px; height: 29px; }
+.evidence-level { min-height: 70px; }
+.knowledge-trail__item { padding: 14px 4px; background: transparent; border: 0; border-bottom: 1px solid rgba(238, 234, 224, .2); }
+.knowledge-trail__item:hover { background: rgba(228, 189, 112, .08); border-color: rgba(228, 189, 112, .58); transform: translateX(5px); }
+.guide-option { background: transparent; border: 0; border-top: 1px solid rgba(238, 234, 224, .18); border-bottom: 1px solid rgba(238, 234, 224, .12); }
+.guide-option:hover,
+.guide-option.is-selected { background: rgba(228, 189, 112, .1); border-color: rgba(228, 189, 112, .72); transform: translateX(4px); }
+.achievement { border: 0; border-top: 1px solid rgba(238, 234, 224, .2); background: transparent; }
+.achievement.is-unlocked { border-color: rgba(228, 189, 112, .58); background: rgba(30, 58, 66, .42); }
+.setting-row { padding-top: 19px; padding-bottom: 19px; }
+.task-row h3 { font-size: 18px; }
+.map-node { clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%); border-left: 3px solid var(--gold); box-shadow: 0 8px 16px rgba(0, 0, 0, .12); }
+.map-node--current { border-left-color: var(--red); }
+.map-node--locked { border-left-color: var(--rock); }
+.status-axis { border: 0; border-left: 1px solid rgba(228, 189, 112, .65); border-bottom: 1px solid rgba(238, 234, 224, .18); box-shadow: none; }
+
+@media (max-width: 700px) {
+  .section-title::before { left: -10px; }
+  .section-title h2 { font-size: 31px; }
+  .home-overview__lead::before,
+  .plan-head__progress::after,
+  .goal-selection::after,
+  .review-top::after { display: none; }
+  .home-overview__stats { border-top: 1px solid rgba(228, 189, 112, .45); border-left: 0; }
+  .goal-selection,
+  .study-focus,
+  .review-top { clip-path: none; }
+  .task-row h3 { font-size: 14px; }
+  .map-node { clip-path: none; }
+}
