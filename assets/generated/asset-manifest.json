@@ -145,6 +145,20 @@
       "notes": "No-character Chinese ink background for the guide chapter; keep dialogue and selection controls in the separate HTML layer."
     },
     {
+      "asset_id": "lijing-onboarding-background-v2",
+      "path": "assets/generated/source/onboarding/onboarding-background-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["onboarding_background", "profile_goal_guidance", "companion_selection"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "eddbc7d786a7616414831250164b26a0593e19d848abd64d2e15deef3f5fab66",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "Confirmed user-provided wide Chinese ink landscape with dark cliffs, pines, stone steps, elevated pavilion, and central negative space for onboarding content."
+    },
+    {
       "asset_id": "lijing-guide-pagoda-v1",
       "path": "assets/generated/source/guides/lijing-guide-pagoda-v1.png",
       "role": "runtime-candidate",

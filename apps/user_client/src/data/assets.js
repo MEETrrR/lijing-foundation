@@ -35,6 +35,12 @@ const ASSET_CATALOG = {
     role: "chapter_background",
     alt: "云中引路殿与悬空灯火的东方水墨场景",
   },
+  "lijing-onboarding-background-v2": {
+    assetId: "lijing-onboarding-background-v2",
+    path: "/assets/generated/source/onboarding/onboarding-background-v2.png",
+    role: "onboarding_background",
+    alt: "两侧山崖与古松环抱、中央留白的国风水墨山水引导背景",
+  },
   "lijing-guide-pagoda-v1": {
     assetId: "lijing-guide-pagoda-v1",
     path: "/assets/generated/source/guides/lijing-guide-pagoda-v1.png",

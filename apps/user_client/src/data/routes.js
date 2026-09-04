@@ -26,6 +26,15 @@ export const ROUTES = {
     title: "先立一枚自己的山门印",
     description: "从今天开始，把遥远的目标拆成可以走的下一步。",
   },
+  "/onboarding": {
+    label: "初次入山",
+    chapter: "入山引导",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "入山引导 · 三道山门",
+    title: "先认识自己，再认领一盏灯",
+    description: "用几步告诉砺境你的方向，选择一个会陪你走路的书鼎。",
+  },
   "/goals": {
     label: "定向",
     chapter: "定向",

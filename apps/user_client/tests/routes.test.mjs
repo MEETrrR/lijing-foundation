@@ -27,6 +27,34 @@ test("every product chapter has a real page renderer", () => {
   }
 });
 
+test("first-visit onboarding collects a profile, a goal, a companion and feature orientation", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.onboarding.step = 1;
+  const profileHtml = renderPage("/onboarding", state);
+  assert.equal(getAsset("lijing-onboarding-background-v2")?.path, "/assets/generated/source/onboarding/onboarding-background-v2.png");
+  assert.match(profileHtml, /onboarding\/onboarding-background-v2\.png/);
+  assert.match(profileHtml, /data-demo-form="onboarding-profile"/);
+  assert.match(profileHtml, /name="school"/);
+  assert.match(profileHtml, /此刻最重要的方向/);
+
+  state.onboarding.step = 2;
+  const guideHtml = renderPage("/onboarding", state);
+  assert.match(guideHtml, /第二道山门 · 认领书鼎/);
+  assert.equal((guideHtml.match(/data-action="onboarding-select-guide"/g) ?? []).length, 4);
+  assert.match(guideHtml, /教学方式/);
+
+  state.onboarding.step = 3;
+  state.onboarding.featureIndex = 5;
+  const featureHtml = renderPage("/onboarding", state);
+  assert.match(featureHtml, /第三道山门 · 熟悉山路/);
+  assert.equal((featureHtml.match(/class="onboarding-feature-item /g) ?? []).length, 6);
+  for (const route of ["/goals", "/plan", "/study", "/review", "/knowledge", "/assistant"]) {
+    assert.match(featureHtml, new RegExp(`href="${route}" data-route="${route}"`));
+  }
+  assert.match(featureHtml, /data-feature-route="\/assistant"/);
+  assert.match(featureHtml, /完成认识，进入我的山门/);
+});
+
 test("bagua reference is registered and integrated into orientation chapters", () => {
   assert.equal(getAsset("bagua-ink-compass-v1")?.path, "/assets/generated/source/bagua-ink-compass-v1.png");
   assert.match(renderPage("/review", DEMO_STATE), /bagua-field/);
@@ -74,6 +102,7 @@ test("approved chapter backgrounds are mapped to their matching modules", () => 
     "/review": "lijing-recall-ink-v1.png",
     "/profile": "lijing-archive-ink-v2.png",
     "/assistant": "guides/lijing-guide-background-ink-v1.png",
+    "/onboarding": "onboarding/onboarding-background-v2.png",
   };
   for (const [route, filename] of Object.entries(expectedScenes)) {
     assert.match(renderShell(route, DEMO_STATE), new RegExp(`/assets/generated/source/${filename}`));
@@ -82,7 +111,7 @@ test("approved chapter backgrounds are mapped to their matching modules", () => 
 
 test("guide chapter offers gender-neutral Chinese relic guides", () => {
   const html = renderPage("/assistant", DEMO_STATE);
-  assert.match(html, /选择视觉引路物/);
+  assert.match(html, /选择你的书鼎/);
   assert.equal((html.match(/data-action="select-guide"/g) ?? []).length, 4);
   for (const assetId of ["lijing-guide-heavenly-book-v1", "lijing-guide-pagoda-v1", "lijing-guide-ding-v1", "lijing-guide-fan-v1"]) {
     assert.match(html, new RegExp(assetId));
@@ -94,9 +123,18 @@ test("guide selection renders the selected relic as the active guide", () => {
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-ding-v1";
   const html = renderPage("/assistant", state);
-  assert.match(html, /视觉层 · 非核心能力<\/span><strong>重鼎 · 镇心<\/strong>/);
+  assert.match(html, /教学人格 · 专注、减负、短行动<\/span><strong>重鼎 · 镇心<\/strong>/);
   assert.match(html, /data-guide="lijing-guide-ding-v1" aria-pressed="true"/);
   assert.match(html, /guide-option--ding is-selected/);
+});
+
+test("assistant presents companion teaching identity instead of a visual-only guide", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.guide.selectedAssetId = "lijing-guide-fan-v1";
+  const html = renderPage("/assistant", state);
+  assert.match(html, /专属教学人格/);
+  assert.match(html, /教学人格 · 类比、反例、换角度/);
+  assert.match(html, /它会改变解释、提问和反馈方式/);
 });
 
 test("feature directory exposes eight clickable directions", () => {
@@ -151,6 +189,14 @@ test("shell exposes navigation, motion controls and content landmarks", () => {
   assert.equal(html.includes('class="app-shell" data-route='), false);
   assert.equal(html.includes('<main id="main-content"'), true);
   assert.equal(html.includes("当前章节"), true);
+});
+
+test("onboarding shell replaces the global starfield with the submitted Chinese landscape", () => {
+  const html = renderShell("/onboarding", DEMO_STATE, renderPage("/onboarding", DEMO_STATE));
+  assert.match(html, /class="app-shell app-shell--onboarding"/);
+  assert.match(html, /onboarding\/onboarding-background-v2\.png/);
+  assert.match(html, /data-scene="onboarding"/);
+  assert.doesNotMatch(html, /starforged-frontier-scene-v1\.png/);
 });
 
 test("native browser entry loads CSS as a stylesheet, not a JS module", async () => {

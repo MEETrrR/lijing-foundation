@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getCompanionPrompt } from "./server/companion-prompts.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const CLIENT_ROOT = path.join(ROOT, "apps", "user_client");
@@ -159,11 +160,12 @@ async function handleAiRoute(request, response, pathname) {
         sendJson(response, 400, { error: "prompt_required" }, requestId);
         return;
       }
+      const companion = getCompanionPrompt(clip(body.companion_id, 100));
       const text = await callAi([
-        { role: "system", content: "你是砺境的行动引路人。只帮助用户把当前学习困难变成一个具体、可在明天完成的动作。不要宣称用户已经掌握，不要编造用户没有提供的学习事实。用中文回答，先指出问题，再给出一个最小行动。" },
+        { role: "system", content: companion.prompt },
         { role: "user", content: `当前上下文：${clip(JSON.stringify(body.context || {}), 3000)}\n用户问题：${prompt}` },
       ]);
-      sendJson(response, 200, { request_id: requestId, answer: clip(text, 2000) }, requestId);
+      sendJson(response, 200, { request_id: requestId, answer: clip(text, 2000), companion_id: companion.id, prompt_version: companion.version }, requestId);
       return;
     }
 

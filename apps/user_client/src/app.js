@@ -154,6 +154,9 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll("[data-goal]").forEach((element) => element.addEventListener("click", () => {
       selectedGoal = element.dataset.goal;
       DEMO_STATE.goals.forEach((goal) => { goal.selected = goal.id === selectedGoal; });
+      if (DEMO_STATE.onboarding?.profile) DEMO_STATE.onboarding.profile.target = selectedGoal;
+      const onboardingGoal = root.querySelector("[data-onboarding-goal]");
+      if (onboardingGoal) onboardingGoal.value = selectedGoal;
       root.querySelectorAll("[data-goal]").forEach((goal) => {
         const selected = goal.dataset.goal === selectedGoal;
         goal.classList.toggle("is-selected", selected);
@@ -173,6 +176,38 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="complete-onboarding"]').forEach((element) => element.addEventListener("click", (event) => {
       event.preventDefault();
       playAscensionIntro(element.getAttribute("href") || "/features");
+    }));
+    root.querySelectorAll('[data-action="onboarding-next"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.onboarding.step = 3;
+      DEMO_STATE.onboarding.featureIndex = 0;
+      render("/onboarding");
+      toast(`${DEMO_STATE.guide.options.find((option) => option.assetId === DEMO_STATE.guide.selectedAssetId)?.name ?? "书鼎"} 已认领`);
+    }));
+    root.querySelectorAll('[data-action="onboarding-back"]').forEach((element) => element.addEventListener("click", () => {
+      if (DEMO_STATE.onboarding.step <= 1) {
+        navigate("/auth");
+        return;
+      }
+      DEMO_STATE.onboarding.step -= 1;
+      render("/onboarding");
+    }));
+    root.querySelectorAll('[data-action="onboarding-select-guide"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.guide.selectedAssetId = element.dataset.guide;
+      render("/onboarding");
+    }));
+    root.querySelectorAll('[data-action="onboarding-feature-select"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.onboarding.featureIndex = Number(element.dataset.featureIndex) || 0;
+      render("/onboarding");
+    }));
+    root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", () => {
+      const lastFeature = 5;
+      if (DEMO_STATE.onboarding.featureIndex < lastFeature) {
+        navigate(element.dataset.featureRoute || "/goals");
+        return;
+      }
+      DEMO_STATE.onboarding.completed = true;
+      navigate("/");
+      toast("山门已为你打开，今天先走下一步");
     }));
     root.querySelectorAll('[data-action="answer"]').forEach((element) => element.addEventListener("click", () => {
       root.querySelectorAll('[data-action="answer"]').forEach((answer) => answer.classList.remove("is-selected"));
@@ -297,6 +332,36 @@ export function createApp(root = document.querySelector("#app")) {
         toast("新知识已接入你的脉络");
         return;
       }
+      if (form.dataset.demoForm === "onboarding-profile") {
+        const values = new FormData(form);
+        const name = String(values.get("name") ?? "").trim();
+        const stage = String(values.get("stage") ?? "").trim();
+        const school = String(values.get("school") ?? "").trim();
+        const major = String(values.get("major") ?? "").trim();
+        const goalId = String(values.get("goal") ?? "").trim();
+        const dailyMinutes = String(values.get("dailyMinutes") ?? "25").trim();
+        if (!name || !stage || !goalId) {
+          toast("请先留下行者名、当前阶段和一个主方向");
+          return;
+        }
+        const goal = DEMO_STATE.goals.find((item) => item.id === goalId) ?? DEMO_STATE.goals[0];
+        DEMO_STATE.goals.forEach((item) => { item.selected = item.id === goal.id; });
+        DEMO_STATE.user = {
+          ...DEMO_STATE.user,
+          name,
+          title: stage,
+          stage,
+          school,
+          major,
+          target: goal.title,
+          dailyMinutes,
+        };
+        DEMO_STATE.onboarding.profile = { name, stage, school, major, target: goal.id, dailyMinutes };
+        DEMO_STATE.onboarding.step = 2;
+        render("/onboarding");
+        toast("你的方向已记下，现在认领一位书鼎");
+        return;
+      }
       if (form.dataset.demoForm === "assistant") {
         const values = new FormData(form);
         const prompt = String(values.get("prompt") || "").trim();
@@ -307,6 +372,7 @@ export function createApp(root = document.querySelector("#app")) {
           const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
           const result = await requestAi("/api/v1/ai/assist", {
             prompt,
+            companion_id: DEMO_STATE.guide.selectedAssetId,
             context: {
               goal: DEMO_STATE.goals.find((goal) => goal.selected)?.title || "未选择目标",
               task: activeTask?.title || "当前没有进行中的任务",
@@ -322,7 +388,22 @@ export function createApp(root = document.querySelector("#app")) {
         }
         return;
       }
+      if (form.dataset.demoForm === "auth") {
+        const values = new FormData(form);
+        const identity = String(values.get("identity") ?? "").trim();
+        if (identity) {
+          DEMO_STATE.user.name = identity;
+          DEMO_STATE.onboarding.profile.name = identity;
+        }
+        DEMO_STATE.onboarding.step = 1;
+        navigate("/onboarding");
+        return;
+      }
       toast("演示身份已准备好，下一步请选择登山方向");
+    }));
+    root.querySelectorAll('[data-action="demo-signin"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.onboarding.completed = true;
+      navigate("/");
     }));
   }
 

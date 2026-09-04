@@ -3,10 +3,14 @@ import { renderNavigation, renderTopbar } from "./navigation.js";
 import { renderStatusAxis } from "./status-axis.js";
 import { renderWorldStage } from "./world-stage.js";
 import { renderAscensionIntro } from "./ascension-intro.js";
+import { assetUrl } from "../data/assets.js";
 
 export function renderShell(currentRoute, state, content = "") {
   const meta = getRouteMeta(currentRoute);
-  return `<div class="app-shell" data-motion="on" data-current-route="${currentRoute}" data-route-phase="in">
+  const onboardingStyle = currentRoute === "/onboarding"
+    ? ` style="--onboarding-image: url('${assetUrl("lijing-onboarding-background-v2")}')"`
+    : "";
+  return `<div class="app-shell app-shell--${currentRoute === "/onboarding" ? "onboarding" : "standard"}"${onboardingStyle} data-motion="on" data-current-route="${currentRoute}" data-route-phase="in">
     ${renderWorldStage(currentRoute)}
     ${renderNavigation(currentRoute)}
     <div class="app-frame">

@@ -101,6 +101,23 @@ test("AI pilot calls the provider from the server and returns structured results
     assert.equal(providerCalls[0].authorization, "Bearer test-server-only-key");
     assert.equal(providerCalls[0].body.model, "test-model");
     assert.doesNotMatch(JSON.stringify(body), /test-server-only-key/);
+
+    const assistResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/assist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        companion_id: "lijing-guide-fan-v1",
+        prompt: "我总是把连续和可导混在一起。",
+        context: { goal: "上岸一场重要考试", task: "极限与连续" },
+      }),
+    });
+    const assistBody = await assistResponse.json();
+    assert.equal(assistResponse.status, 200);
+    assert.equal(assistBody.companion_id, "lijing-guide-fan-v1");
+    assert.equal(assistBody.prompt_version, "v1");
+    assert.match(providerCalls[1].body.messages[0].content, /折扇·启思/);
+    assert.match(providerCalls[1].body.messages[0].content, /类比、反例、反向问题/);
+    assert.doesNotMatch(providerCalls[1].body.messages[0].content, /天书·知解/);
   } finally {
     child.kill();
     await close(provider);
