@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 39,
+  "title": "Lijing Core Platform Metrics",
+  "uid": "lijing-core-platform",
+  "tags": ["lijing", "platform", "production"],
+  "timezone": "browser",
+  "editable": false,
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "custom",
+        "query": "local,staging,production",
+        "current": { "text": "production", "value": "production" }
+      },
+      {
+        "name": "service",
+        "type": "custom",
+        "query": "lijing-api,lijing-worker",
+        "current": { "text": "lijing-api", "value": "lijing-api" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "API Success Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(api_requests_total{environment=~\"$environment\",service=~\"$service\",outcome=\"success\"}[5m])) / clamp_min(sum(rate(api_requests_total{environment=~\"$environment\",service=~\"$service\"}[5m])), 1)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "API Latency P95 / P99",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum(rate(api_latency_ms_bucket{environment=~\"$environment\",service=~\"$service\"}[5m])) by (le) )"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "p99",
+          "expr": "histogram_quantile(0.99, sum(rate(api_latency_ms_bucket{environment=~\"$environment\",service=~\"$service\"}[5m])) by (le) )"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "HTTP 5xx and Rate Limiting",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "5xx",
+          "expr": "sum(rate(api_requests_total{environment=~\"$environment\",service=~\"$service\",status_code=~\"5..\"}[5m]))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "rate limited",
+          "expr": "sum(rate(api_rate_limited_total{environment=~\"$environment\",service=~\"$service\"}[5m]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Queue Backlog and Dead Letters",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "backlog",
+          "expr": "sum(queue_backlog_messages{environment=~\"$environment\"}) by (queue)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "dead letters",
+          "expr": "sum(rate(queue_dead_letters_total{environment=~\"$environment\"}[5m])) by (queue)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Database Connections",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "used",
+          "expr": "sum(database_connections_used{environment=~\"$environment\"}) by (service)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "available",
+          "expr": "sum(database_connections_available{environment=~\"$environment\"}) by (service)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "AI Requests and Tokens",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "requests",
+          "expr": "sum(rate(ai_requests_total{environment=~\"$environment\"}[5m])) by (feature, outcome)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "tokens",
+          "expr": "sum(rate(ai_tokens_total{environment=~\"$environment\"}[5m])) by (feature, direction)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "AI Cost and Budget Utilization",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "cost cents",
+          "expr": "sum(rate(ai_cost_cents_total{environment=~\"$environment\"}[5m])) by (feature, model)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "budget used",
+          "expr": "max(ai_budget_utilization_ratio{environment=~\"$environment\"}) by (budget_id)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "AI Rejection and Degradation Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "rejected",
+          "expr": "sum(rate(ai_requests_total{environment=~\"$environment\",outcome=\"rejected\"}[5m])) / clamp_min(sum(rate(ai_requests_total{environment=~\"$environment\"}[5m])), 1)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "degraded",
+          "expr": "sum(rate(ai_requests_total{environment=~\"$environment\",outcome=\"degraded\"}[5m])) / clamp_min(sum(rate(ai_requests_total{environment=~\"$environment\"}[5m])), 1)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Client Crash Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(client_crashes_total{environment=~\"$environment\"}[15m])) by (platform, app_version)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "cpm" } }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Dependency Health",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min(platform_dependency_up{environment=~\"$environment\"}) by (dependency)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1 } }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+policy_id: lijing-ai-default
+policy_version: "2026-08-31.1"
+effective_from: "2026-08-31T00:00:00+08:00"
+effective_until: null
+status: active
+server_configurable: true
+audit:
+  owner: trust-safety
+  updated_by: platform-security
+  reviewed_by: platform-security
+  change_reason: "Initial guarded defaults for the production security baseline."
+  change_ticket: TASK-1
+  rollback_policy_version: null
+limits:
+  account:
+    new_account_first_24h:
+      window: 24h
+      max_requests: 5
+      description: New accounts receive a cold-start limit during their first 24 hours.
+    normal:
+      window: 24h
+      max_requests: 20
+      description: Default daily limit for a normal account.
+  burst:
+    window: 10m
+    max_requests: 3
+    dimensions:
+      - account
+      - device
+      - ip
+  concurrency:
+    per_user: 1
+  tokens:
+    max_input: 4000
+    max_output: 1000
+  images:
+    max_images_per_request: 2
+    max_size_mb_each: 5
+  complex_requests:
+    max_per_day: 3
+    modes:
+      - vision
+      - long_context
+    preferred_execution: async
+controls:
+  require_authentication: true
+  require_idempotency_key: true
+  allow_direct_provider_access: false
+  allow_unbounded_retry: false
+  output_validation_required: true
+  source_provenance_required: true
+  global_kill_switch: true
+  fallback_modes:
+    - template
+    - cached
+    - low_cost_model
+    - async_queue
+governance:
+  storage_owner: policy-configuration
+  changes_require:
+    - policy_version
+    - effective_from
+    - updated_by
+    - change_reason
+    - change_ticket
+    - rollback_policy_version
+    - audit_event

@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts",
+    "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts",
+    "image:config:check": "node --no-warnings tools/image-generation/cli.mjs config:check",
+    "image:generate": "node --no-warnings tools/image-generation/cli.mjs generate",
+    "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs",
+    "client:test": "node --no-warnings --test apps/user_client/tests/routes.test.mjs apps/user_client/tests/server.test.mjs",
+    "client:ai:test": "node --no-warnings --test tests/integration/user-client-ai.test.mjs",
+    "client:serve": "node apps/user_client/server.mjs"
+  },
+  "devDependencies": {
+    "@redocly/openapi-core": "2.49.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.9.0"
+  }
+}
