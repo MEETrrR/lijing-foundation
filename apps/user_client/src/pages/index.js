@@ -154,7 +154,116 @@ function knowledgeCaptureForm(state) {
   return `<form class="knowledge-capture" data-demo-form="knowledge-capture"><div class="knowledge-capture__heading"><div><span class="section-kicker">收录新知识</span><h3>让一个新节点接入你的脉络</h3></div><button class="icon-button" type="button" data-action="close-knowledge-composer" title="关闭新增知识">${icon("close", "关闭")}</button></div><div class="knowledge-capture__fields"><label>知识名称<input name="title" type="text" value="${esc(draft.title ?? "")}" placeholder="例如：牛顿第二定律" required></label><label>归入脉络<input name="strand" type="text" value="${esc(draft.strand ?? "新知识")}" placeholder="例如：物理 · 力学" required></label><label>来源<input name="source" type="text" value="${esc(draft.source ?? "手动收录")}" placeholder="例如：今天的课程 / 一段对话" required></label><label>连接到<select name="relatedId"><option value="">暂不连接</option>${relationOptions}</select></label><label class="knowledge-capture__note">我的理解<textarea name="note" rows="4" placeholder="写下你自己的理解……">${esc(draft.note ?? "")}</textarea></label></div><div class="knowledge-capture__footer"><span>新节点会以“初探”状态加入，并和你选择的节点建立连接。</span><button class="button button--ink" type="submit">收录进知识库 ${icon("plus")}</button></div></form>`;
 }
 
+const KNOWLEDGE_GRAPH_POSITIONS = {
+  northwest: [27, 27],
+  north: [50, 19],
+  northeast: [74, 28],
+  west: [20, 51],
+  east: [80, 51],
+  southwest: [30, 76],
+  south: [51, 82],
+  southeast: [73, 74],
+};
+
+function knowledgeNodePosition(item, index) {
+  if (index < 8 && KNOWLEDGE_GRAPH_POSITIONS[item.position]) return KNOWLEDGE_GRAPH_POSITIONS[item.position];
+  const seed = [...String(item.id ?? index)].reduce((value, char) => ((value * 31) + char.charCodeAt(0)) % 997, 17);
+  const angle = index * 2.399963 + seed / 997;
+  const radius = Math.min(44, 12 + Math.sqrt(index + 1) * 3.1);
+  return [
+    Math.min(94, Math.max(6, 50 + Math.cos(angle) * radius)),
+    Math.min(93, Math.max(7, 50 + Math.sin(angle) * radius * .74)),
+  ];
+}
+
+function knowledgeGraphTone(item) {
+  return item.color === "cinnabar" ? "red" : item.color === "blue" ? "teal" : item.color === "rock" ? "gray" : "gold";
+}
+
+function knowledgeGraphProjection(items, activeId = "") {
+  if (!items.length) return { nodes: [], dots: [], lines: [], relationCount: 0 };
+  const labelLimit = items.length <= 18 ? items.length : 8;
+  const labelIds = new Set(items.slice(0, labelLimit).map((item) => item.id));
+  if (activeId) labelIds.add(activeId);
+  const nodes = items.map((item, index) => {
+    const [x, y] = knowledgeNodePosition(item, index);
+    return { item, x, y, tone: knowledgeGraphTone(item), isLabel: labelIds.has(item.id) };
+  });
+  const positions = new Map(nodes.map((node) => [node.item.id, node]));
+  const lines = nodes.filter((node) => node.isLabel).map((node) => `<line class="knowledge-network__line knowledge-network__line--core" x1="50" y1="50" x2="${node.x}" y2="${node.y}"></line>`);
+  const relationKeys = new Set();
+  nodes.forEach((node) => (node.item.relatedIds ?? []).forEach((relatedId) => {
+    const related = positions.get(relatedId);
+    if (!related) return;
+    const key = [node.item.id, relatedId].sort().join("|");
+    if (relationKeys.has(key)) return;
+    relationKeys.add(key);
+    lines.push(`<line class="knowledge-network__line knowledge-network__line--relation" x1="${node.x}" y1="${node.y}" x2="${related.x}" y2="${related.y}"></line>`);
+  }));
+
+  const dots = [];
+  const dotCount = Math.min(220, Math.max(96, Math.round(items.length * .65)));
+  for (let index = 0; index < dotCount; index += 1) {
+    const node = nodes[index % nodes.length];
+    const angle = index * 2.399963;
+    const radius = 8 + ((index * 13) % 18) * 1.15;
+    const x = Math.min(96, Math.max(4, node.x + Math.cos(angle) * radius));
+    const y = Math.min(94, Math.max(6, node.y + Math.sin(angle) * radius * .72));
+    const size = 2 + (index % 4);
+    dots.push(`<span class="knowledge-network__dot knowledge-network__dot--${node.tone}" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;--dot-size:${size}px" aria-hidden="true"></span>`);
+    if (index % 3 === 0) lines.push(`<line class="knowledge-network__line knowledge-network__line--thread" x1="${node.x}" y1="${node.y}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}"></line>`);
+  }
+  return { nodes, dots, lines, relationCount: relationKeys.size };
+}
+
+function knowledgeNetwork(state, active) {
+  const items = state.knowledge ?? [];
+  const projection = knowledgeGraphProjection(items, active.id);
+  const zoom = Math.min(1.24, Math.max(.86, Number(state.knowledgeGraphZoom) || 1));
+  const visibleNodes = projection.nodes.map((node) => node.isLabel
+    ? `<button class="knowledge-network__node knowledge-network__node--${node.tone} ${node.item.id === active.id ? "is-active" : ""}" type="button" data-action="select-knowledge" data-knowledge-id="${node.item.id}" data-knowledge-item aria-pressed="${node.item.id === active.id}" style="left:${node.x}%;top:${node.y}%"><span>${node.item.gua}</span><strong>${esc(node.item.title)}</strong><small>${esc(node.item.state)} · L${node.item.evidenceLevel ?? 2}</small></button>`
+    : `<button class="knowledge-network__dot knowledge-network__dot--interactive knowledge-network__dot--${node.tone}" type="button" data-action="select-knowledge" data-knowledge-id="${node.item.id}" data-knowledge-item aria-label="查看 ${esc(node.item.title)}" title="查看 ${esc(node.item.title)}" style="left:${node.x}%;top:${node.y}%;--dot-size:7px"></button>`).join("");
+  const labelNote = items.length > projection.nodes.filter((node) => node.isLabel).length ? ` · ${projection.nodes.filter((node) => node.isLabel).length} 个标签` : "";
+  return `<section class="knowledge-network" aria-label="个人复利知识关系网络"><div class="knowledge-network__head"><div><span class="section-kicker">关系网络 · ${items.length} 个核心节点</span><h3>看见知识如何彼此借力</h3></div><span class="knowledge-network__mode">${projection.relationCount} 条已知连接 · 密度预览${labelNote}</span></div><div class="knowledge-network__viewport"><div class="knowledge-network__plane" style="--knowledge-zoom:${zoom}"><svg class="knowledge-network__connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${projection.lines.join("")}</svg><div class="knowledge-network__dots">${projection.dots.join("")}</div><div class="knowledge-network__core"><span>PERSONAL COMPOUND</span><strong>${items.length}</strong><small>核心节点</small></div>${visibleNodes}</div></div><div class="knowledge-network__footer"><div class="knowledge-network__legend"><span><i class="dot dot--gold"></i>已稳固</span><span><i class="dot dot--red"></i>待回望</span><span><i class="dot dot--gray"></i>初探</span></div><div class="knowledge-network__zoom"><button type="button" data-action="knowledge-zoom" data-zoom="out" aria-label="缩小网络">-</button><span>${Math.round(zoom * 100)}%</span><button type="button" data-action="knowledge-zoom" data-zoom="in" aria-label="放大网络">+</button><button type="button" data-action="knowledge-zoom" data-zoom="reset">重置</button></div></div></section>`;
+}
+
+function knowledgeCatalog(state) {
+  const collections = [
+    { label: "Agent 管理", detail: "书鼎与专属提示词", count: state.guide?.options?.length ?? 0, status: "已连接" },
+    { label: "知识库本体", detail: "概念、技能与证据", count: state.knowledge?.length ?? 0, status: "当前" },
+    { label: "外部资源归档", detail: "网页、文档与引用", count: "-", status: "待接入" },
+    { label: "全局笔记", detail: "想法、片段与灵感", count: "-", status: "待接入" },
+    { label: "控制配置", detail: "权限、规则与连接", count: "-", status: "系统" },
+  ];
+  return `<aside class="knowledge-catalog"><div class="knowledge-catalog__head"><span>知识资产</span><strong>${state.knowledge?.length ?? 0}</strong></div><div class="knowledge-catalog__groups">${collections.map((item, index) => `<div class="knowledge-catalog__item ${index === 1 ? "is-active" : ""}"><span class="knowledge-catalog__index">0${index + 1}</span><div><strong>${item.label}</strong><small>${item.detail}</small></div><b>${item.count}</b><em>${item.status}</em></div>`).join("")}</div><div class="knowledge-catalog__foot"><span>复利链路</span><strong>输入 → 关联 → 复习 → 迁移</strong></div></aside>`;
+}
+
+function knowledgeDirectory(state, recentOnly = false) {
+  const items = recentOnly ? (state.knowledge ?? []).slice(0, 6) : state.knowledge ?? [];
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = recentOnly ? "最近更新" : item.strand;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  return `<section class="knowledge-directory"><div class="knowledge-directory__head"><div><span class="section-kicker">${recentOnly ? "最近收录" : "分层目录"}</span><h3>${recentOnly ? "最近进入网络的记录" : "按知识脉络查看"}</h3></div><span>${items.length} 条记录</span></div>${[...groups.entries()].map(([group, groupItems]) => `<div class="knowledge-directory__group"><div class="knowledge-directory__group-head"><strong>${esc(group)}</strong><span>${groupItems.length}</span></div>${groupItems.map((item) => `<button class="knowledge-directory__row" type="button" data-action="select-knowledge" data-knowledge-id="${item.id}" data-knowledge-item aria-pressed="${item.id === state.activeKnowledgeId}"><span class="knowledge-directory__row-gua">${item.gua}</span><span class="knowledge-directory__row-copy"><strong>${esc(item.title)}</strong><small>${esc(item.domain)} · ${esc(item.source)}</small></span><span class="knowledge-directory__row-level">L${item.evidenceLevel ?? 2}</span>${icon("chevron", "查看节点")}</button>`).join("")}</div>`).join("") || `<div class="knowledge-directory__empty"><span>巽</span><strong>还没有记录</strong><small>从一次学习证据开始建立第一条连接。</small></div>`}</section>`;
+}
+
+function knowledgeInspector(active, related) {
+  return `<aside class="knowledge-inspector"><div class="knowledge-inspector__top"><span>当前节点 · ${active.gua}</span><b>${active.state}</b></div><h3>${esc(active.title)}</h3><span class="knowledge-inspector__strand">${esc(active.strand)}</span><p>${esc(active.summary)}</p><div class="knowledge-inspector__mastery"><div><span>证据覆盖</span><strong>L${active.evidenceLevel ?? 2} · ${active.mastery}%</strong></div>${progressBar(active.mastery, active.color === "cinnabar" ? "red" : active.color === "rock" ? "gray" : "amber")}</div><div class="knowledge-inspector__meta"><div><span>来自</span><strong>${esc(active.source)}</strong></div><div><span>最近更新</span><strong>${esc(active.updated)}</strong></div></div><div class="knowledge-inspector__links"><span>它连接到</span><div>${related.map((item) => `<button type="button" data-action="select-knowledge" data-knowledge-id="${item.id}">${item.gua} ${esc(item.title)}</button>`).join("") || `<small>还没有关联节点</small>`}</div></div><div class="knowledge-inspector__note"><span>我留下的理解</span><p>${esc(active.note)}</p></div>${action("沿这条脉络回望", "/review", "button button--ink")}</aside>`;
+}
+
 function pageKnowledge(state) {
+  const items = state.knowledge ?? [];
+  const active = items.find((item) => item.id === state.activeKnowledgeId) ?? items[0] ?? { id: "empty", title: "还没有知识节点", state: "初探", gua: "巽", strand: "新知识", summary: "从一次学习记录开始建立你的第一条连接。", evidenceLevel: 1, mastery: 0, source: "尚未收录", updated: "现在", note: "", relatedIds: [], color: "rock" };
+  const related = (active.relatedIds ?? []).map((id) => items.find((item) => item.id === id)).filter(Boolean);
+  const view = ["network", "directory", "recent"].includes(state.knowledgeView) ? state.knowledgeView : "network";
+  const workspace = view === "directory" ? knowledgeDirectory(state) : view === "recent" ? knowledgeDirectory(state, true) : knowledgeNetwork(state, active);
+  const composer = state.knowledgeComposerOpen ? knowledgeCaptureForm(state) : "";
+  return `<div class="page page--knowledge" data-demo-state="true">${intro("/knowledge", state, "个人复利 Agent 知识库")}<section class="knowledge-workbench"><div class="knowledge-workbench__head"><div><span class="section-kicker">PERSONAL COMPOUND · KNOWLEDGE SYSTEM</span><h2>让每一条记录，<br><em>接上下一条。</em></h2><p>知识不是孤立的卡片，而是会被 Agent 识别、关联、复习和再次调用的个人网络。</p></div><div class="knowledge-workbench__stats">${metaLine("核心节点", `${items.length}`)}${metaLine("已知连接", `${knowledgeGraphProjection(items).relationCount}`)}${metaLine("资产层", "05")}</div></div><div class="knowledge-workbench__toolbar"><div class="knowledge-view-tabs" role="tablist" aria-label="知识库视图"><button type="button" data-action="knowledge-view" data-knowledge-view="network" role="tab" aria-selected="${view === "network"}">网络</button><button type="button" data-action="knowledge-view" data-knowledge-view="directory" role="tab" aria-selected="${view === "directory"}">目录</button><button type="button" data-action="knowledge-view" data-knowledge-view="recent" role="tab" aria-selected="${view === "recent"}">最近</button></div><label class="knowledge-search"><span class="sr-only">搜索知识节点</span>${icon("search", "搜索知识节点")}<input data-knowledge-search type="search" placeholder="搜索节点、来源或关键词" autocomplete="off"></label><button class="button button--outline knowledge-add-button" type="button" data-action="open-knowledge-composer">${icon("plus")}新增记录</button></div><div class="knowledge-workbench__body">${knowledgeCatalog(state)}<section class="knowledge-workspace" data-knowledge-view-current="${view}">${workspace}</section>${knowledgeInspector(active, related)}</div>${composer}</section></div>`;
+}
+
+function pageKnowledgeLegacyCurrent(state) {
   const active = state.knowledge.find((item) => item.id === state.activeKnowledgeId) ?? state.knowledge[0];
   const related = (active.relatedIds ?? []).map((id) => state.knowledge.find((item) => item.id === id)).filter(Boolean);
   const edges = ["northwest", "north", "northeast", "west", "east", "southwest", "south", "southeast"].map((position) => `<span class="knowledge-graph__edge knowledge-graph__edge--${position}"></span>`).join("");

@@ -64,12 +64,33 @@ test("bagua reference is registered and integrated into orientation chapters", (
 
 test("knowledge chapter exposes a personal graph and node detail", () => {
   const html = renderPage("/knowledge", DEMO_STATE);
-  assert.match(html, /个人知识库/);
-  assert.match(html, /我的证据脉络/);
-  assert.match(html, /MY \/ EVIDENCE \/ MAP/);
+  assert.match(html, /个人复利 Agent 知识库/);
+  assert.match(html, /个人复利知识关系网络/);
+  assert.match(html, /PERSONAL COMPOUND/);
+  assert.match(html, /Agent 管理/);
+  assert.match(html, /外部资源归档/);
   assert.equal((html.match(/data-action="select-knowledge"/g) ?? []).length >= 6, true);
-  assert.match(html, /我留下的理解/);
-  assert.match(html, /搜索知识、错题或笔记/);
+  assert.equal((html.match(/class="knowledge-network__dot /g) ?? []).length, 96);
+  assert.match(html, /把这次理解接入知识库|我留下的理解/);
+  assert.match(html, /搜索节点、来源或关键词/);
+  assert.match(html, /data-knowledge-view="directory"/);
+});
+
+test("knowledge network stays legible as the library grows", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.knowledge = Array.from({ length: 300 }, (_, index) => ({
+    ...DEMO_STATE.knowledge[index % DEMO_STATE.knowledge.length],
+    id: `scaled-node-${index}`,
+    title: `知识节点 ${index + 1}`,
+    relatedIds: index > 0 ? [`scaled-node-${index - 1}`] : [],
+    position: undefined,
+  }));
+  state.activeKnowledgeId = "scaled-node-299";
+  const html = renderPage("/knowledge", state);
+  assert.match(html, /关系网络 · 300 个核心节点/);
+  assert.equal((html.match(/class="knowledge-network__node /g) ?? []).length, 9);
+  assert.equal((html.match(/knowledge-network__dot--interactive/g) ?? []).length, 291);
+  assert.equal((html.match(/data-knowledge-item/g) ?? []).length, 300);
 });
 
 test("study chapter exposes the evidence protocol and action-oriented review contract", () => {

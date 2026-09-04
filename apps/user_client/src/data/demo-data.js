@@ -103,6 +103,8 @@ export const DEMO_STATE = {
     energy: 64,
   },
   activeKnowledgeId: "limits-continuity",
+  knowledgeView: "network",
+  knowledgeGraphZoom: 1,
   knowledgeComposerOpen: false,
   knowledgeCaptureDraft: null,
   today: {

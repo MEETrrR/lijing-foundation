@@ -296,6 +296,16 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.activeKnowledgeId = element.dataset.knowledgeId;
       render(window.location.pathname);
     }));
+    root.querySelectorAll('[data-action="knowledge-view"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.knowledgeView = element.dataset.knowledgeView || "network";
+      render(window.location.pathname);
+    }));
+    root.querySelectorAll('[data-action="knowledge-zoom"]').forEach((element) => element.addEventListener("click", () => {
+      const mode = element.dataset.zoom;
+      const current = Number(DEMO_STATE.knowledgeGraphZoom) || 1;
+      DEMO_STATE.knowledgeGraphZoom = mode === "reset" ? 1 : Math.min(1.24, Math.max(.86, current + (mode === "in" ? .1 : -.1)));
+      render(window.location.pathname);
+    }));
     root.querySelectorAll('[data-action="open-knowledge-composer"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.knowledgeCaptureDraft = null;
       DEMO_STATE.knowledgeComposerOpen = true;

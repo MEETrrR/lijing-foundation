@@ -76,9 +76,9 @@ export const ROUTES = {
     chapter: "群峰",
     direction: "巽位",
     gua: "☴",
-    eyebrow: "第五章 · 个人知识库",
-    title: "把知识连成你的脉络",
-    description: "学过的内容、走过的错题和你自己的理解，都在这里留下连接。",
+    eyebrow: "第五章 · 个人复利 Agent 知识库",
+    title: "让知识持续产生复利",
+    description: "每一条记录都能被关联、复习和再次调用，慢慢长成你的个人认知网络。",
   },
   "/assistant": {
     label: "引路",
