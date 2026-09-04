@@ -77,6 +77,9 @@ test("study chapter exposes the evidence protocol and action-oriented review con
   assert.equal((studyHtml.match(/data-action="select-evidence"/g) ?? []).length, 4);
   assert.match(studyHtml, /data-evidence-input/);
   assert.match(studyHtml, /提交证据并生成复盘/);
+  assert.match(studyHtml, /study-knowledge-capture/);
+  assert.match(studyHtml, /把这次理解接入知识库/);
+  assert.doesNotMatch(studyHtml, /收录这一段到知识库/);
   const reviewHtml = renderPage("/review", DEMO_STATE);
   for (const label of ["用了什么证据", "发现了什么问题", "为什么这样判断", "明日行动"]) assert.match(reviewHtml, new RegExp(label));
 });

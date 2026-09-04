@@ -519,6 +519,14 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .evidence-submit__field { display: grid; gap: 8px; margin: 20px 0 16px; color: var(--rock); font-size: 9px; }
 .evidence-submit__field textarea { min-height: 98px; padding: 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid transparent; outline: 0; resize: vertical; font: inherit; line-height: 1.7; }
 .evidence-submit__field textarea:focus { border-color: var(--gold); background: var(--paper-light); }
+.study-knowledge-capture { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 24px; padding-top: 19px; border-top: 1px dashed rgba(13, 23, 26, .2); }
+.study-knowledge-capture__copy { display: grid; gap: 4px; min-width: 0; }
+.study-knowledge-capture__copy > span { color: var(--red); font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: .1em; }
+.study-knowledge-capture__copy strong { color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 14px; font-weight: 500; }
+.study-knowledge-capture__copy small { color: var(--rock); font-size: 9px; line-height: 1.6; }
+.knowledge-capture-link { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; gap: 7px; min-height: 36px; padding: 9px 12px; color: var(--ink); background: transparent; border: 1px solid rgba(13, 23, 26, .28); font: inherit; font-size: 9px; transition: color var(--fast) ease, background var(--fast) ease, border-color var(--fast) ease, transform var(--fast) var(--ease); }
+.knowledge-capture-link:hover { color: var(--red); background: rgba(247, 244, 237, .72); border-color: rgba(169, 75, 64, .56); transform: translateX(3px); }
+.knowledge-capture-link .icon { width: 13px; height: 13px; }
 .study-aside { display: grid; gap: 16px; }
 .study-aside__route, .study-aside__tip { padding: 27px; color: var(--paper); background: rgba(13, 23, 26, .78); border: 1px solid rgba(238, 234, 224, .14); }
 .mini-mountain { position: relative; height: 220px; margin: 22px 0 12px; overflow: hidden; background: linear-gradient(156deg, transparent 45%, rgba(189, 141, 67, .38) 45.5%, transparent 46.5%), linear-gradient(28deg, transparent 42%, rgba(238, 234, 224, .14) 42.5%, transparent 43.2%); }
@@ -1072,6 +1080,8 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
   .evidence-submit .section-title h2, .evidence-review .section-title h2 { font-size: 24px; }
   .evidence-levels, .evidence-review__grid { grid-template-columns: 1fr; }
   .evidence-level { min-height: 58px; }
+  .study-knowledge-capture { align-items: stretch; flex-direction: column; gap: 12px; margin-top: 20px; padding-top: 17px; }
+  .knowledge-capture-link { width: 100%; }
   .evidence-review { padding: 24px 19px; }
   .study-aside, .assistant-aside { grid-template-columns: 1fr; }
   .review-top { width: 100%; max-width: calc(100vw - 36px); grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 27px 19px; overflow: hidden; }
