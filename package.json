@@ -8,7 +8,9 @@
     "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts",
     "image:config:check": "node --no-warnings tools/image-generation/cli.mjs config:check",
     "image:generate": "node --no-warnings tools/image-generation/cli.mjs generate",
-    "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs"
+    "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs",
+    "client:test": "node --no-warnings --test apps/user_client/tests/routes.test.mjs",
+    "client:serve": "node apps/user_client/server.mjs"
   },
   "devDependencies": {
     "@redocly/openapi-core": "2.49.0",

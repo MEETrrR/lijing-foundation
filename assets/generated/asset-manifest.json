@@ -1,6 +1,6 @@
 {
   "manifest_version": "0.1.0",
-  "generated_at": "2026-08-31",
+  "generated_at": "2026-09-04",
   "world": "starforged-frontier",
   "review_status": "candidate",
   "assets": [
@@ -45,6 +45,48 @@
       "source": "GPT Image",
       "review": "pending_art_and_content_review",
       "notes": "A 3x3 worldbuilding board, not a final world-map background. Generate individual scene backgrounds from it later."
+    },
+    {
+      "asset_id": "starforged-frontier-scene-v1",
+      "path": "assets/generated/source/starforged-frontier-scene-v1.png",
+      "role": "runtime-candidate",
+      "usage": ["world_map_scene", "chapter_scene", "mountain_stage"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1278,
+      "height": 1230,
+      "sha256": "782c686cb8e38718b383876374a200a55240b912e946f4892fd7ef72e51ed38f",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "Runtime candidate for the mountain world and map chapter."
+    },
+    {
+      "asset_id": "aaa-home-title-screen-female-v2",
+      "path": "assets/generated/source/aaa-home-title-screen-female-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["home_entrance", "mountain_approach"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "02a374c251a969711ccce507fb6a618979c200a2a424b3a98e90b964bc24d5a8",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "Runtime candidate for the home entrance; keep copy and controls in the separate content layer."
+    },
+    {
+      "asset_id": "aaa-hero-character-female-v2",
+      "path": "assets/generated/source/aaa-hero-character-female-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["assistant_guide", "assistant_scene"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1024,
+      "height": 1536,
+      "sha256": "bf2cbdff247c5e51745c186c6b9ce49212747ed6a32a7a43092fc8f1b1fced00",
+      "source": "GPT Image",
+      "review": "pending_art_and_content_review",
+      "notes": "Runtime candidate for the guide scene."
     }
   ]
 }

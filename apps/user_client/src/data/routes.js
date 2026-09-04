@@ -1,0 +1,170 @@
+export const ROUTES = {
+  "/": {
+    label: "山脚",
+    chapter: "遥望",
+    direction: "中宫",
+    gua: "☷",
+    eyebrow: "第零章 · 山门",
+    title: "向山顶而行",
+    description: "每一次自律，都会让云海退开一点。",
+  },
+  "/auth": {
+    label: "入山",
+    chapter: "入山",
+    direction: "坤位",
+    gua: "☷",
+    eyebrow: "入山 · 身份印记",
+    title: "先立一枚自己的山门印",
+    description: "从今天开始，把遥远的目标拆成可以走的下一步。",
+  },
+  "/goals": {
+    label: "定向",
+    chapter: "定向",
+    direction: "乾位",
+    gua: "☰",
+    eyebrow: "第一章 · 八方定向",
+    title: "你要登向哪一座峰？",
+    description: "选定方向，砺境会把漫长目标折成一条可走的路线。",
+  },
+  "/plan": {
+    label: "行旅",
+    chapter: "行旅",
+    direction: "艮位",
+    gua: "☶",
+    eyebrow: "第二章 · 今日行旅",
+    title: "把今天走稳",
+    description: "山很远，但今天只需要抵达下一处营地。",
+  },
+  "/study": {
+    label: "攀登",
+    chapter: "攀登",
+    direction: "离位",
+    gua: "☲",
+    eyebrow: "第三章 · 当前山段",
+    title: "现在，走下一步",
+    description: "专注一小段时间，山路就会向上延伸。",
+  },
+  "/review": {
+    label: "回望",
+    chapter: "回望",
+    direction: "坎位",
+    gua: "☵",
+    eyebrow: "第四章 · 回环复习",
+    title: "把走过的路，变成站得住的高度",
+    description: "复习不是返回原点，而是为已经到达的地方加固山脊。",
+  },
+  "/knowledge": {
+    label: "群峰",
+    chapter: "群峰",
+    direction: "巽位",
+    gua: "☴",
+    eyebrow: "第五章 · 知识群峰",
+    title: "知识会彼此照亮",
+    description: "一个知识点不是孤岛，它会和更远的山峰连成星轨。",
+  },
+  "/assistant": {
+    label: "引路",
+    chapter: "引路",
+    direction: "兑位",
+    gua: "☱",
+    eyebrow: "第六章 · 云中灯火",
+    title: "需要时，问一盏灯",
+    description: "把困住你的地方说出来，先找到下一步，而不是一次走完全程。",
+  },
+  "/growth": {
+    label: "登峰碑",
+    chapter: "成长",
+    direction: "震位",
+    gua: "☳",
+    eyebrow: "第七章 · 登峰碑记",
+    title: "你已经走了这么远",
+    description: "真正的高度，不是突然抵达，而是每次回来都比昨天更稳。",
+  },
+  "/map": {
+    label: "山海图",
+    chapter: "山海图",
+    direction: "艮位",
+    gua: "☶",
+    eyebrow: "第八章 · 远方山系",
+    title: "看见下一座山",
+    description: "已经走过的路会留下光，尚未抵达的峰顶仍藏在云后。",
+  },
+  "/profile": {
+    label: "行者档案",
+    chapter: "档案",
+    direction: "坤位",
+    gua: "☷",
+    eyebrow: "第九章 · 行者档案",
+    title: "记录属于你的登山轨迹",
+    description: "偏好、通知与个人印记，都由你决定如何留在这幅长卷里。",
+  },
+  "/state/loading": {
+    label: "云中传信",
+    chapter: "加载",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "状态 · 云中传信",
+    title: "正在把山路铺开",
+    description: "你的内容很快就会从云后显现。",
+  },
+  "/state/empty": {
+    label: "未立山路",
+    chapter: "空数据",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "状态 · 尚无记录",
+    title: "这里还没有你的山路",
+    description: "从一个小目标开始，第一道脚印会让世界有了方向。",
+  },
+  "/state/error": {
+    label: "云路受阻",
+    chapter: "错误",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "状态 · 云路受阻",
+    title: "山路暂时没有回应",
+    description: "已确认的学习记录不会丢失，可以稍后再次尝试。",
+  },
+  "/state/review": {
+    label: "守山人",
+    chapter: "审核",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "状态 · 等待复核",
+    title: "这段内容正在等待守山人复核",
+    description: "审核完成前不会把它计入正式学习结果。",
+  },
+  "/state/permission": {
+    label: "山门",
+    chapter: "权限",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "状态 · 山门未开",
+    title: "这条山路需要另一枚印记",
+    description: "请使用有权限的身份进入，或返回当前可用的路线。",
+  },
+};
+
+export const NAV_ITEMS = [
+  { href: "/", label: "山脚", short: "门", gua: "☷", position: "center" },
+  { href: "/goals", label: "定向", short: "乾", gua: "☰", position: "north" },
+  { href: "/plan", label: "行旅", short: "艮", gua: "☶", position: "east" },
+  { href: "/study", label: "攀登", short: "离", gua: "☲", position: "southeast" },
+  { href: "/review", label: "回望", short: "坎", gua: "☵", position: "south" },
+  { href: "/knowledge", label: "群峰", short: "巽", gua: "☴", position: "southwest" },
+  { href: "/growth", label: "成长", short: "震", gua: "☳", position: "west" },
+  { href: "/map", label: "山海图", short: "路", gua: "☶", position: "northwest" },
+  { href: "/profile", label: "档案", short: "人", gua: "☷", position: "profile" },
+];
+
+const FIRST_PHASE_ROUTES = new Set(Object.keys(ROUTES));
+
+export function normalizeRoute(pathname = "/") {
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (FIRST_PHASE_ROUTES.has(normalized)) return normalized;
+  return "/";
+}
+
+export function getRouteMeta(pathname) {
+  return ROUTES[normalizeRoute(pathname)];
+}
