@@ -8,7 +8,7 @@ const sanitizeText = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "
 export function createApp(root = document.querySelector("#app")) {
   if (!root) throw new Error("Missing #app mount point");
   let motionEnabled = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches !== true;
-  let selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "goal-exam";
+  let selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? DEMO_STATE.goals[0]?.id ?? "";
   let scrollFrame = 0;
   let transitionTimer = 0;
   let ascensionTimer = 0;
@@ -141,6 +141,7 @@ export function createApp(root = document.querySelector("#app")) {
     }));
     root.querySelectorAll("[data-goal]").forEach((element) => element.addEventListener("click", () => {
       selectedGoal = element.dataset.goal;
+      DEMO_STATE.goals.forEach((goal) => { goal.selected = goal.id === selectedGoal; });
       root.querySelectorAll("[data-goal]").forEach((goal) => {
         const selected = goal.dataset.goal === selectedGoal;
         goal.classList.toggle("is-selected", selected);
@@ -166,6 +167,41 @@ export function createApp(root = document.querySelector("#app")) {
       element.classList.add("is-selected");
     }));
     root.querySelectorAll('[data-action="submit-answer"]').forEach((element) => element.addEventListener("click", () => toast("这一阶已记下，正在等待服务端确认")));
+    root.querySelectorAll('[data-action="select-evidence"]').forEach((element) => element.addEventListener("click", () => {
+      const level = Number(element.dataset.evidenceLevel);
+      DEMO_STATE.pilot.selectedEvidenceLevel = level;
+      root.querySelectorAll('[data-action="select-evidence"]').forEach((item) => {
+        const selected = Number(item.dataset.evidenceLevel) === level;
+        item.classList.toggle("is-selected", selected);
+        item.setAttribute("aria-pressed", String(selected));
+      });
+      const label = root.querySelector(".evidence-submit__level");
+      if (label) label.textContent = `当前 L${level}`;
+    }));
+    root.querySelectorAll('[data-action="submit-evidence"]').forEach((element) => element.addEventListener("click", () => {
+      const input = root.querySelector("[data-evidence-input]");
+      const evidence = input?.value.trim() ?? "";
+      if (!evidence) {
+        toast("请先写一句你实际留下的证据");
+        input?.focus();
+        return;
+      }
+      DEMO_STATE.pilot.submittedEvidence = evidence;
+      DEMO_STATE.pilot.reviewReady = true;
+      const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
+      if (activeTask) {
+        activeTask.status = "done";
+        const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
+        if (nextTask) nextTask.status = "active";
+        DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+      }
+      const knowledge = DEMO_STATE.knowledge.find((item) => item.id === "limits-continuity");
+      if (knowledge) {
+        knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
+        knowledge.updated = "刚刚";
+      }
+      navigate("/review");
+    }));
     root.querySelectorAll('[data-action="capture-knowledge"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.knowledgeCaptureDraft = {
         title: element.dataset.knowledgeTitle ?? "",

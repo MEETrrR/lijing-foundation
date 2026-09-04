@@ -14,8 +14,8 @@ export const ROUTES = {
     direction: "中宫",
     gua: "☷",
     eyebrow: "第零章 · 山门",
-    title: "向山顶而行",
-    description: "每一次自律，都会让云海退开一点。",
+    title: "今天先攻下一段",
+    description: "考研数学二 · 极限与连续，先完成，再留下证据。",
   },
   "/auth": {
     label: "入山",
@@ -32,8 +32,8 @@ export const ROUTES = {
     direction: "乾位",
     gua: "☰",
     eyebrow: "第一章 · 八方定向",
-    title: "你要登向哪一座峰？",
-    description: "选定方向，砺境会把漫长目标折成一条可走的路线。",
+    title: "先锁定一门课",
+    description: "本轮只验证考研数学二，不把所有学习目标混在一起。",
   },
   "/plan": {
     label: "行旅",
@@ -42,7 +42,7 @@ export const ROUTES = {
     gua: "☶",
     eyebrow: "第二章 · 今日行旅",
     title: "把今天走稳",
-    description: "山很远，但今天只需要抵达下一处营地。",
+    description: "完成一段学习，提交一份证据，解锁下一步。",
   },
   "/study": {
     label: "攀登",
@@ -50,8 +50,8 @@ export const ROUTES = {
     direction: "离位",
     gua: "☲",
     eyebrow: "第三章 · 当前山段",
-    title: "现在，走下一步",
-    description: "专注一小段时间，山路就会向上延伸。",
+    title: "现在，安静完成",
+    description: "专注考研数学二的一小段内容，结束时留下可回看的证据。",
   },
   "/review": {
     label: "回望",
@@ -59,8 +59,8 @@ export const ROUTES = {
     direction: "坎位",
     gua: "☵",
     eyebrow: "第四章 · 回环复习",
-    title: "把走过的路，变成站得住的高度",
-    description: "复习不是返回原点，而是为已经到达的地方加固山脊。",
+    title: "把证据变成下一步",
+    description: "AI 只根据你提交的证据复盘，不替你宣布已经掌握。",
   },
   "/knowledge": {
     label: "知识库",

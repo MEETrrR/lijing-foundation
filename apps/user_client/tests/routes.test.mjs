@@ -36,11 +36,20 @@ test("bagua reference is registered and integrated into orientation chapters", (
 test("knowledge chapter exposes a personal graph and node detail", () => {
   const html = renderPage("/knowledge", DEMO_STATE);
   assert.match(html, /个人知识库/);
-  assert.match(html, /我的知识脉络/);
-  assert.match(html, /MY \/ KNOWLEDGE \/ MAP/);
+  assert.match(html, /我的证据脉络/);
+  assert.match(html, /MY \/ EVIDENCE \/ MAP/);
   assert.equal((html.match(/data-action="select-knowledge"/g) ?? []).length >= 6, true);
   assert.match(html, /我留下的理解/);
   assert.match(html, /搜索知识、错题或笔记/);
+});
+
+test("study chapter exposes the evidence protocol and action-oriented review contract", () => {
+  const studyHtml = renderPage("/study", DEMO_STATE);
+  assert.equal((studyHtml.match(/data-action="select-evidence"/g) ?? []).length, 4);
+  assert.match(studyHtml, /data-evidence-input/);
+  assert.match(studyHtml, /提交证据并生成复盘/);
+  const reviewHtml = renderPage("/review", DEMO_STATE);
+  for (const label of ["用了什么证据", "发现了什么问题", "为什么这样判断", "明日行动"]) assert.match(reviewHtml, new RegExp(label));
 });
 
 test("knowledge can be captured from study and added through a composer", () => {
@@ -73,7 +82,7 @@ test("approved chapter backgrounds are mapped to their matching modules", () => 
 
 test("guide chapter offers gender-neutral Chinese relic guides", () => {
   const html = renderPage("/assistant", DEMO_STATE);
-  assert.match(html, /选择你的引路人/);
+  assert.match(html, /选择视觉引路物/);
   assert.equal((html.match(/data-action="select-guide"/g) ?? []).length, 4);
   for (const assetId of ["lijing-guide-heavenly-book-v1", "lijing-guide-pagoda-v1", "lijing-guide-ding-v1", "lijing-guide-fan-v1"]) {
     assert.match(html, new RegExp(assetId));
@@ -85,7 +94,7 @@ test("guide selection renders the selected relic as the active guide", () => {
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-ding-v1";
   const html = renderPage("/assistant", state);
-  assert.match(html, /当前引路灵器<\/span><strong>重鼎 · 镇心<\/strong>/);
+  assert.match(html, /视觉层 · 非核心能力<\/span><strong>重鼎 · 镇心<\/strong>/);
   assert.match(html, /data-guide="lijing-guide-ding-v1" aria-pressed="true"/);
   assert.match(html, /guide-option--ding is-selected/);
 });
@@ -129,8 +138,8 @@ test("onboarding completion exposes a dragon-phoenix ascension transition", () =
 });
 
 test("core actions use human language", () => {
-  assert.equal(renderPage("/", DEMO_STATE).includes("开始今日行旅"), true);
-  assert.equal(renderPage("/plan", DEMO_STATE).includes("今日行旅"), true);
+  assert.equal(renderPage("/", DEMO_STATE).includes("开始今日学习"), true);
+  assert.equal(renderPage("/plan", DEMO_STATE).includes("考研数学二"), true);
   assert.equal(renderPage("/growth", DEMO_STATE).includes("回望来路"), true);
 });
 

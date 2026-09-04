@@ -1,5 +1,25 @@
 export const DEMO_STATE = {
   isDemo: true,
+  pilot: {
+    vertical: "考研数学二",
+    subject: "高等数学 · 极限与连续",
+    cohort: "14 天执行验证",
+    selectedEvidenceLevel: 2,
+    submittedEvidence: "",
+    reviewReady: false,
+    evidenceLevels: [
+      { level: 1, title: "自我声明", detail: "我完成了这段学习" },
+      { level: 2, title: "学习产物", detail: "笔记、错题、代码或录音" },
+      { level: 3, title: "输出任务", detail: "短测、复述或应用题" },
+      { level: 4, title: "后测对比", detail: "之后复测并比较变化" },
+    ],
+    review: {
+      evidenceUsed: "25 分钟专注记录、错题复盘和一段概念说明",
+      problem: "连续与可导的边界仍然混淆，容易把必要条件当成充分条件。",
+      reason: "你的复盘说明能说出结论，但还没有用反例检验边界。",
+      nextAction: "明天用 15 分钟写出一个连续但不可导的例子，并用三句话解释原因。",
+    },
+  },
   user: {
     name: "行者 01",
     title: "初见山门",
@@ -63,7 +83,7 @@ export const DEMO_STATE = {
     tasks: [
       { id: "task-01", type: "基础", title: "晨光入山 · 复盘昨日错题", meta: "15 分钟 · 回望营地", status: "done", gua: "☵" },
       { id: "task-02", type: "攀登", title: "微积分 · 极限与连续", meta: "25 分钟 · 当前山段", status: "active", gua: "☲" },
-      { id: "task-03", type: "连接", title: "把一个概念讲给引路人", meta: "10 分钟 · 知识星轨", status: "locked", gua: "☴" },
+      { id: "task-03", type: "连接", title: "把一个概念讲给引路人", meta: "10 分钟 · 输出证据", status: "locked", gua: "☴" },
       { id: "task-04", type: "远眺", title: "夜行收束 · 写下今日一得", meta: "5 分钟 · 山脊营地", status: "locked", gua: "☶" },
     ],
   },

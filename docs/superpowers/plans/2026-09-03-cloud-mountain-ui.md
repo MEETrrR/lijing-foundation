@@ -1,5 +1,7 @@
 # Cloud Mountain UI Implementation Plan
 
+> **当前状态（2026-09-04）：** 本计划已执行并形成可运行演示。实际实现将多个页面收敛在 `apps/user_client/src/pages/index.js`，当前路由、功能、素材映射和验证结果以根目录 `README.md` 及 `docs/superpowers/evidence/2026-09-04-cloud-mountain-ui-verification.md` 为准；本文保留为历史执行记录，步骤复选框不再作为当前完成状态来源。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在当前砺境架构基线上创建一个可运行的 Web 用户端，把“云海登山”叙事落成统一 App Shell、页面路由、动效系统、真实资源入口和可验证的响应式体验。
@@ -191,7 +193,7 @@ git commit -m "feat: add cloud mountain app shell and motion system"
 
 - [ ] **Step 1: 写页面覆盖测试**
 
-测试遍历 `ROUTES`，断言每条第一阶段路由有页面 renderer；断言首页包含“开始今日行旅”、计划页包含“今日行旅”、登顶页状态包含“回望来路”这类真实动作词，而不是空的占位标题。
+测试遍历 `ROUTES`，断言每条第一阶段路由有页面 renderer；断言首页包含“开始今日学习”、计划页包含当前试点主题、登顶页状态包含“回望来路”这类真实动作词，而不是空的占位标题。
 
 - [ ] **Step 2: 运行测试确认页面覆盖不完整**
 
