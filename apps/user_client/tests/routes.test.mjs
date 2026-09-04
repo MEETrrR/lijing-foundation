@@ -35,24 +35,25 @@ test("first-visit onboarding collects a profile, a goal, a companion and feature
   assert.match(profileHtml, /onboarding\/onboarding-background-v2\.png/);
   assert.match(profileHtml, /data-demo-form="onboarding-profile"/);
   assert.match(profileHtml, /name="school"/);
-  assert.match(profileHtml, /此刻最重要的方向/);
+  assert.match(profileHtml, /你现在最想完成什么/);
 
   state.onboarding.step = 2;
   const guideHtml = renderPage("/onboarding", state);
-  assert.match(guideHtml, /第二道山门 · 认领书鼎/);
+  assert.match(guideHtml, /第二步 · 选择书鼎/);
   assert.equal((guideHtml.match(/data-action="onboarding-select-guide"/g) ?? []).length, 4);
   assert.match(guideHtml, /教学方式/);
 
   state.onboarding.step = 3;
   state.onboarding.featureIndex = 5;
   const featureHtml = renderPage("/onboarding", state);
-  assert.match(featureHtml, /第三道山门 · 熟悉山路/);
-  assert.equal((featureHtml.match(/class="onboarding-feature-item /g) ?? []).length, 6);
-  for (const route of ["/goals", "/plan", "/study", "/review", "/knowledge", "/assistant"]) {
-    assert.match(featureHtml, new RegExp(`href="${route}" data-route="${route}"`));
+  assert.match(featureHtml, /第三步 · 认识功能/);
+  assert.equal((featureHtml.match(/data-action="onboarding-feature-select"/g) ?? []).length, 6);
+  for (const title of ["今日计划", "专注学习", "学习复盘", "知识库", "问书鼎", "成长记录"]) {
+    assert.match(featureHtml, new RegExp(title));
   }
-  assert.match(featureHtml, /data-feature-route="\/assistant"/);
-  assert.match(featureHtml, /完成认识，进入我的山门/);
+  assert.doesNotMatch(featureHtml, /data-feature-route="\/goals"/);
+  assert.match(featureHtml, /data-action="onboarding-feature-open"/);
+  assert.match(featureHtml, /完成引导，进入砺境/);
 });
 
 test("bagua reference is registered and integrated into orientation chapters", () => {
@@ -183,7 +184,7 @@ test("core actions use human language", () => {
 
 test("shell exposes navigation, motion controls and content landmarks", () => {
   const html = renderShell("/plan", DEMO_STATE);
-  assert.equal(html.includes('aria-label="八方导航"'), true);
+  assert.equal(html.includes('aria-label="打开全部功能导航"'), true);
   assert.equal(html.includes('data-motion="on"'), true);
   assert.equal(html.includes('data-current-route="/plan"'), true);
   assert.equal(html.includes('class="app-shell" data-route='), false);
@@ -195,6 +196,7 @@ test("onboarding shell replaces the global starfield with the submitted Chinese 
   const html = renderShell("/onboarding", DEMO_STATE, renderPage("/onboarding", DEMO_STATE));
   assert.match(html, /class="app-shell app-shell--onboarding"/);
   assert.match(html, /onboarding\/onboarding-background-v2\.png/);
+  assert.match(html, /左上角 · 全部功能/);
   assert.match(html, /data-scene="onboarding"/);
   assert.doesNotMatch(html, /starforged-frontier-scene-v1\.png/);
 });

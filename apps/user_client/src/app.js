@@ -199,10 +199,14 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.onboarding.featureIndex = Number(element.dataset.featureIndex) || 0;
       render("/onboarding");
     }));
+    root.querySelectorAll('[data-action="onboarding-feature-open"]').forEach((element) => element.addEventListener("click", () => {
+      navigate(element.dataset.featureRoute || "/plan");
+    }));
     root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", () => {
       const lastFeature = 5;
       if (DEMO_STATE.onboarding.featureIndex < lastFeature) {
-        navigate(element.dataset.featureRoute || "/goals");
+        DEMO_STATE.onboarding.featureIndex += 1;
+        render("/onboarding");
         return;
       }
       DEMO_STATE.onboarding.completed = true;

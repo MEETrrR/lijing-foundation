@@ -36,13 +36,13 @@ export const ROUTES = {
     description: "用几步告诉砺境你的方向，选择一个会陪你走路的书鼎。",
   },
   "/goals": {
-    label: "定向",
-    chapter: "定向",
+    label: "目标",
+    chapter: "目标",
     direction: "乾位",
     gua: "☰",
-    eyebrow: "第一章 · 八方定向",
-    title: "你要登向哪一座峰？",
-    description: "选定方向，砺境会把漫长目标折成一条可走的路线。",
+    eyebrow: "第一章 · 我的目标",
+    title: "你想先完成什么？",
+    description: "调整当前最重要的方向，砺境会把它折成一条可走的路线。",
   },
   "/plan": {
     label: "行旅",
@@ -172,11 +172,11 @@ export const NAV_ITEMS = [
   { href: "/study", label: "攀登", short: "离", gua: "☲", position: "south" },
   { href: "/map", label: "山海图", short: "坤", gua: "☷", position: "southwest" },
   { href: "/assistant", label: "引路", short: "兑", gua: "☱", position: "west" },
-  { href: "/goals", label: "定向", short: "乾", gua: "☰", position: "northwest" },
+  { href: "/goals", label: "目标", short: "乾", gua: "☰", position: "northwest" },
 ];
 
 export const FEATURE_ITEMS = [
-  { href: "/goals", label: "定向", gua: "乾", detail: "把愿望落成方向" },
+  { href: "/goals", label: "目标", gua: "乾", detail: "调整你的主方向" },
   { href: "/plan", label: "行旅", gua: "艮", detail: "安排今天的路线" },
   { href: "/study", label: "攀登", gua: "离", detail: "进入当前学习山段" },
   { href: "/review", label: "回望", gua: "坎", detail: "加固走过的知识" },
