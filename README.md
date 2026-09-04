@@ -13,7 +13,7 @@
 - **可运行演示：** 用户端已经有统一的东方水墨世界壳层、八卦功能目录、页面转场、个人知识脉络、学习证据试点、回望复盘和引路灵器选择。
 - **生产基线：** API 契约、模块边界、AI 安全策略、数据分类、环境隔离、运行手册和测试基线已经建立，真实业务服务仍按文档中的实施计划推进。
 
-演示客户端当前聚焦一个可验证方向：**考研数学二 · 高等数学 · 极限与连续**，以 14 天学习证据试点展示完整体验，不代表真实用户数据或生产结算。
+演示客户端保留多目标入口，当前内容样例包含 **考研数学二 · 高等数学 · 极限与连续**，用于展示学习证据与复盘体验，不代表真实用户数据或生产结算。
 
 ## 快速运行
 
@@ -29,6 +29,20 @@ pnpm client:serve
 ```powershell
 $env:PORT=4190; pnpm client:serve
 ```
+
+## 真实 AI 私有试点
+
+用户端只请求本站的 `/api/v1/ai/assist` 和 `/api/v1/ai/review`，Provider 密钥只由服务端环境变量读取。接口兼容 OpenAI Chat Completions 格式，`AI_PROVIDER_BASE_URL` 填到 `/v1` 层级。
+
+```powershell
+$env:AI_ENABLED='true'
+$env:AI_PROVIDER_BASE_URL='https://api.openai.com/v1'
+$env:AI_MODEL='你的模型名'
+$env:AI_PROVIDER_API_KEY='只在服务器环境中设置，不要提交到 Git'
+pnpm client:serve
+```
+
+先访问 `/api/v1/health` 确认 `ai_configured: true`，再在“引路”或“攀登”页面测试真实调用。当前接口是绑定本机的私有试点适配器，尚未替代带账号、配额账本、幂等、审计、内容安全、持久化和 kill switch 的正式 AI Gateway；不要把它部署到公网，也不要把真实敏感资料直接发送给 Provider。
 
 ## 已实现演示功能
 
@@ -50,7 +64,7 @@ $env:PORT=4190; pnpm client:serve
 ## 演示与生产边界
 
 - 当前用户端使用集中式 `DEMO_STATE`，数据只存在浏览器内存，刷新页面会恢复演示初始状态。
-- 登录、真实 AI Gateway、数据库持久化、服务端掌握度/奖励/等级结算尚未接入。
+- 登录、数据库持久化、服务端掌握度/奖励/等级结算和正式 AI Gateway 尚未接入；当前只有用于私有试点的最小 AI 适配器。
 - 演示页面中的目标、进度、知识节点、复盘结论和地图路线都是合成数据，不能作为真实学习结果或机构数据使用。
 - 客户端不得保存 Provider 密钥，也不得自行宣布掌握度、奖励、能量或完成事实；生产版必须通过 `/api/v1` 契约和服务端领域模块完成。
 - 图片资源仍是候选资源，需经过艺术、内容、版权、无障碍和性能复核后才能作为正式资产。
@@ -68,6 +82,7 @@ $env:PORT=4190; pnpm client:serve
 
 ```powershell
 pnpm client:test
+pnpm client:ai:test
 pnpm contract:lint
 pnpm platform:test
 pnpm image:test

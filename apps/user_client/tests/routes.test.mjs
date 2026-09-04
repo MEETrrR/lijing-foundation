@@ -138,8 +138,8 @@ test("onboarding completion exposes a dragon-phoenix ascension transition", () =
 });
 
 test("core actions use human language", () => {
-  assert.equal(renderPage("/", DEMO_STATE).includes("开始今日学习"), true);
-  assert.equal(renderPage("/plan", DEMO_STATE).includes("考研数学二"), true);
+  assert.equal(renderPage("/", DEMO_STATE).includes("开始今日行旅"), true);
+  assert.equal(renderPage("/plan", DEMO_STATE).includes("今日行旅"), true);
   assert.equal(renderPage("/growth", DEMO_STATE).includes("回望来路"), true);
 });
 

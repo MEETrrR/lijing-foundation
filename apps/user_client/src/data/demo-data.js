@@ -6,6 +6,10 @@ export const DEMO_STATE = {
     cohort: "14 天执行验证",
     selectedEvidenceLevel: 2,
     submittedEvidence: "",
+    selectedAnswer: "",
+    assistantResponse: "",
+    assistantError: "",
+    reviewError: "",
     reviewReady: false,
     evidenceLevels: [
       { level: 1, title: "自我声明", detail: "我完成了这段学习" },

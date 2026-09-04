@@ -5,6 +5,20 @@ import { renderShell } from "./components/shell.js";
 
 const sanitizeText = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
+async function requestAi(path, payload) {
+  const healthResponse = await fetch("/api/v1/health");
+  const health = await healthResponse.json().catch(() => ({}));
+  if (!healthResponse.ok || health.ai_configured !== true) throw new Error("AI 服务尚未配置");
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || body.error || "AI 服务暂时不可用");
+  return body;
+}
+
 export function createApp(root = document.querySelector("#app")) {
   if (!root) throw new Error("Missing #app mount point");
   let motionEnabled = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches !== true;
@@ -165,6 +179,7 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="answer"]').forEach((element) => element.addEventListener("click", () => {
       root.querySelectorAll('[data-action="answer"]').forEach((answer) => answer.classList.remove("is-selected"));
       element.classList.add("is-selected");
+      DEMO_STATE.pilot.selectedAnswer = element.textContent.trim();
     }));
     root.querySelectorAll('[data-action="submit-answer"]').forEach((element) => element.addEventListener("click", () => toast("这一阶已记下，正在等待服务端确认")));
     root.querySelectorAll('[data-action="select-evidence"]').forEach((element) => element.addEventListener("click", () => {
@@ -178,7 +193,7 @@ export function createApp(root = document.querySelector("#app")) {
       const label = root.querySelector(".evidence-submit__level");
       if (label) label.textContent = `当前 L${level}`;
     }));
-    root.querySelectorAll('[data-action="submit-evidence"]').forEach((element) => element.addEventListener("click", () => {
+    root.querySelectorAll('[data-action="submit-evidence"]').forEach((element) => element.addEventListener("click", async () => {
       const input = root.querySelector("[data-evidence-input]");
       const evidence = input?.value.trim() ?? "";
       if (!evidence) {
@@ -187,20 +202,40 @@ export function createApp(root = document.querySelector("#app")) {
         return;
       }
       DEMO_STATE.pilot.submittedEvidence = evidence;
-      DEMO_STATE.pilot.reviewReady = true;
-      const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
-      if (activeTask) {
-        activeTask.status = "done";
-        const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
-        if (nextTask) nextTask.status = "active";
-        DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+      element.disabled = true;
+      try {
+        const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
+        const result = await requestAi("/api/v1/ai/review", {
+          task: activeTask?.title || "当前学习任务",
+          answer: DEMO_STATE.pilot.selectedAnswer,
+          evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+          evidence,
+        });
+        DEMO_STATE.pilot.review = result.review;
+        DEMO_STATE.pilot.reviewReady = true;
+        DEMO_STATE.pilot.reviewError = "";
+        if (activeTask) {
+          activeTask.status = "done";
+          const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
+          if (nextTask) nextTask.status = "active";
+          DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+        }
+        if (activeTask) {
+          const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
+          if (knowledge) {
+            knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
+            knowledge.updated = "刚刚";
+          }
+        }
+        navigate("/review");
+      } catch (error) {
+        DEMO_STATE.pilot.reviewReady = false;
+        DEMO_STATE.pilot.reviewError = error.message;
+        navigate("/review");
+        toast("证据已留在本地，AI 复盘暂未完成");
+      } finally {
+        element.disabled = false;
       }
-      const knowledge = DEMO_STATE.knowledge.find((item) => item.id === "limits-continuity");
-      if (knowledge) {
-        knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
-        knowledge.updated = "刚刚";
-      }
-      navigate("/review");
     }));
     root.querySelectorAll('[data-action="capture-knowledge"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.knowledgeCaptureDraft = {
@@ -240,7 +275,7 @@ export function createApp(root = document.querySelector("#app")) {
         item.hidden = Boolean(query) && !item.textContent.toLowerCase().includes(query);
       });
     }));
-    root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", (event) => {
+    root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (form.dataset.demoForm === "knowledge-capture") {
         const values = new FormData(form);
@@ -264,7 +299,32 @@ export function createApp(root = document.querySelector("#app")) {
         toast("新知识已接入你的脉络");
         return;
       }
-      toast(form.dataset.demoForm === "assistant" ? "问题已送到云中，演示环境暂不调用 AI Gateway" : "演示身份已准备好，下一步请选择登山方向");
+      if (form.dataset.demoForm === "assistant") {
+        const values = new FormData(form);
+        const prompt = String(values.get("prompt") || "").trim();
+        if (!prompt) return;
+        const submit = form.querySelector("button[type=submit]");
+        if (submit) submit.disabled = true;
+        try {
+          const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
+          const result = await requestAi("/api/v1/ai/assist", {
+            prompt,
+            context: {
+              goal: DEMO_STATE.goals.find((goal) => goal.selected)?.title || "未选择目标",
+              task: activeTask?.title || "当前没有进行中的任务",
+              evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+            },
+          });
+          DEMO_STATE.pilot.assistantResponse = result.answer;
+          DEMO_STATE.pilot.assistantError = "";
+        } catch (error) {
+          DEMO_STATE.pilot.assistantError = error.message;
+        } finally {
+          render(window.location.pathname);
+        }
+        return;
+      }
+      toast("演示身份已准备好，下一步请选择登山方向");
     }));
   }
 
