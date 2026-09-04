@@ -163,9 +163,13 @@ test("bagua navigation opens as a full-screen selection surface", async () => {
   assert.match(html, /bagua-ink-compass-v1\.png/);
   assert.match(html, /bagua-yinyang-core-v1\.png/);
   assert.match(html, /feature-nav-dial__ink/);
+  assert.match(html, /feature-nav-trigger__core/);
+  assert.equal((html.match(/class="feature-nav-trigger__direction /g) ?? []).length, 8);
   assert.equal((html.match(/class="feature-nav-node /g) ?? []).length, 8);
   const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
   assert.match(styles, /\.feature-nav-overlay \{[^}]*transform-origin: 51px 48px/);
+  assert.match(styles, /feature-nav-trigger-rotate/);
+  assert.match(styles, /feature-nav-trigger-breathe/);
 });
 
 test("onboarding completion exposes a dragon-phoenix ascension transition", () => {
