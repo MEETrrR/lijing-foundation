@@ -1,4 +1,5 @@
 .codex/
+.codegraph/
 .superpowers/
 .worktrees/
 node_modules/
@@ -19,3 +20,4 @@ pubspec.lock
 *.tmp
 secrets/
 uploads/
+%SystemDrive%/

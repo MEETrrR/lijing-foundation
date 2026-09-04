@@ -6,6 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const CLIENT_ROOT = path.join(ROOT, "apps", "user_client");
+const CLIENT_INDEX = path.join(CLIENT_ROOT, "index.html");
+const CLIENT_SOURCE_ROOT = path.join(CLIENT_ROOT, "src");
+const ASSET_SOURCE_ROOT = path.join(ROOT, "assets", "generated", "source");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4187);
 const AI_ENABLED = /^(1|true|yes)$/i.test(process.env.AI_ENABLED || "false");
@@ -132,15 +136,19 @@ async function handleAiRoute(request, response, pathname) {
     sendJson(response, 503, { error: "ai_not_configured", message: "AI 服务尚未配置" }, requestId);
     return;
   }
-  if (!allowAiRequest(request)) {
-    sendJson(response, 429, { error: "ai_rate_limited", message: "今日 AI 调用次数已达上限" }, requestId);
-    return;
-  }
   let body;
   try {
     body = await readJsonBody(request);
   } catch (error) {
     sendJson(response, error.code === "request_too_large" ? 413 : 400, { error: error.code || "invalid_request" }, requestId);
+    return;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    sendJson(response, 400, { error: "invalid_request" }, requestId);
+    return;
+  }
+  if (!allowAiRequest(request)) {
+    sendJson(response, 429, { error: "ai_rate_limited", message: "今日 AI 调用次数已达上限" }, requestId);
     return;
   }
 
@@ -181,11 +189,20 @@ async function handleAiRoute(request, response, pathname) {
 }
 
 function safePath(requestUrl) {
-  const rawPath = decodeURIComponent(new URL(requestUrl, "http://127.0.0.1").pathname);
+  let rawPath;
+  try {
+    rawPath = decodeURIComponent(new URL(requestUrl, "http://127.0.0.1").pathname);
+  } catch {
+    return null;
+  }
   const relative = rawPath === "/" ? "apps/user_client/index.html" : rawPath.replace(/^\/+/, "");
   const filePath = path.resolve(ROOT, relative);
-  if (filePath !== ROOT && !filePath.startsWith(`${ROOT}${path.sep}`)) return null;
-  return filePath;
+  const isPublicFile = filePath === CLIENT_INDEX
+    || filePath.startsWith(`${CLIENT_SOURCE_ROOT}${path.sep}`)
+    || filePath.startsWith(`${ASSET_SOURCE_ROOT}${path.sep}`);
+  if (isPublicFile) return filePath;
+  if (!rawPath.startsWith("/assets/") && !path.extname(rawPath)) return CLIENT_INDEX;
+  return null;
 }
 
 async function handler(request, response) {

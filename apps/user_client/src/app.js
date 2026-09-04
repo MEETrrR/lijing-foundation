@@ -3,8 +3,6 @@ import { normalizeRoute } from "./data/routes.js";
 import { renderPage } from "./pages/index.js";
 import { renderShell } from "./components/shell.js";
 
-const sanitizeText = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-
 async function requestAi(path, payload) {
   const healthResponse = await fetch("/api/v1/health");
   const health = await healthResponse.json().catch(() => ({}));
@@ -279,11 +277,11 @@ export function createApp(root = document.querySelector("#app")) {
       event.preventDefault();
       if (form.dataset.demoForm === "knowledge-capture") {
         const values = new FormData(form);
-        const title = sanitizeText(values.get("title") ?? "").trim();
+        const title = String(values.get("title") ?? "").trim();
         if (!title) return;
-        const strand = sanitizeText(values.get("strand") ?? "新知识").trim() || "新知识";
-        const source = sanitizeText(values.get("source") ?? "手动收录").trim() || "手动收录";
-        const note = sanitizeText(values.get("note") ?? "").trim() || "这是一条刚刚进入个人知识库的新节点。";
+        const strand = String(values.get("strand") ?? "新知识").trim() || "新知识";
+        const source = String(values.get("source") ?? "手动收录").trim() || "手动收录";
+        const note = String(values.get("note") ?? "").trim() || "这是一条刚刚进入个人知识库的新节点。";
         const relatedId = String(values.get("relatedId") ?? "");
         const position = ["east", "west"].find((candidate) => !DEMO_STATE.knowledge.some((item) => item.position === candidate)) ?? "east";
         const id = `knowledge-${Date.now()}`;

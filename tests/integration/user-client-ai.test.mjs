@@ -76,6 +76,14 @@ test("AI pilot calls the provider from the server and returns structured results
     const health = await waitForHealth(appPort);
     assert.equal(health.ai_configured, true);
 
+    const invalidResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "null",
+    });
+    assert.equal(invalidResponse.status, 400);
+    assert.deepEqual(await invalidResponse.json(), { error: "invalid_request" });
+
     const response = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -57,6 +57,15 @@ test("local client server keeps AI disabled honest by default", async () => {
     const pageResponse = await fetch(`${baseUrl}/knowledge`);
     assert.equal(pageResponse.status, 200);
     assert.match(await pageResponse.text(), /<div id="app"><\/div>/);
+
+    for (const privatePath of ["/README.md", "/package.json", "/apps/user_client/server.mjs"]) {
+      const privateResponse = await fetch(`${baseUrl}${privatePath}`);
+      assert.equal(privateResponse.status, 404, `private file should not be served: ${privatePath}`);
+    }
+    const sourceResponse = await fetch(`${baseUrl}/apps/user_client/src/main.js`);
+    assert.equal(sourceResponse.status, 200);
+    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`);
+    assert.equal(assetResponse.status, 200);
   } finally {
     child.kill();
     await wait(25);

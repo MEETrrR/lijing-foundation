@@ -99,6 +99,9 @@ git diff --check
 - [`docs/security/ai-abuse-playbook.md`](docs/security/ai-abuse-playbook.md)：AI 滥用、成本和降级处理。
 - [`docs/security/data-classification.md`](docs/security/data-classification.md)：数据分类与日志边界。
 - [`docs/runbooks/incident-response.md`](docs/runbooks/incident-response.md)：事件响应和恢复流程。
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：队员本地启动、分支、PR 和同步规则。
+- [`SECURITY.md`](SECURITY.md)：公开仓库的安全问题报告边界。
+- [`docs/audits/2026-09-04-public-repository-audit.md`](docs/audits/2026-09-04-public-repository-audit.md)：本轮公开仓库审计、修复和已知限制。
 - [`docs/superpowers/specs/2026-09-03-cloud-mountain-ui-design.md`](docs/superpowers/specs/2026-09-03-cloud-mountain-ui-design.md)：云海登山视觉与交互规范。
 - [`docs/superpowers/plans/`](docs/superpowers/plans/)：生产实现、素材配置和后续工作计划；计划文档不是已完成能力清单。
 - [`assets/generated/README.md`](assets/generated/README.md)：生成素材目录、稳定 `asset_id` 和审核状态。
@@ -109,6 +112,7 @@ git diff --check
 - PR 描述需要说明影响范围、演示/生产边界、测试命令和未完成风险；涉及视觉改动时附页面截图或浏览器验证结果。
 - 不要提交真实密钥、用户隐私、未经授权的图片、视频或音频；大素材先确认用途、版权和压缩策略。
 - 修改契约、模块边界、AI 策略或数据分类时，同时更新对应文档和测试。
+- GitHub Actions 会在 `master` 的 push 和 PR 上自动运行完整校验；本地和 CI 结果不一致时，以可复现的命令、Node/pnpm 版本和日志一起提交。
 
 ## 公开说明
 
