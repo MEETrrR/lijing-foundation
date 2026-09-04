@@ -106,14 +106,14 @@ test("AI pilot calls the provider from the server and returns structured results
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companion_id: "lijing-guide-fan-v1",
+        companion_id: "lijing-guide-fan-v2",
         prompt: "我总是把连续和可导混在一起。",
         context: { goal: "上岸一场重要考试", task: "极限与连续" },
       }),
     });
     const assistBody = await assistResponse.json();
     assert.equal(assistResponse.status, 200);
-    assert.equal(assistBody.companion_id, "lijing-guide-fan-v1");
+    assert.equal(assistBody.companion_id, "lijing-guide-fan-v2");
     assert.equal(assistBody.prompt_version, "v1");
     assert.match(providerCalls[1].body.messages[0].content, /折扇·启思/);
     assert.match(providerCalls[1].body.messages[0].content, /类比、反例、反向问题/);

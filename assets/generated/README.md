@@ -19,9 +19,9 @@ The current `apps/user_client` maps these stable `asset_id` values to module vis
 - `lijing-summit-climb-ink-v2`: 攀登、知识库和山海图的山系场景。
 - `lijing-guide-background-ink-v1`: 引路页面背景。
 - `bagua-ink-compass-v1` and `bagua-yinyang-core-v1`: 八卦方向场与导航核心。
-- `lijing-guide-pagoda-v1`, `lijing-guide-ding-v1`, `lijing-guide-fan-v1`, `lijing-guide-heavenly-book-v1`: 四种无性别引路灵器。
+- `lijing-guide-pagoda-v2`, `lijing-guide-ding-v2`, `lijing-guide-fan-v2`, `lijing-guide-heavenly-book-v2`: 四种更具水墨质感的无性别引路灵器。
 - `opening-dragon-v1` and `opening-phoenix-v1`: 入山升腾转场素材。
 
-`assistant-portrait-v1` remains a runtime candidate for a future assistant avatar. `assistant-character-sheet-v1` and `worldbuilding-board-v1` are reference-only assets. Older `aaa-*` and `starforged-*` assets are retained for comparison and are not part of the current module mapping.
+`assistant-portrait-v1` remains a runtime candidate for a future assistant avatar. `assistant-character-sheet-v1` and `worldbuilding-board-v1` are reference-only assets. The older guide `v1` assets, `aaa-*`, and `starforged-*` assets are retained for comparison and are not part of the current module mapping.
 
 All generated images remain candidates until art, content, copyright, accessibility, and performance review are complete. The manifest was last generated on 2026-09-04. Business modules should reference the manifest `asset_id`, not a temporary URL or an original download filename. Several PNGs are multi-megabyte; do not duplicate or add them to a page without checking loading cost and mobile behavior.

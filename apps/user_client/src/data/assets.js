@@ -41,27 +41,27 @@ const ASSET_CATALOG = {
     role: "onboarding_background",
     alt: "两侧山崖与古松环抱、中央留白的国风水墨山水引导背景",
   },
-  "lijing-guide-pagoda-v1": {
-    assetId: "lijing-guide-pagoda-v1",
-    path: "/assets/generated/source/guides/lijing-guide-pagoda-v1.png",
+  "lijing-guide-pagoda-v2": {
+    assetId: "lijing-guide-pagoda-v2",
+    path: "/assets/generated/source/guides/lijing-guide-pagoda-v2.png",
     role: "guide_relic",
     alt: "悬于云海中的东方宝塔引路灵器",
   },
-  "lijing-guide-ding-v1": {
-    assetId: "lijing-guide-ding-v1",
-    path: "/assets/generated/source/guides/lijing-guide-ding-v1.png",
+  "lijing-guide-ding-v2": {
+    assetId: "lijing-guide-ding-v2",
+    path: "/assets/generated/source/guides/lijing-guide-ding-v2.png",
     role: "guide_relic",
     alt: "承载阴阳云火的东方重鼎引路灵器",
   },
-  "lijing-guide-fan-v1": {
-    assetId: "lijing-guide-fan-v1",
-    path: "/assets/generated/source/guides/lijing-guide-fan-v1.png",
+  "lijing-guide-fan-v2": {
+    assetId: "lijing-guide-fan-v2",
+    path: "/assets/generated/source/guides/lijing-guide-fan-v2.png",
     role: "guide_relic",
     alt: "展开山河星轨的东方折扇引路灵器",
   },
-  "lijing-guide-heavenly-book-v1": {
-    assetId: "lijing-guide-heavenly-book-v1",
-    path: "/assets/generated/source/guides/lijing-guide-heavenly-book-v1.png",
+  "lijing-guide-heavenly-book-v2": {
+    assetId: "lijing-guide-heavenly-book-v2",
+    path: "/assets/generated/source/guides/lijing-guide-heavenly-book-v2.png",
     role: "guide_relic",
     alt: "展开山河星轨的东方天书引路灵器",
   },

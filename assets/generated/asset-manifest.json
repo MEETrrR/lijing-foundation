@@ -161,8 +161,8 @@
     {
       "asset_id": "lijing-guide-pagoda-v1",
       "path": "assets/generated/source/guides/lijing-guide-pagoda-v1.png",
-      "role": "runtime-candidate",
-      "usage": ["guide_relic", "assistant_guide_choice"],
+      "role": "reference-only",
+      "usage": ["guide_reference"],
       "classification": "L2_until_reviewed",
       "format": "png",
       "width": 1024,
@@ -170,13 +170,13 @@
       "sha256": "d2cf08c4816e96ef9423910e2249267ed44f8e9efda96090d18f6199b48f2017",
       "source": "GPT Image",
       "review": "pending_art_and_content_review",
-      "notes": "Transparent Chinese pagoda relic used as a selectable gender-neutral guide."
+      "notes": "Previous guide artwork retained as a comparison reference after the water-ink replacement."
     },
     {
       "asset_id": "lijing-guide-ding-v1",
       "path": "assets/generated/source/guides/lijing-guide-ding-v1.png",
-      "role": "runtime-candidate",
-      "usage": ["guide_relic", "assistant_guide_choice"],
+      "role": "reference-only",
+      "usage": ["guide_reference"],
       "classification": "L2_until_reviewed",
       "format": "png",
       "width": 1024,
@@ -184,13 +184,13 @@
       "sha256": "e2cb8e7abaeacc13b9d8a6f756f7439bad2b058beea2eecea2b50713c3067c5e",
       "source": "GPT Image",
       "review": "pending_art_and_content_review",
-      "notes": "Transparent Chinese bronze ding relic used as a selectable gender-neutral guide."
+      "notes": "Previous guide artwork retained as a comparison reference after the water-ink replacement."
     },
     {
       "asset_id": "lijing-guide-fan-v1",
       "path": "assets/generated/source/guides/lijing-guide-fan-v1.png",
-      "role": "runtime-candidate",
-      "usage": ["guide_relic", "assistant_guide_choice"],
+      "role": "reference-only",
+      "usage": ["guide_reference"],
       "classification": "L2_until_reviewed",
       "format": "png",
       "width": 1024,
@@ -198,13 +198,13 @@
       "sha256": "106ad49e7b1b376ffa63b9884df915349f4e69c3243fd8962dba587f66dce8dc",
       "source": "GPT Image",
       "review": "pending_art_and_content_review",
-      "notes": "Chinese landscape fan with a light paper field; runtime styling blends it into the ink panel."
+      "notes": "Previous guide artwork retained as a comparison reference after the water-ink replacement."
     },
     {
       "asset_id": "lijing-guide-heavenly-book-v1",
       "path": "assets/generated/source/guides/lijing-guide-heavenly-book-v1.png",
-      "role": "runtime-candidate",
-      "usage": ["guide_relic", "assistant_guide_choice"],
+      "role": "reference-only",
+      "usage": ["guide_reference"],
       "classification": "L2_until_reviewed",
       "format": "png",
       "width": 1024,
@@ -212,7 +212,63 @@
       "sha256": "93dba2a8ff7fc3747840e9415b48a64f38ac08e96db9a7e5f4104fea83ccf312",
       "source": "GPT Image",
       "review": "pending_art_and_content_review",
-      "notes": "Transparent Chinese heavenly book relic used as the default selectable gender-neutral guide."
+      "notes": "Previous guide artwork retained as a comparison reference after the water-ink replacement."
+    },
+    {
+      "asset_id": "lijing-guide-pagoda-v2",
+      "path": "assets/generated/source/guides/lijing-guide-pagoda-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["guide_relic", "assistant_guide_choice"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1030,
+      "height": 1526,
+      "sha256": "d2d5a1c24dbbba4424239664260a484512636104545aa6853003da8bfe7d6eef",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "User-provided full-canvas Chinese ink pagoda illustration selected as the gender-neutral guide replacement."
+    },
+    {
+      "asset_id": "lijing-guide-ding-v2",
+      "path": "assets/generated/source/guides/lijing-guide-ding-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["guide_relic", "assistant_guide_choice"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1038,
+      "height": 1516,
+      "sha256": "479e82ad5f0ea302f14fd750002c2c88055702ed8d71b86af520e9faea6be7fd",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "User-provided full-canvas Chinese ink bronze ding illustration selected as the gender-neutral guide replacement."
+    },
+    {
+      "asset_id": "lijing-guide-fan-v2",
+      "path": "assets/generated/source/guides/lijing-guide-fan-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["guide_relic", "assistant_guide_choice"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1024,
+      "height": 1536,
+      "sha256": "106ad49e7b1b376ffa63b9884df915349f4e69c3243fd8962dba587f66dce8dc",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "User-provided full-canvas Chinese ink landscape fan illustration selected as the gender-neutral guide replacement."
+    },
+    {
+      "asset_id": "lijing-guide-heavenly-book-v2",
+      "path": "assets/generated/source/guides/lijing-guide-heavenly-book-v2.png",
+      "role": "runtime-candidate",
+      "usage": ["guide_relic", "assistant_guide_choice"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1024,
+      "height": 1535,
+      "sha256": "4f4ce6a757aecf0b1fe8b74ed349804c2af23974cb556711e024335866cff820",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "User-provided full-canvas Chinese ink heavenly book illustration selected as the default gender-neutral guide replacement."
     },
     {
       "asset_id": "assistant-portrait-v1",

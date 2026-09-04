@@ -138,7 +138,7 @@ test("guide chapter offers gender-neutral Chinese relic guides", () => {
   const html = renderPage("/assistant", DEMO_STATE);
   assert.match(html, /选择你的书鼎/);
   assert.equal((html.match(/data-action="select-guide"/g) ?? []).length, 4);
-  for (const assetId of ["lijing-guide-heavenly-book-v1", "lijing-guide-pagoda-v1", "lijing-guide-ding-v1", "lijing-guide-fan-v1"]) {
+  for (const assetId of ["lijing-guide-heavenly-book-v2", "lijing-guide-pagoda-v2", "lijing-guide-ding-v2", "lijing-guide-fan-v2"]) {
     assert.match(html, new RegExp(assetId));
   }
   assert.doesNotMatch(html, /aaa-hero-character-female-v2/);
@@ -146,16 +146,16 @@ test("guide chapter offers gender-neutral Chinese relic guides", () => {
 
 test("guide selection renders the selected relic as the active guide", () => {
   const state = structuredClone(DEMO_STATE);
-  state.guide.selectedAssetId = "lijing-guide-ding-v1";
+  state.guide.selectedAssetId = "lijing-guide-ding-v2";
   const html = renderPage("/assistant", state);
   assert.match(html, /教学人格 · 专注、减负、短行动<\/span><strong>重鼎 · 镇心<\/strong>/);
-  assert.match(html, /data-guide="lijing-guide-ding-v1" aria-pressed="true"/);
+  assert.match(html, /data-guide="lijing-guide-ding-v2" aria-pressed="true"/);
   assert.match(html, /guide-option--ding is-selected/);
 });
 
 test("assistant presents companion teaching identity instead of a visual-only guide", () => {
   const state = structuredClone(DEMO_STATE);
-  state.guide.selectedAssetId = "lijing-guide-fan-v1";
+  state.guide.selectedAssetId = "lijing-guide-fan-v2";
   const html = renderPage("/assistant", state);
   assert.match(html, /专属教学人格/);
   assert.match(html, /教学人格 · 类比、反例、换角度/);

@@ -48,10 +48,10 @@ export const DEMO_STATE = {
     },
   },
   guide: {
-    selectedAssetId: "lijing-guide-heavenly-book-v1",
+    selectedAssetId: "lijing-guide-heavenly-book-v2",
     options: [
       {
-        assetId: "lijing-guide-heavenly-book-v1",
+        assetId: "lijing-guide-heavenly-book-v2",
         kind: "book",
         name: "天书 · 知解",
         detail: "把复杂的问题拆成可理解的路径",
@@ -60,7 +60,7 @@ export const DEMO_STATE = {
         opening: "把你卡住的那一处翻开，我们先只看一页。",
       },
       {
-        assetId: "lijing-guide-pagoda-v1",
+        assetId: "lijing-guide-pagoda-v2",
         kind: "pagoda",
         name: "宝塔 · 守门",
         detail: "先立边界，再找到下一步",
@@ -69,7 +69,7 @@ export const DEMO_STATE = {
         opening: "先别急着登高，我们先确认脚下这一阶是否站稳。",
       },
       {
-        assetId: "lijing-guide-ding-v1",
+        assetId: "lijing-guide-ding-v2",
         kind: "ding",
         name: "重鼎 · 镇心",
         detail: "收住心神，稳稳走完这一阶",
@@ -78,7 +78,7 @@ export const DEMO_STATE = {
         opening: "今天不需要搬完整座山，我们只点亮接下来 25 分钟。",
       },
       {
-        assetId: "lijing-guide-fan-v1",
+        assetId: "lijing-guide-fan-v2",
         kind: "fan",
         name: "折扇 · 启思",
         detail: "换一个角度，让思路重新流动",
