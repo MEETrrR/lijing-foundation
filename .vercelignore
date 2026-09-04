@@ -1,0 +1,15 @@
+.git
+.codegraph
+.codex
+.worktrees
+node_modules
+docs
+infra
+packages
+services
+tests
+tools
+CONTRIBUTING.md
+README.md
+SECURITY.md
+pnpm-lock.yaml

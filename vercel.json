@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/api/v1/health", "dest": "/api/v1/health.js" },
+    { "src": "/api/v1/ai/assist", "dest": "/api/v1/ai/assist.js" },
+    { "src": "/api/v1/ai/review", "dest": "/api/v1/ai/review.js" },
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/apps/user_client/index.html" }
+  ]
+}
