@@ -20,7 +20,8 @@ The current `apps/user_client` maps these stable `asset_id` values to module vis
 - `lijing-guide-background-ink-v1`: 引路页面背景。
 - `bagua-ink-compass-v1` and `bagua-yinyang-core-v1`: 八卦方向场与导航核心。
 - `lijing-guide-pagoda-v2`, `lijing-guide-ding-v2`, `lijing-guide-fan-v2`, `lijing-guide-heavenly-book-v2`: 四种更具水墨质感的无性别引路灵器。
-- `opening-dragon-v1` and `opening-phoenix-v1`: 入山升腾转场素材。
+- `opening-longfeng-clean-v1`: 龙凤合流形成太极的 1920x1080、24fps 入山开场视频。
+- `opening-dragon-v1` and `opening-phoenix-v1`: 旧版入山转场 PNG 参考素材，当前运行时不再使用。
 
 `assistant-portrait-v1` remains a runtime candidate for a future assistant avatar. `assistant-character-sheet-v1` and `worldbuilding-board-v1` are reference-only assets. The older guide `v1` assets, `aaa-*`, and `starforged-*` assets are retained for comparison and are not part of the current module mapping.
 

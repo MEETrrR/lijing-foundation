@@ -1,6 +1,6 @@
 {
   "manifest_version": "0.1.0",
-  "generated_at": "2026-09-04",
+  "generated_at": "2026-09-06",
   "world": "starforged-frontier",
   "review_status": "candidate",
   "assets": [
@@ -31,6 +31,23 @@
       "source": "User-provided reference",
       "review": "pending_art_and_content_review",
       "notes": "Layered over the existing Bagua orientation scene as the central yin-yang visual. Keep navigation controls in the separate HTML layer."
+    },
+    {
+      "asset_id": "opening-longfeng-clean-v1",
+      "path": "assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4",
+      "role": "runtime-candidate",
+      "usage": ["onboarding_opening", "ascension_transition"],
+      "classification": "L2_until_reviewed",
+      "format": "mp4",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration_seconds": 5,
+      "size_bytes": 3676198,
+      "sha256": "f4fd2b00324e3aae005fe65a9067167ea40e89fc61c9947b95525e96d853471d",
+      "source": "User-provided video",
+      "review": "pending_art_and_content_review",
+      "notes": "Approved dragon-phoenix-to-taiji opening video. The runtime plays the video directly and routes after playback ends."
     },
     {
       "asset_id": "opening-dragon-v1",

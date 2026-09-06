@@ -164,15 +164,27 @@ export function createApp(root = document.querySelector("#app")) {
       navigate(nextRoute, nextRoute === "/features" ? openFeatureNav : undefined);
       return;
     }
+    const video = intro.querySelector(".ascension-intro__video");
+    const finish = () => {
+      if (intro.dataset.finished === "true") return;
+      intro.dataset.finished = "true";
+      window.clearTimeout(ascensionTimer);
+      intro.classList.add("is-complete");
+      window.setTimeout(() => navigate(nextRoute, nextRoute === "/features" ? openFeatureNav : undefined), 520);
+    };
     window.clearTimeout(ascensionTimer);
+    intro.dataset.finished = "false";
     intro.removeAttribute("hidden");
     intro.setAttribute("aria-hidden", "false");
     void intro.offsetWidth;
     intro.classList.add("is-playing");
-    ascensionTimer = window.setTimeout(() => {
-      intro.classList.add("is-complete");
-      window.setTimeout(() => navigate(nextRoute, nextRoute === "/features" ? openFeatureNav : undefined), 520);
-    }, 3200);
+    if (video) {
+      video.addEventListener("ended", finish, { once: true });
+      video.addEventListener("error", finish, { once: true });
+      try { video.currentTime = 0; } catch { /* The browser may not have loaded metadata yet. */ }
+      video.play().catch(() => {});
+    }
+    ascensionTimer = window.setTimeout(finish, 5600);
   };
 
   function bindEvents() {

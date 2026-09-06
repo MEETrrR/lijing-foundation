@@ -73,6 +73,9 @@ test("local client server keeps AI disabled honest and protects the formal AI ro
     assert.equal(sourceResponse.status, 200);
     const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`);
     assert.equal(assetResponse.status, 200);
+    const openingVideoResponse = await fetch(`${baseUrl}/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4`);
+    assert.equal(openingVideoResponse.status, 200);
+    assert.equal(openingVideoResponse.headers.get("content-type"), "video/mp4");
   } finally {
     child.kill();
     await wait(25);

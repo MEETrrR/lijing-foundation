@@ -83,6 +83,12 @@ const ASSET_CATALOG = {
     role: "bagua_center_visual",
     alt: "灵兽环抱的水墨阴阳核心",
   },
+  "opening-longfeng-clean-v1": {
+    assetId: "opening-longfeng-clean-v1",
+    path: "/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4",
+    role: "opening_animation_video",
+    alt: "龙凤合流形成太极的东方水墨开场动画",
+  },
   "opening-dragon-v1": {
     assetId: "opening-dragon-v1",
     path: "/assets/generated/source/opening/opening-dragon-v1.png",

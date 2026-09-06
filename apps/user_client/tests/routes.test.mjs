@@ -209,11 +209,13 @@ test("bagua navigation opens as a full-screen selection surface", async () => {
   assert.match(styles, /feature-nav-trigger-breathe/);
 });
 
-test("onboarding completion exposes a dragon-phoenix ascension transition", () => {
+test("onboarding completion exposes the approved dragon-phoenix video transition", () => {
   const html = renderShell("/goals", DEMO_STATE, renderPage("/goals", DEMO_STATE));
   assert.match(html, /data-action="complete-onboarding"/);
-  assert.match(html, /opening\/opening-dragon-v1\.png/);
-  assert.match(html, /opening\/opening-phoenix-v1\.png/);
+  assert.equal(getAsset("opening-longfeng-clean-v1")?.path, "/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4");
+  assert.match(html, /opening\/ink_longfeng_clean_1920x1080_24fps\.mp4/);
+  assert.match(html, /class="ascension-intro__video"/);
+  assert.match(html, /playsinline/);
   assert.match(html, /id="ascension-intro"/);
 });
 

@@ -15,7 +15,7 @@ const CLIENT_SOURCE_ROOT = path.join(CLIENT_ROOT, "src");
 const ASSET_SOURCE_ROOT = path.join(ROOT, "assets", "generated", "source");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4187);
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
 const FORMAL_BACKEND_SERVICES = createDefaultServices({ env: process.env });
 const formalBackendHandler = createBackendHandler(FORMAL_BACKEND_SERVICES);
 
