@@ -24,6 +24,12 @@ export const DEMO_STATE = {
       nextAction: "明天用 15 分钟写出一个连续但不可导的例子，并用三句话解释原因。",
     },
   },
+  memory: {
+    iterationCount: 0,
+    syncStatus: "idle",
+    lastIterationId: "",
+    memories: [],
+  },
   user: {
     name: "行者 01",
     title: "初见山门",

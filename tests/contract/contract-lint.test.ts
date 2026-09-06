@@ -18,7 +18,10 @@ const OPERATION_SECURITY = {
   "POST /api/v1/auth/logout": "bearer",
   "GET /api/v1/auth/me": "bearer",
   "GET /api/v1/me/progress": "bearer",
+  "GET /api/v1/me/memories": "bearer",
   "POST /api/v1/learning/attempts": "bearer",
+  "POST /api/v1/memory/iterations": "bearer",
+  "POST /api/v1/me/memories/{memory_id}": "bearer",
   "POST /api/v1/ai/requests": "bearer",
   "GET /api/v1/ai/requests/{request_id}": "bearer",
 };
@@ -178,7 +181,8 @@ test("OpenAPI is parsed and validated as a versioned, secured use-case contract"
 
     if (!WRITE_METHODS.has(method)) continue;
     if (pathTemplate.startsWith("/api/v1/auth/")) continue;
-    const requestSchema = operation.requestBody?.content?.["application/json"]?.schema;
+    const rawRequestSchema = operation.requestBody?.content?.["application/json"]?.schema;
+    const requestSchema = rawRequestSchema?.$ref ? resolveLocalRef(api, rawRequestSchema.$ref) : rawRequestSchema;
     assert.ok(requestSchema, `${method.toUpperCase()} ${pathTemplate} must define a JSON request schema`);
     assert.ok(requestSchema.required?.includes("request_id"), `${method.toUpperCase()} ${pathTemplate} must require request_id`);
     assert.ok(operation.parameters?.some((parameter) => parameter.$ref === "#/components/parameters/IdempotencyKey"));

@@ -9,6 +9,7 @@ const { InMemoryMessageBus } = require("../platform/messaging/message-bus.ts");
 const { PlatformHealthChecker } = require("../platform/health.ts");
 const { IdentityService } = require("../domains/identity/authentication.ts");
 const { LearningService } = require("../domains/learning/learning-service.ts");
+const { MemoryService } = require("../domains/memory/memory-service.ts");
 const { AiGatewayService, MockAiProvider, OpenAiCompatibleProvider } = require("../domains/ai-gateway/ai-gateway-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
@@ -90,6 +91,7 @@ function createDefaultServices(options = {}) {
     sessionTtlMs: options.sessionTtlMs,
   });
   const learning = options.learning ?? new LearningService({ database, questions: options.questions, clock: options.clock });
+  const memory = options.memory ?? new MemoryService({ database, clock: options.clock });
   const providerConfigured = Boolean(env.AI_PROVIDER_BASE_URL && env.AI_PROVIDER_API_KEY && env.AI_MODEL);
   if (isProduction && env.AI_ENABLED === "true" && !providerConfigured) throw new Error("AI provider configuration is required when AI_ENABLED=true in production");
   const configuredTimeout = Number(env.AI_REQUEST_TIMEOUT_MS ?? 30000);
@@ -100,7 +102,7 @@ function createDefaultServices(options = {}) {
   const aiEnabled = options.aiEnabled ?? (env.AI_ENABLED === "true" && providerConfigured);
   const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, clock: options.clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, database, cache, queue, objectStorage, identity, learning, ai, health };
+  return { env, database, cache, queue, objectStorage, identity, learning, memory, ai, health };
 }
 
 function createBackendHandler(services) {
@@ -152,10 +154,30 @@ function createBackendHandler(services) {
         return;
       }
 
+      if (url.pathname === "/api/v1/me/memories" && request.method === "GET") {
+        sendJson(response, 200, await services.memory.getMemories(actor.actorId, actorContext.requestId, url.searchParams.get("scope") ?? undefined), actorContext);
+        return;
+      }
+
       if (url.pathname === "/api/v1/learning/attempts" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
         const result = await services.learning.recordAttempt(actor.actorId, await readJson(request), idempotencyKey(request));
         sendJson(response, 201, result.response, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/memory/iterations" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.memory.recordIteration(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 201, result.response, actorContext);
+        return;
+      }
+
+      const memoryMatch = /^\/api\/v1\/me\/memories\/([^/]+)$/.exec(url.pathname);
+      if (memoryMatch && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.memory.updateMemory(actor.actorId, decodeURIComponent(memoryMatch[1]), await readJson(request), idempotencyKey(request));
+        sendJson(response, 200, result.response, actorContext);
         return;
       }
 

@@ -10,6 +10,8 @@ const ids = {
   request4: "44444444-4444-4444-8444-444444444444",
   request5: "55555555-5555-4555-8555-555555555555",
   request6: "66666666-6666-4666-8666-666666666666",
+  request7: "77777777-7777-4777-8777-777777777777",
+  request8: "88888888-8888-4888-8888-888888888888",
 };
 
 async function listen(server) {
@@ -141,6 +143,70 @@ test("learning attempts settle on the server, ignore forged settlement fields, a
     const progress = await jsonRequest(baseUrl, "/api/v1/me/progress", { headers: auth() });
     assert.equal(progress.body.mastery_summary.mastered, 1);
     assert.equal(progress.body.energy.current, 99);
+  } finally {
+    await close(server);
+  }
+});
+
+test("memory iterations create user-scoped candidates and feedback changes their status idempotently", async () => {
+  const { server } = createBackendServer({ aiEnabled: false });
+  const baseUrl = await listen(server);
+  const iteration = {
+    request_id: ids.request7,
+    iteration_id: "iteration-001",
+    goal_scope: "goal-exam",
+    goal_title: "考研备考",
+    task_id: "limits-continuity-001",
+    evidence_level: 2,
+    evidence: "我用反例说明连续不推出可导，并记录了卡住的步骤。",
+    review: {
+      problem: "连续与可导的边界仍然混淆。",
+      reason: "复盘中能说出结论，但还没有用反例检验边界。",
+      next_action: "明天用 15 分钟写出一个连续但不可导的例子。",
+    },
+  };
+  try {
+    const unauthorized = await jsonRequest(baseUrl, "/api/v1/me/memories");
+    assert.equal(unauthorized.response.status, 401);
+
+    const first = await jsonRequest(baseUrl, "/api/v1/memory/iterations", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "memory-iteration-key-01" },
+      body: JSON.stringify(iteration),
+    });
+    assert.equal(first.response.status, 201);
+    assert.equal(first.body.new_memory_count, 2);
+    assert.equal(first.body.candidates.length, 2);
+    assert.equal(first.body.candidates.every((memory) => memory.status === "candidate"), true);
+
+    const replay = await jsonRequest(baseUrl, "/api/v1/memory/iterations", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "memory-iteration-key-01" },
+      body: JSON.stringify(iteration),
+    });
+    assert.deepEqual(replay.body, first.body);
+
+    const memories = await jsonRequest(baseUrl, "/api/v1/me/memories?scope=goal-exam", { headers: auth() });
+    assert.equal(memories.response.status, 200);
+    assert.equal(memories.body.iteration_count, 1);
+    assert.equal(memories.body.memories.length, 2);
+
+    const candidate = first.body.candidates.find((memory) => memory.kind === "strategy");
+    const confirmed = await jsonRequest(baseUrl, `/api/v1/me/memories/${candidate.id}`, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "memory-feedback-key-01" },
+      body: JSON.stringify({ request_id: ids.request8, action: "confirm" }),
+    });
+    assert.equal(confirmed.response.status, 200);
+    assert.equal(confirmed.body.memory.status, "active");
+    assert.equal(confirmed.body.memory.confidence >= 0.8, true);
+
+    const otherUser = await jsonRequest(baseUrl, `/api/v1/me/memories/${candidate.id}`, {
+      method: "POST",
+      headers: { ...auth("dev-user-002-token"), "Idempotency-Key": "memory-other-user-01" },
+      body: JSON.stringify({ request_id: "99999999-9999-4999-8999-999999999999", action: "confirm" }),
+    });
+    assert.equal(otherUser.response.status, 404);
   } finally {
     await close(server);
   }

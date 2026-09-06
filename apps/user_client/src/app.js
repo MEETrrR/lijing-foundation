@@ -37,6 +37,56 @@ async function requestAi(path, payload) {
   return { answer: body.result.text };
 }
 
+async function requestMemoryIteration(payload) {
+  const response = await fetch("/api/v1/memory/iterations", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
+    body: JSON.stringify({ request_id: newRequestId(), ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后保存长期记忆" : body.message || "记忆暂时没有写入");
+  return body;
+}
+
+async function requestMemoryFeedback(memoryId, action, content) {
+  const response = await fetch(`/api/v1/me/memories/${encodeURIComponent(memoryId)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
+    body: JSON.stringify({ request_id: newRequestId(), action, ...(content ? { content } : {}) }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || "记忆状态暂时没有更新");
+  return body;
+}
+
+function localReview(evidence, evidenceLevel, answer) {
+  return {
+    evidenceUsed: evidence,
+    problem: answer.includes("B")
+      ? "你已经抓住结论，但还需要把边界条件和反例连起来。"
+      : "这次短测答案还没有形成可回看的判断依据。",
+    reason: `本轮留下了 L${evidenceLevel} 证据，先把能被复查的步骤留下来，再判断是否掌握。`,
+    nextAction: "明天用 15 分钟写出一个反例，再用三句话解释它为什么成立。",
+  };
+}
+
+function localMemoryCandidates(payload, iterationId) {
+  const now = new Date().toISOString();
+  return [
+    { id: `demo-memory-friction-${iterationId}`, kind: "friction", title: "当前需要回望", content: payload.review.problem, scope: payload.goal_scope, goal_title: payload.goal_title, source: "learning_iteration", status: "candidate", confidence: 0.51, observation_count: 1, evidence_level: payload.evidence_level, first_observed_at: now, last_observed_at: now, last_iteration_id: iterationId, updated_at: now },
+    { id: `demo-memory-strategy-${iterationId}`, kind: "strategy", title: "已发现的下一步", content: payload.review.next_action, scope: payload.goal_scope, goal_title: payload.goal_title, source: "learning_iteration", status: "candidate", confidence: 0.51, observation_count: 1, evidence_level: payload.evidence_level, first_observed_at: now, last_observed_at: now, last_iteration_id: iterationId, updated_at: now },
+  ];
+}
+
+function activeMemoryContext() {
+  return (DEMO_STATE.memory?.memories ?? [])
+    .filter((memory) => memory.status === "active")
+    .slice(0, 3)
+    .map((memory) => ({ kind: memory.kind, scope: memory.scope, content: memory.content, confidence: memory.confidence }));
+}
+
 export function createApp(root = document.querySelector("#app")) {
   if (!root) throw new Error("Missing #app mount point");
   let motionEnabled = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches !== true;
@@ -46,6 +96,25 @@ export function createApp(root = document.querySelector("#app")) {
   let ascensionTimer = 0;
   let revealObserver;
   DEMO_STATE.auth ??= { user: null, mode: "login" };
+  DEMO_STATE.memory ??= { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
+
+  const applyMemoryResponse = (body) => {
+    DEMO_STATE.memory.iterationCount = Number(body.iteration_count ?? DEMO_STATE.memory.iterationCount ?? 0);
+    DEMO_STATE.memory.memories = Array.isArray(body.memories) ? body.memories : (Array.isArray(body.candidates) ? body.candidates : []);
+    DEMO_STATE.memory.lastIterationId = body.iteration_id ?? DEMO_STATE.memory.lastIterationId;
+    DEMO_STATE.memory.syncStatus = "synced";
+  };
+
+  const syncMemories = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    try {
+      const response = await fetch("/api/v1/me/memories", { credentials: "same-origin" });
+      if (!response.ok) return;
+      applyMemoryResponse(await response.json());
+    } catch {
+      DEMO_STATE.memory.syncStatus = "offline";
+    }
+  };
 
   const syncSession = async () => {
     try {
@@ -56,6 +125,7 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.auth.user = body.user;
         DEMO_STATE.isDemo = false;
         DEMO_STATE.user.name = body.user.display_name;
+        await syncMemories();
       }
     } catch {
       // The demo remains usable when the API is unavailable.
@@ -345,36 +415,78 @@ export function createApp(root = document.querySelector("#app")) {
       }
       DEMO_STATE.pilot.submittedEvidence = evidence;
       element.disabled = true;
+      const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
+      const iterationId = `iteration-${Date.now()}`;
+      let iterationReview;
       try {
-        const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
         const result = await requestAi("/api/v1/ai/review", {
           task: activeTask?.title || "当前学习任务",
           answer: DEMO_STATE.pilot.selectedAnswer,
           evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
           evidence,
         });
-        DEMO_STATE.pilot.review = result.review;
+        iterationReview = result.review;
+        DEMO_STATE.pilot.review = iterationReview;
         DEMO_STATE.pilot.reviewReady = true;
         DEMO_STATE.pilot.reviewError = "";
-        if (activeTask) {
-          activeTask.status = "done";
-          const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
-          if (nextTask) nextTask.status = "active";
-          DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
-        }
-        if (activeTask) {
-          const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
-          if (knowledge) {
-            knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
-            knowledge.updated = "刚刚";
-          }
-        }
-        navigate("/review");
       } catch (error) {
+        iterationReview = localReview(evidence, DEMO_STATE.pilot.selectedEvidenceLevel, DEMO_STATE.pilot.selectedAnswer);
+        DEMO_STATE.pilot.review = iterationReview;
         DEMO_STATE.pilot.reviewReady = false;
         DEMO_STATE.pilot.reviewError = error.message;
-        navigate("/review");
-        toast("证据已留在本地，AI 复盘暂未完成");
+        toast("证据已留下，先用本地复盘继续走");
+      }
+      if (activeTask) {
+        activeTask.status = "done";
+        const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
+        if (nextTask) nextTask.status = "active";
+        DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+        const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
+        if (knowledge) {
+          knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
+          knowledge.updated = "刚刚";
+        }
+      }
+      const payload = {
+        iteration_id: iterationId,
+        goal_scope: DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "global",
+        goal_title: DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? "当前学习目标",
+        task_id: activeTask?.id ?? "current-task",
+        evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+        evidence,
+        review: { problem: iterationReview.problem, reason: iterationReview.reason, next_action: iterationReview.nextAction },
+      };
+      try {
+        DEMO_STATE.memory.syncStatus = "saving";
+        const result = DEMO_STATE.isDemo
+          ? { iteration_id: iterationId, iteration_count: (DEMO_STATE.memory.iterationCount ?? 0) + 1, candidates: localMemoryCandidates(payload, iterationId) }
+          : await requestMemoryIteration(payload);
+        applyMemoryResponse(result);
+      } catch (error) {
+        DEMO_STATE.memory.syncStatus = "error";
+        toast(error.message);
+      } finally {
+        element.disabled = false;
+      }
+      navigate("/review");
+    }));
+    root.querySelectorAll('[data-action="memory-feedback"]').forEach((element) => element.addEventListener("click", async () => {
+      const memoryId = element.dataset.memoryId;
+      const action = element.dataset.memoryAction;
+      if (!memoryId || !action) return;
+      element.disabled = true;
+      try {
+        if (DEMO_STATE.isDemo) {
+          const memory = DEMO_STATE.memory.memories.find((item) => item.id === memoryId);
+          if (memory) memory.status = action === "confirm" ? "active" : "rejected";
+          DEMO_STATE.memory.memories = DEMO_STATE.memory.memories.filter((item) => item.status !== "rejected");
+        } else {
+          applyMemoryResponse(await requestMemoryFeedback(memoryId, action));
+        }
+        render(window.location.pathname);
+        toast(action === "confirm" ? "这条记忆会参与下一次引路" : "已从你的长期记忆中移除");
+      } catch (error) {
+        toast(error.message);
       } finally {
         element.disabled = false;
       }
@@ -496,6 +608,7 @@ export function createApp(root = document.querySelector("#app")) {
               goal: DEMO_STATE.goals.find((goal) => goal.selected)?.title || "未选择目标",
               task: activeTask?.title || "当前没有进行中的任务",
               evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+              memory_context: activeMemoryContext(),
             },
           });
           DEMO_STATE.pilot.assistantResponse = result.answer;

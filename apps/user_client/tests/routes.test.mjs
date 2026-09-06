@@ -118,6 +118,24 @@ test("study chapter exposes the evidence protocol and action-oriented review con
   for (const label of ["用了什么证据", "发现了什么问题", "为什么这样判断", "明日行动"]) assert.match(reviewHtml, new RegExp(label));
 });
 
+test("review chapter exposes the user-controlled memory loop", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.memory = {
+    iterationCount: 1,
+    syncStatus: "synced",
+    memories: [
+      { id: "memory-friction-goal-exam-task-01", kind: "friction", title: "当前需要回望", content: "边界条件仍然混淆。", scope: "goal-exam", status: "candidate", confidence: 0.51, observation_count: 1 },
+      { id: "memory-strategy-goal-exam-task-01", kind: "strategy", title: "已发现的下一步", content: "明天用 15 分钟写出一个反例。", scope: "goal-exam", status: "active", confidence: 0.8, observation_count: 1 },
+    ],
+  };
+  const html = renderPage("/review", state);
+  assert.match(html, /本轮新记忆 · 1 次迭代/);
+  assert.match(html, /data-action="memory-feedback"/);
+  assert.match(html, /data-memory-action="confirm"/);
+  assert.match(html, /data-memory-action="reject"/);
+  assert.match(html, /已确认/);
+});
+
 test("knowledge can be captured from study and added through a composer", () => {
   const studyHtml = renderPage("/study", DEMO_STATE);
   assert.match(studyHtml, /data-action="capture-knowledge"/);
