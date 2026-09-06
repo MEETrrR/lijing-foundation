@@ -40,6 +40,14 @@ test("auth chapter exposes real login and registration forms", () => {
   assert.match(html, /data-action="auth-mode" data-auth-mode="login"/);
 });
 
+test("profile settings always exposes the exit action in demo state", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.auth = { user: null, mode: "login" };
+  const html = renderPage("/profile", state);
+  assert.match(html, /class="setting-row setting-row--danger" type="button" data-action="logout"/);
+  assert.match(html, /<strong>退出山门<\/strong>/);
+});
+
 test("first-visit onboarding collects a profile, a goal, a companion and feature orientation", () => {
   const state = structuredClone(DEMO_STATE);
   state.onboarding.step = 1;

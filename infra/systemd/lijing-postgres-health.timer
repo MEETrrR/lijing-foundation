@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Lijing PostgreSQL health check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=lijing-postgres-health.service
+
+[Install]
+WantedBy=timers.target

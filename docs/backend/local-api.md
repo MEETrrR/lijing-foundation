@@ -21,6 +21,17 @@ pnpm backend:serve
 
 这些适配器只用于开发和测试，进程重启后数据会丢失。
 
+## 用户级状态持久化
+
+登录用户的资料、目标、引路器选择、知识节点、今日任务显示状态和最近一次证据/复盘会通过：
+
+- `GET /api/v1/me/state` 读取
+- `PUT /api/v1/me/state` 保存
+
+服务端从会话或 bearer 身份取得 `actorId`，客户端不能指定其他用户 ID。当前实现使用已有的服务端数据库适配器按 `user:state:<actorId>` 保存，并要求 `Idempotency-Key` 防止重复写入。答题判定、奖励、能量和长期记忆仍由各自的服务端领域接口负责，用户状态接口不会接受这些结算结果作为权威事实。
+
+本地没有设置 `SUPABASE_DATABASE_URL` 时，接口仍可用但使用测试用 `InMemoryDatabase`，重启后会丢失；要验证真实跨重启持久化，必须执行迁移并在 API 服务环境设置 Supabase PostgreSQL 连接串。
+
 ## 注册、登录和会话
 
 注册和登录会通过 `HttpOnly; SameSite=Lax` 的 `lijing_session` cookie 建立会话，服务端只保存密码哈希和 session token 哈希，不保存明文密码或明文 session。浏览器端使用同源 cookie；脚本客户端也可以把 cookie 或服务端签发的 bearer token 放入请求头。
@@ -44,6 +55,8 @@ Invoke-RestMethod http://127.0.0.1:4400/api/v1/auth/logout -Method Post -WebSess
 ```powershell
 $env:SUPABASE_DATABASE_URL='postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres'
 $env:SUPABASE_DB_SSL='true'
+# 自建 PostgreSQL 使用独立 CA 时，设置公开 CA 文件路径；不要把私钥或密码写入仓库。
+# $env:SUPABASE_DB_SSL_CA='infra/certs/aliyun-wuhan-postgres-ca.crt'
 $env:PORT='4400'
 pnpm backend:serve
 ```

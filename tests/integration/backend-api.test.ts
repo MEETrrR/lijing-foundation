@@ -104,6 +104,64 @@ test("registers accounts, persists hashed credentials, authenticates with an Htt
   }
 });
 
+test("user state persists by authenticated user and cannot be read across accounts", async () => {
+  const { server, services } = createBackendServer({ aiEnabled: false });
+  const baseUrl = await listen(server);
+  const state = {
+    version: 1,
+    profile: { name: "山中行者", stage: "考研备考", school: "某某大学", major: "数学", daily_minutes: "25" },
+    goal_id: "goal-skill",
+    guide_asset_id: "lijing-guide-ding-v2",
+    onboarding_completed: true,
+    today: null,
+    pilot: null,
+    knowledge: [{
+      id: "knowledge-user-state-1",
+      title: "用户级知识节点",
+      domain: "测试",
+      strand: "持久化",
+      mastery: 12,
+      state: "初探",
+      gua: "新",
+      color: "gold",
+      source: "集成测试",
+      updated: "刚刚",
+      summary: "这条记录只属于当前用户。",
+      note: "刷新后仍然可以继续。",
+      related_ids: [],
+      position: "east",
+    }],
+  };
+  try {
+    const saved = await jsonRequest(baseUrl, "/api/v1/me/state", {
+      method: "PUT",
+      headers: { ...auth(), "Idempotency-Key": "user-state-key-0001" },
+      body: JSON.stringify({ request_id: "99999999-9999-4999-8999-999999999999", state }),
+    });
+    assert.equal(saved.response.status, 200);
+    assert.equal(saved.body.state.profile.name, "山中行者");
+    assert.equal(saved.body.state.goal_id, "goal-skill");
+    assert.equal((await services.database.get("user:state:account-001")).profile.school, "某某大学");
+
+    const readBack = await jsonRequest(baseUrl, "/api/v1/me/state", { headers: auth() });
+    assert.equal(readBack.response.status, 200);
+    assert.equal(readBack.body.state.knowledge[0].id, "knowledge-user-state-1");
+
+    const otherUser = await jsonRequest(baseUrl, "/api/v1/me/state", { headers: auth("dev-user-002-token") });
+    assert.equal(otherUser.response.status, 200);
+    assert.equal(otherUser.body.state, null);
+
+    const conflict = await jsonRequest(baseUrl, "/api/v1/me/state", {
+      method: "PUT",
+      headers: { ...auth(), "Idempotency-Key": "user-state-key-0001" },
+      body: JSON.stringify({ request_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", state: { ...state, goal_id: "goal-life" } }),
+    });
+    assert.equal(conflict.response.status, 409);
+  } finally {
+    await close(server);
+  }
+});
+
 test("learning attempts settle on the server, ignore forged settlement fields, and replay idempotently", async () => {
   const { server } = createBackendServer({ aiEnabled: false });
   const baseUrl = await listen(server);

@@ -61,6 +61,30 @@ async function requestMemoryFeedback(memoryId, action, content) {
   return body;
 }
 
+async function requestLearningAttempt(payload) {
+  const response = await fetch("/api/v1/learning/attempts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
+    body: JSON.stringify({ request_id: newRequestId(), ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后记录学习结果" : body.message || "学习结果暂时没有写入");
+  return body;
+}
+
+async function requestUserState(state) {
+  const response = await fetch("/api/v1/me/state", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
+    body: JSON.stringify({ request_id: newRequestId(), state }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后保存个人状态" : body.message || "个人状态暂时没有写入");
+  return body;
+}
+
 function localReview(evidence, evidenceLevel, answer) {
   return {
     evidenceUsed: evidence,
@@ -87,8 +111,177 @@ function activeMemoryContext() {
     .map((memory) => ({ kind: memory.kind, scope: memory.scope, content: memory.content, confidence: memory.confidence }));
 }
 
+function userStatePayload() {
+  const selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected) ?? DEMO_STATE.goals[0];
+  const profile = DEMO_STATE.onboarding?.profile ?? {};
+  const pilot = DEMO_STATE.pilot ?? {};
+  return {
+    version: 1,
+    profile: {
+      name: DEMO_STATE.user.name,
+      stage: DEMO_STATE.user.stage,
+      school: DEMO_STATE.user.school,
+      major: DEMO_STATE.user.major,
+      daily_minutes: String(DEMO_STATE.user.dailyMinutes ?? profile.dailyMinutes ?? "25"),
+    },
+    goal_id: selectedGoal?.id ?? profile.target ?? "goal-exam",
+    guide_asset_id: DEMO_STATE.guide.selectedAssetId,
+    onboarding_completed: Boolean(DEMO_STATE.onboarding?.completed),
+    today: {
+      completed: DEMO_STATE.today.completed,
+      total: DEMO_STATE.today.total,
+      streak: DEMO_STATE.today.streak,
+      minutes: DEMO_STATE.today.minutes,
+      tasks: DEMO_STATE.today.tasks.map((task) => ({ id: task.id, type: task.type, title: task.title, meta: task.meta, status: task.status, gua: task.gua })),
+    },
+    pilot: {
+      selected_evidence_level: pilot.selectedEvidenceLevel,
+      submitted_evidence: pilot.submittedEvidence,
+      selected_answer: pilot.selectedAnswer,
+      review: pilot.review ? {
+        evidence_used: pilot.review.evidenceUsed,
+        problem: pilot.review.problem,
+        reason: pilot.review.reason,
+        next_action: pilot.review.nextAction,
+      } : null,
+      review_ready: Boolean(pilot.reviewReady),
+    },
+    knowledge: DEMO_STATE.knowledge.map((item) => ({
+      id: item.id,
+      title: item.title,
+      domain: item.domain,
+      strand: item.strand,
+      mastery: item.mastery,
+      state: item.state,
+      gua: item.gua,
+      color: item.color,
+      source: item.source,
+      updated: item.updated,
+      summary: item.summary,
+      note: item.note,
+      related_ids: item.relatedIds ?? [],
+      position: item.position ?? "",
+      ...(item.evidenceLevel === undefined ? {} : { evidence_level: item.evidenceLevel }),
+    })),
+  };
+}
+
+function applyUserState(state) {
+  if (!state || typeof state !== "object") return;
+  const profile = state.profile;
+  if (profile) {
+    DEMO_STATE.user = {
+      ...DEMO_STATE.user,
+      name: profile.name || DEMO_STATE.user.name,
+      title: profile.stage || DEMO_STATE.user.title,
+      stage: profile.stage || DEMO_STATE.user.stage,
+      school: profile.school ?? DEMO_STATE.user.school,
+      major: profile.major ?? DEMO_STATE.user.major,
+      dailyMinutes: profile.daily_minutes || DEMO_STATE.user.dailyMinutes,
+    };
+    DEMO_STATE.onboarding.profile = {
+      ...DEMO_STATE.onboarding.profile,
+      name: DEMO_STATE.user.name,
+      stage: DEMO_STATE.user.stage,
+      school: DEMO_STATE.user.school,
+      major: DEMO_STATE.user.major,
+      dailyMinutes: DEMO_STATE.user.dailyMinutes,
+    };
+  }
+  if (typeof state.goal_id === "string") {
+    DEMO_STATE.goals.forEach((goal) => { goal.selected = goal.id === state.goal_id; });
+    DEMO_STATE.user.target = DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? DEMO_STATE.user.target;
+  }
+  if (typeof state.guide_asset_id === "string") DEMO_STATE.guide.selectedAssetId = state.guide_asset_id;
+  if (typeof state.onboarding_completed === "boolean") DEMO_STATE.onboarding.completed = state.onboarding_completed;
+  if (state.today && typeof state.today === "object") {
+    DEMO_STATE.today = {
+      ...DEMO_STATE.today,
+      ...state.today,
+      tasks: Array.isArray(state.today.tasks) ? state.today.tasks.map((task) => ({ ...task })) : DEMO_STATE.today.tasks,
+    };
+  }
+  if (state.pilot && typeof state.pilot === "object") {
+    DEMO_STATE.pilot = {
+      ...DEMO_STATE.pilot,
+      selectedEvidenceLevel: state.pilot.selected_evidence_level ?? DEMO_STATE.pilot.selectedEvidenceLevel,
+      submittedEvidence: state.pilot.submitted_evidence ?? DEMO_STATE.pilot.submittedEvidence,
+      selectedAnswer: state.pilot.selected_answer ?? DEMO_STATE.pilot.selectedAnswer,
+      review: state.pilot.review ? {
+        evidenceUsed: state.pilot.review.evidence_used,
+        problem: state.pilot.review.problem,
+        reason: state.pilot.review.reason,
+        nextAction: state.pilot.review.next_action,
+      } : DEMO_STATE.pilot.review,
+      reviewReady: state.pilot.review_ready ?? DEMO_STATE.pilot.reviewReady,
+    };
+  }
+  if (Array.isArray(state.knowledge)) {
+    DEMO_STATE.knowledge = state.knowledge.map((item) => ({
+      ...item,
+      relatedIds: Array.isArray(item.related_ids) ? item.related_ids : [],
+      ...(item.evidence_level === undefined ? {} : { evidenceLevel: item.evidence_level }),
+    }));
+    if (!DEMO_STATE.knowledge.some((item) => item.id === DEMO_STATE.activeKnowledgeId)) DEMO_STATE.activeKnowledgeId = DEMO_STATE.knowledge[0]?.id;
+  }
+}
+
 export function createApp(root = document.querySelector("#app")) {
   if (!root) throw new Error("Missing #app mount point");
+  const initialDemoState = structuredClone(DEMO_STATE);
+  const createRealState = (user = null) => {
+    const state = structuredClone(initialDemoState);
+    state.isDemo = false;
+    state.auth = { user, mode: "login" };
+    state.user = {
+      ...state.user,
+      name: user?.display_name ?? "",
+      title: "待填写",
+      stage: "待填写",
+      school: "",
+      major: "",
+      target: "",
+      dailyMinutes: "25",
+    };
+    state.onboarding = {
+      step: 1,
+      featureIndex: 0,
+      completed: false,
+      profile: { name: user?.display_name ?? "", stage: "待填写", school: "", major: "", target: "goal-exam", dailyMinutes: "25" },
+    };
+    state.tour = { active: false, step: 0 };
+    state.memory = { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
+    state.pilot = {
+      ...state.pilot,
+      selectedEvidenceLevel: 1,
+      submittedEvidence: "",
+      selectedAnswer: "",
+      assistantResponse: "",
+      assistantError: "",
+      reviewError: "",
+      review: null,
+      reviewReady: false,
+    };
+    state.mountain = {
+      ...state.mountain,
+      currentHeight: 0,
+      visiblePercent: 0,
+      currentChapter: "山脚 · 初入",
+      nextCamp: "完成入山信息",
+      nextCampDistance: "待建立",
+      weather: "尚未建立",
+    };
+    state.balance = { focus: 0, recovery: 0, energy: 0 };
+    state.activeKnowledgeId = "";
+    state.knowledge = [];
+    state.knowledgeComposerOpen = false;
+    state.knowledgeCaptureDraft = null;
+    state.today = { completed: 0, total: 0, streak: 0, minutes: 0, tasks: [] };
+    state.achievements = [];
+    state.map = [{ title: "山脚 · 初入", subtitle: "完成入山信息后开始", state: "current", height: "0 m" }];
+    state.goals = state.goals.map((goal, index) => ({ ...goal, selected: index === 0 }));
+    return state;
+  };
   let motionEnabled = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches !== true;
   let selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? DEMO_STATE.goals[0]?.id ?? "";
   let scrollFrame = 0;
@@ -105,6 +298,22 @@ export function createApp(root = document.querySelector("#app")) {
     DEMO_STATE.memory.syncStatus = "synced";
   };
 
+  const replaceState = (nextState) => {
+    for (const key of Object.keys(DEMO_STATE)) delete DEMO_STATE[key];
+    Object.assign(DEMO_STATE, structuredClone(nextState));
+    selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? DEMO_STATE.goals[0]?.id ?? "";
+  };
+
+  const resetToDemoState = () => replaceState({ ...initialDemoState, isDemo: true, auth: { user: null, mode: "login" }, memory: { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] } });
+  const resetToRealState = (user) => replaceState(createRealState(user));
+
+  const persistUserState = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    const result = await requestUserState(userStatePayload());
+    applyUserState(result.state);
+    selectedGoal = result.state?.goal_id ?? selectedGoal;
+  };
+
   const syncMemories = async () => {
     if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
     try {
@@ -116,23 +325,40 @@ export function createApp(root = document.querySelector("#app")) {
     }
   };
 
+  const syncUserState = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    try {
+      const response = await fetch("/api/v1/me/state", { credentials: "same-origin" });
+      if (!response.ok) return;
+      const body = await response.json();
+      applyUserState(body.state);
+      selectedGoal = body.state?.goal_id ?? selectedGoal;
+    } catch {
+      // The current account remains usable with its server session if state recovery is unavailable.
+    }
+  };
+
   const syncSession = async () => {
     try {
       const response = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
       if (!response.ok) return;
       const body = await response.json();
       if (body.user) {
-        DEMO_STATE.auth.user = body.user;
-        DEMO_STATE.isDemo = false;
-        DEMO_STATE.user.name = body.user.display_name;
-        await syncMemories();
+        resetToRealState(body.user);
+        await Promise.all([syncUserState(), syncMemories()]);
       }
     } catch {
-      // The demo remains usable when the API is unavailable.
+      // Keep the sign-in surface usable when the API is unavailable.
     }
   };
 
-  const render = (route = normalizeRoute(window.location.pathname)) => {
+  const render = (requestedRoute = normalizeRoute(window.location.pathname)) => {
+    const authenticated = Boolean(DEMO_STATE.auth?.user) && DEMO_STATE.isDemo === false;
+    const route = authenticated && requestedRoute === "/auth"
+      ? "/"
+      : !authenticated && requestedRoute !== "/auth"
+        ? "/auth"
+        : requestedRoute;
     document.title = `砺境 · ${route === "/" ? "向山顶而行" : "云海登山"}`;
     root.innerHTML = renderShell(route, DEMO_STATE, renderPage(route, DEMO_STATE));
     const appShell = root.querySelector(".app-shell");
@@ -312,7 +538,8 @@ export function createApp(root = document.querySelector("#app")) {
         goal.classList.toggle("is-selected", selected);
         goal.setAttribute("aria-pressed", String(selected));
       });
-      toast("方向已记录在你的山门印中");
+      if (DEMO_STATE.isDemo) toast("方向已记录在你的山门印中");
+      else void persistUserState().then(() => toast("方向已保存到你的山门印中")).catch((error) => toast(error.message));
     }));
     root.querySelectorAll('[data-action="bagua-node"]').forEach((element) => element.addEventListener("click", () => {
       const active = element.dataset.bagua;
@@ -327,11 +554,18 @@ export function createApp(root = document.querySelector("#app")) {
       event.preventDefault();
       playAscensionIntro(element.getAttribute("href") || "/features");
     }));
-    root.querySelectorAll('[data-action="onboarding-next"]').forEach((element) => element.addEventListener("click", () => {
-      DEMO_STATE.onboarding.step = 3;
-      DEMO_STATE.onboarding.featureIndex = 0;
-      render("/onboarding");
-      toast(`${DEMO_STATE.guide.options.find((option) => option.assetId === DEMO_STATE.guide.selectedAssetId)?.name ?? "书鼎"} 已认领`);
+    root.querySelectorAll('[data-action="onboarding-next"]').forEach((element) => element.addEventListener("click", async () => {
+      element.disabled = true;
+      try {
+        await persistUserState();
+        DEMO_STATE.onboarding.step = 3;
+        DEMO_STATE.onboarding.featureIndex = 0;
+        render("/onboarding");
+        toast(`${DEMO_STATE.guide.options.find((option) => option.assetId === DEMO_STATE.guide.selectedAssetId)?.name ?? "书鼎"} 已认领`);
+      } catch (error) {
+        toast(error.message);
+        element.disabled = false;
+      }
     }));
     root.querySelectorAll('[data-action="onboarding-back"]').forEach((element) => element.addEventListener("click", () => {
       if (DEMO_STATE.onboarding.step <= 1) {
@@ -344,6 +578,7 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="onboarding-select-guide"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.guide.selectedAssetId = element.dataset.guide;
       render("/onboarding");
+      if (!DEMO_STATE.isDemo) void persistUserState().catch((error) => toast(error.message));
     }));
     root.querySelectorAll('[data-action="onboarding-feature-select"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.onboarding.featureIndex = Number(element.dataset.featureIndex) || 0;
@@ -352,7 +587,7 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="onboarding-feature-open"]').forEach((element) => element.addEventListener("click", () => {
       navigate(element.dataset.featureRoute || "/plan");
     }));
-    root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", () => {
+    root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", async () => {
       const lastFeature = 5;
       if (DEMO_STATE.onboarding.featureIndex < lastFeature) {
         DEMO_STATE.onboarding.featureIndex += 1;
@@ -360,9 +595,15 @@ export function createApp(root = document.querySelector("#app")) {
         return;
       }
       DEMO_STATE.onboarding.completed = true;
-      DEMO_STATE.tour = { active: true, step: 0 };
-      navigate("/");
-      toast("山门已为你打开，先用半分钟认识首页");
+      try {
+        await persistUserState();
+        DEMO_STATE.tour = { active: true, step: 0 };
+        navigate("/");
+        toast("山门已为你打开，先用半分钟认识首页");
+      } catch (error) {
+        DEMO_STATE.onboarding.completed = false;
+        toast(error.message);
+      }
     }));
     root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.tour.active = false;
@@ -393,7 +634,26 @@ export function createApp(root = document.querySelector("#app")) {
       element.classList.add("is-selected");
       DEMO_STATE.pilot.selectedAnswer = element.textContent.trim();
     }));
-    root.querySelectorAll('[data-action="submit-answer"]').forEach((element) => element.addEventListener("click", () => toast("这一阶已记下，正在等待服务端确认")));
+    root.querySelectorAll('[data-action="submit-answer"]').forEach((element) => element.addEventListener("click", async () => {
+      const answer = DEMO_STATE.pilot.selectedAnswer;
+      if (!answer) {
+        toast("请先选择一个答案");
+        return;
+      }
+      if (DEMO_STATE.isDemo) {
+        toast("演示答案已记下，登录后会由服务端确认");
+        return;
+      }
+      element.disabled = true;
+      try {
+        const result = await requestLearningAttempt({ attempt_id: `attempt-${Date.now()}`, question_id: "limits-continuity-001", answer, action: "submit" });
+        toast(result.evaluation?.correct ? "服务端已确认：这次判断正确" : "服务端已记下：这次需要回望");
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        element.disabled = false;
+      }
+    }));
     root.querySelectorAll('[data-action="select-evidence"]').forEach((element) => element.addEventListener("click", () => {
       const level = Number(element.dataset.evidenceLevel);
       DEMO_STATE.pilot.selectedEvidenceLevel = level;
@@ -430,11 +690,13 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.pilot.reviewReady = true;
         DEMO_STATE.pilot.reviewError = "";
       } catch (error) {
-        iterationReview = localReview(evidence, DEMO_STATE.pilot.selectedEvidenceLevel, DEMO_STATE.pilot.selectedAnswer);
+        iterationReview = DEMO_STATE.isDemo
+          ? localReview(evidence, DEMO_STATE.pilot.selectedEvidenceLevel, DEMO_STATE.pilot.selectedAnswer)
+          : null;
         DEMO_STATE.pilot.review = iterationReview;
         DEMO_STATE.pilot.reviewReady = false;
         DEMO_STATE.pilot.reviewError = error.message;
-        toast("证据已留下，先用本地复盘继续走");
+        toast(DEMO_STATE.isDemo ? "证据已留下，先用本地复盘继续走" : "证据已留下，但服务端 AI 暂时不可用，未生成复盘");
       }
       if (activeTask) {
         activeTask.status = "done";
@@ -447,26 +709,36 @@ export function createApp(root = document.querySelector("#app")) {
           knowledge.updated = "刚刚";
         }
       }
-      const payload = {
-        iteration_id: iterationId,
-        goal_scope: DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "global",
-        goal_title: DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? "当前学习目标",
-        task_id: activeTask?.id ?? "current-task",
-        evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
-        evidence,
-        review: { problem: iterationReview.problem, reason: iterationReview.reason, next_action: iterationReview.nextAction },
-      };
-      try {
-        DEMO_STATE.memory.syncStatus = "saving";
-        const result = DEMO_STATE.isDemo
-          ? { iteration_id: iterationId, iteration_count: (DEMO_STATE.memory.iterationCount ?? 0) + 1, candidates: localMemoryCandidates(payload, iterationId) }
-          : await requestMemoryIteration(payload);
-        applyMemoryResponse(result);
-      } catch (error) {
-        DEMO_STATE.memory.syncStatus = "error";
-        toast(error.message);
-      } finally {
-        element.disabled = false;
+      if (iterationReview) {
+        const payload = {
+          iteration_id: iterationId,
+          goal_scope: DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "global",
+          goal_title: DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? "当前学习目标",
+          task_id: activeTask?.id ?? "current-task",
+          evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+          evidence,
+          review: { problem: iterationReview.problem, reason: iterationReview.reason, next_action: iterationReview.nextAction },
+        };
+        try {
+          DEMO_STATE.memory.syncStatus = "saving";
+          const result = DEMO_STATE.isDemo
+            ? { iteration_id: iterationId, iteration_count: (DEMO_STATE.memory.iterationCount ?? 0) + 1, candidates: localMemoryCandidates(payload, iterationId) }
+            : await requestMemoryIteration(payload);
+          applyMemoryResponse(result);
+        } catch (error) {
+          DEMO_STATE.memory.syncStatus = "error";
+          toast(error.message);
+        }
+      } else {
+        DEMO_STATE.memory.syncStatus = "idle";
+      }
+      element.disabled = false;
+      if (!DEMO_STATE.isDemo) {
+        try {
+          await persistUserState();
+        } catch (error) {
+          toast(error.message);
+        }
       }
       navigate("/review");
     }));
@@ -507,7 +779,8 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="select-guide"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.guide.selectedAssetId = element.dataset.guide;
       render(window.location.pathname);
-      toast("引路灵器已换为你的选择");
+      if (DEMO_STATE.isDemo) toast("引路灵器已换为你的选择");
+      else void persistUserState().then(() => toast("引路灵器选择已保存")).catch((error) => toast(error.message));
     }));
     root.querySelectorAll('[data-action="select-knowledge"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.activeKnowledgeId = element.dataset.knowledgeId;
@@ -556,6 +829,14 @@ export function createApp(root = document.querySelector("#app")) {
           const related = DEMO_STATE.knowledge.find((item) => item.id === relatedId);
           if (related) related.relatedIds = [...new Set([...(related.relatedIds ?? []), id])];
         }
+        if (!DEMO_STATE.isDemo) {
+          try {
+            await persistUserState();
+          } catch (error) {
+            toast(error.message);
+            return;
+          }
+        }
         DEMO_STATE.activeKnowledgeId = id;
         DEMO_STATE.knowledgeComposerOpen = false;
         DEMO_STATE.knowledgeCaptureDraft = null;
@@ -588,9 +869,14 @@ export function createApp(root = document.querySelector("#app")) {
           dailyMinutes,
         };
         DEMO_STATE.onboarding.profile = { name, stage, school, major, target: goal.id, dailyMinutes };
-        DEMO_STATE.onboarding.step = 2;
-        render("/onboarding");
-        toast("你的方向已记下，现在认领一位书鼎");
+        try {
+          await persistUserState();
+          DEMO_STATE.onboarding.step = 2;
+          render("/onboarding");
+          toast("你的方向已保存，现在认领一位书鼎");
+        } catch (error) {
+          toast(error.message);
+        }
         return;
       }
       if (form.dataset.demoForm === "assistant") {
@@ -632,13 +918,10 @@ export function createApp(root = document.querySelector("#app")) {
           const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const body = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(response.status === 409 ? "这个邮箱已经注册过了" : body.message || "账号信息不正确，请检查后再试");
-          DEMO_STATE.auth.user = body.user;
-          DEMO_STATE.isDemo = false;
-          DEMO_STATE.user.name = body.user.display_name;
-          DEMO_STATE.onboarding.profile.name = body.user.display_name;
-          DEMO_STATE.onboarding.step = 1;
+          resetToRealState(body.user);
+          if (mode === "login") await Promise.all([syncUserState(), syncMemories()]);
           toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
-          navigate(mode === "register" ? "/onboarding" : "/");
+          navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/");
         } catch (error) {
           toast(error.message);
         } finally {
@@ -646,20 +929,12 @@ export function createApp(root = document.querySelector("#app")) {
         }
         return;
       }
-      toast("演示身份已准备好，下一步请选择登山方向");
     }));
     root.querySelectorAll('[data-action="logout"]').forEach((element) => element.addEventListener("click", async () => {
       await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
-      DEMO_STATE.auth.user = null;
-      DEMO_STATE.isDemo = true;
+      resetToDemoState();
       navigate("/auth");
       toast("已退出山门");
-    }));
-    root.querySelectorAll('[data-action="demo-signin"]').forEach((element) => element.addEventListener("click", () => {
-      DEMO_STATE.auth.user = { id: "account-001", display_name: "演示行者", email: "demo@local.invalid", created_at: null };
-      DEMO_STATE.onboarding.completed = true;
-      DEMO_STATE.tour = { active: true, step: 0 };
-      navigate("/");
     }));
   }
 

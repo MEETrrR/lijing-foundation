@@ -1,0 +1,12 @@
+[Unit]
+Description=Lijing PostgreSQL health check
+Wants=postgresql@15-main.service
+After=postgresql@15-main.service
+ConditionPathIsDirectory=/var/lib/postgresql/15/main
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+ExecStart=/usr/local/sbin/lijing-postgres-healthcheck
+SyslogIdentifier=lijing-postgres-health

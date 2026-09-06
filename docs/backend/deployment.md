@@ -23,6 +23,8 @@ HOST=0.0.0.0
 PORT=<平台提供的端口，未提供时使用 4187>
 SUPABASE_DATABASE_URL=<生产 Supabase PostgreSQL 连接串>
 SUPABASE_DB_SSL=true
+# 自建 PostgreSQL 使用独立 CA 时，再设置为服务器上的公开 CA 文件路径。
+# SUPABASE_DB_SSL_CA=/etc/lijing/certs/postgres-ca.crt
 AI_ENABLED=true
 AI_PROVIDER_BASE_URL=https://api.openai.com/v1
 AI_PROVIDER_API_KEY=<仅服务器 Secret>

@@ -1,4 +1,7 @@
+const fs = require("node:fs");
+const net = require("node:net");
 const { Pool } = require("pg");
+const tls = require("node:tls");
 
 const IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;
 const KEY_MAX_LENGTH = 512;
@@ -37,6 +40,19 @@ function dependencyHealth(status, latencyMs, reasonCode) {
     latency_ms: Math.max(0, Math.round(latencyMs)),
     reason_code: reasonCode,
   };
+}
+
+function createSslOptions(env, connectionString) {
+  const sslOptions = { rejectUnauthorized: true };
+  const caPath = typeof env.SUPABASE_DB_SSL_CA === "string" ? env.SUPABASE_DB_SSL_CA.trim() : "";
+  if (caPath.length > 0) {
+    sslOptions.ca = fs.readFileSync(caPath, "utf8");
+    const connectionHost = new URL(connectionString).hostname.replace(/^\[|\]$/g, "");
+    if (net.isIP(connectionHost) !== 0) {
+      sslOptions.checkServerIdentity = (_actualHost, certificate) => tls.checkServerIdentity(connectionHost, certificate);
+    }
+  }
+  return sslOptions;
 }
 
 class SupabasePostgresDatabase {
@@ -124,7 +140,7 @@ class SupabasePostgresDatabase {
   async healthCheck() {
     const startedAt = Date.now();
     try {
-      await this.pool.query("SELECT 1");
+      await this.pool.query(`SELECT 1 FROM ${this.qualifiedTable} LIMIT 1`);
       return dependencyHealth("up", Date.now() - startedAt, "ok");
     } catch {
       return dependencyHealth("down", Date.now() - startedAt, "dependency_unavailable");
@@ -145,13 +161,14 @@ function createSupabaseDatabaseFromEnv(env = process.env, options = {}) {
     ...options,
     connectionString: connectionString.trim(),
     maxConnections: options.maxConnections ?? Number(env.DATABASE_POOL_MAX ?? 10),
-    ssl: sslDisabled ? false : { rejectUnauthorized: true },
+    ssl: sslDisabled ? false : createSslOptions(env, connectionString.trim()),
   });
 }
 
 module.exports = {
   KEY_MAX_LENGTH,
   SupabasePostgresDatabase,
+  createSslOptions,
   createSupabaseDatabaseFromEnv,
   safeIdentifier,
   validateKey,

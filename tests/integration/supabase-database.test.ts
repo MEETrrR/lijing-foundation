@@ -1,7 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const {
   SupabasePostgresDatabase,
+  createSslOptions,
   createSupabaseDatabaseFromEnv,
   safeIdentifier,
   validateKey,
@@ -73,6 +77,20 @@ test("Supabase database adapter validates identifiers, keys, and production TLS"
   assert.throws(() => createSupabaseDatabaseFromEnv({ APP_ENV: "production", SUPABASE_DATABASE_URL: "postgres://example", SUPABASE_DB_SSL: "false" }), /not allowed in production/);
 });
 
+test("Supabase database adapter loads a configured PostgreSQL CA", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lijing-ca-"));
+  const caPath = path.join(directory, "ca.crt");
+  fs.writeFileSync(caPath, "TEST CA CERTIFICATE\n", "utf8");
+  try {
+    const ssl = createSslOptions({ SUPABASE_DB_SSL_CA: caPath }, "postgresql://user:password@47.122.109.183:33989/lijing");
+    assert.equal(ssl.rejectUnauthorized, true);
+    assert.equal(ssl.ca, "TEST CA CERTIFICATE\n");
+    assert.equal(typeof ssl.checkServerIdentity, "function");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Supabase database adapter can be selected without exposing credentials in application code", async () => {
   const pool = new FakePool(new Map(), []);
   const database = createSupabaseDatabaseFromEnv({ APP_ENV: "staging", SUPABASE_DATABASE_URL: "postgres://secret@example/db" }, { pool });
@@ -80,6 +98,7 @@ test("Supabase database adapter can be selected without exposing credentials in 
   const health = await database.healthCheck();
   assert.equal(health.status, "up");
   assert.doesNotMatch(JSON.stringify(health), /secret@example/);
+  assert.ok(pool.queries.some((query) => query.text === 'SELECT 1 FROM "public"."lijing_runtime_kv" LIMIT 1'));
 });
 
 test("backend selects Supabase persistence only when an explicit connection string is present", async () => {

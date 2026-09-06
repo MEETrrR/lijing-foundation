@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+
+/usr/bin/pg_isready --host=/var/run/postgresql --port=33989 --dbname=lijing
+/usr/bin/psql --no-psqlrc --host=/var/run/postgresql --port=33989 --dbname=lijing --set=ON_ERROR_STOP=1 --tuples-only --no-align --command="SELECT 1; SELECT count(*) FROM public.lijing_runtime_kv;"
+printf 'postgres health check ok port=33989 database=lijing\n'

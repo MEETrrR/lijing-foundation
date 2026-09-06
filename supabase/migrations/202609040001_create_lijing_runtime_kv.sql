@@ -10,6 +10,14 @@ comment on table public.lijing_runtime_kv is
 
 alter table public.lijing_runtime_kv enable row level security;
 
-revoke all on table public.lijing_runtime_kv from anon;
-revoke all on table public.lijing_runtime_kv from authenticated;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on table public.lijing_runtime_kv from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on table public.lijing_runtime_kv from authenticated';
+  end if;
+end
+$$;
 revoke all on table public.lijing_runtime_kv from public;

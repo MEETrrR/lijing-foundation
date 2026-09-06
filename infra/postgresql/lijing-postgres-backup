@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+BACKUP_DIR=/var/backups/lijing/postgresql
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+TEMP_FILE="$BACKUP_DIR/.lijing-$STAMP.dump.tmp"
+FINAL_FILE="$BACKUP_DIR/lijing-$STAMP.dump"
+
+if [ ! -d "$BACKUP_DIR" ] || [ ! -w "$BACKUP_DIR" ]; then
+  echo "backup directory is unavailable: $BACKUP_DIR" >&2
+  exit 1
+fi
+
+trap 'rm -f "$TEMP_FILE"' EXIT
+
+/usr/bin/pg_dump --format=custom --file="$TEMP_FILE" --port=33989 --dbname=lijing
+/usr/bin/pg_restore --list "$TEMP_FILE" >/dev/null
+mv -f "$TEMP_FILE" "$FINAL_FILE"
+chmod 600 "$FINAL_FILE"
+/usr/bin/find "$BACKUP_DIR" -maxdepth 1 -type f -name 'lijing-*.dump' -mtime +14 -delete
+printf 'postgres backup completed file=%s size_bytes=%s\n' "$FINAL_FILE" "$(stat -c %s "$FINAL_FILE")"

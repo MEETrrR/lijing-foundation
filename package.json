@@ -5,7 +5,8 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "start": "node --no-warnings apps/user_client/server.mjs",
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-production.ps1",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-test.ps1",
     "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts",
     "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts",
     "backend:test": "node --no-warnings --test tests/integration/backend-api.test.ts tests/integration/supabase-database.test.ts",

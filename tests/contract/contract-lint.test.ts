@@ -19,6 +19,8 @@ const OPERATION_SECURITY = {
   "GET /api/v1/auth/me": "bearer",
   "GET /api/v1/me/progress": "bearer",
   "GET /api/v1/me/memories": "bearer",
+  "GET /api/v1/me/state": "bearer",
+  "PUT /api/v1/me/state": "bearer",
   "POST /api/v1/learning/attempts": "bearer",
   "POST /api/v1/memory/iterations": "bearer",
   "POST /api/v1/me/memories/{memory_id}": "bearer",

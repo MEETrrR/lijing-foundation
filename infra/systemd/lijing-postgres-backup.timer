@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Lijing PostgreSQL backup timer
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=lijing-postgres-backup.service
+
+[Install]
+WantedBy=timers.target
