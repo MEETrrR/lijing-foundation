@@ -1,0 +1,17 @@
+[DEFAULT]
+banaction = nftables-multiport
+bantime = 1h
+findtime = 10m
+maxretry = 5
+bantime.increment = true
+bantime.maxtime = 1d
+ignoreip = 127.0.0.1/8 ::1 117.168.36.209/32
+
+[sshd]
+enabled = true
+port = 22,23
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+logpath =
+filter = sshd
+banaction = nftables-multiport

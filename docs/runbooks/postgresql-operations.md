@@ -6,8 +6,9 @@
 - 应用账号的公网规则使用 `hostssl`、`scram-sha-256`，并限制为已登记的单一客户端 IPv4 地址。
 - TLS 最低版本为 `TLSv1.2`，当前 Node 客户端实测协商为 TLS 1.3。
 - 服务端证书使用独立 CA 和 IP SAN；私钥只保留在服务器 `/etc/postgresql/15/main/tls/`。
-- 主机未启用 `ufw` 或 `iptables`，`nftables` 服务当前未启用且规则集为空。阿里云安全组已通过实际 TCP 连通性验证允许 `33989/TCP`，但控制台规则明细需要阿里云控制台或 API 凭据才能读取。
+- 主机未安装 `ufw` 或 `iptables`；`nftables` 已启用，入站默认丢弃，仅允许 SSH `23/TCP` 和来自 `117.168.36.209/32` 的 PostgreSQL `33989/TCP`。阿里云安全组已通过实际 TCP 连通性验证允许 `33989/TCP`，但控制台规则明细需要阿里云控制台或 API 凭据才能读取。
 - 阿里云 CloudMonitor agent 已安装并启用；项目自身另有 systemd 健康检查作为数据库级探针。
+- SSH 已关闭 root 和密码登录，仅允许 `admin` Ed25519 公钥；fail2ban 负责 SSH 失败尝试的自动封禁。
 
 ## 自动备份
 
