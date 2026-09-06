@@ -2,6 +2,8 @@ const { normalizeRequestId } = require("../http/correlation-id.ts");
 
 const ERROR_CATALOG = Object.freeze({
   INVALID_REQUEST: Object.freeze({ publicCode: "invalid_request", publicMessage: "The request is invalid.", retryable: false, httpStatus: 400 }),
+  VALIDATION_ERROR: Object.freeze({ publicCode: "invalid_request", publicMessage: "The request is invalid.", retryable: false, httpStatus: 422 }),
+  POLICY_REJECTED: Object.freeze({ publicCode: "policy_rejected", publicMessage: "The request is not allowed by policy.", retryable: false, httpStatus: 422 }),
   UNAUTHENTICATED: Object.freeze({ publicCode: "unauthenticated", publicMessage: "Authentication is required.", retryable: false, httpStatus: 401 }),
   FORBIDDEN: Object.freeze({ publicCode: "forbidden", publicMessage: "This action is not allowed.", retryable: false, httpStatus: 403 }),
   NOT_FOUND: Object.freeze({ publicCode: "not_found", publicMessage: "The requested resource was not found.", retryable: false, httpStatus: 404 }),

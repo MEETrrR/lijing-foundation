@@ -41,6 +41,12 @@ const ASSET_CATALOG = {
     role: "onboarding_background",
     alt: "两侧山崖与古松环抱、中央留白的国风水墨山水引导背景",
   },
+  "lijing-auth-gate-v1": {
+    assetId: "lijing-auth-gate-v1",
+    path: "/assets/generated/source/auth/lijing-auth-gate-v1.png",
+    role: "auth_background",
+    alt: "古典山门、石阶与云海组成的入山身份背景",
+  },
   "lijing-guide-pagoda-v2": {
     assetId: "lijing-guide-pagoda-v2",
     path: "/assets/generated/source/guides/lijing-guide-pagoda-v2.png",

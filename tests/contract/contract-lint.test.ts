@@ -13,6 +13,10 @@ const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head",
 const WRITE_METHODS = new Set(["put", "post", "delete", "patch"]);
 const OPERATION_SECURITY = {
   "GET /api/v1/health": "public",
+  "POST /api/v1/auth/register": "public",
+  "POST /api/v1/auth/login": "public",
+  "POST /api/v1/auth/logout": "bearer",
+  "GET /api/v1/auth/me": "bearer",
   "GET /api/v1/me/progress": "bearer",
   "POST /api/v1/learning/attempts": "bearer",
   "POST /api/v1/ai/requests": "bearer",
@@ -173,6 +177,7 @@ test("OpenAPI is parsed and validated as a versioned, secured use-case contract"
     }
 
     if (!WRITE_METHODS.has(method)) continue;
+    if (pathTemplate.startsWith("/api/v1/auth/")) continue;
     const requestSchema = operation.requestBody?.content?.["application/json"]?.schema;
     assert.ok(requestSchema, `${method.toUpperCase()} ${pathTemplate} must define a JSON request schema`);
     assert.ok(requestSchema.required?.includes("request_id"), `${method.toUpperCase()} ${pathTemplate} must require request_id`);

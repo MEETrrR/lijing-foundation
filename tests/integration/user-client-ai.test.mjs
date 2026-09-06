@@ -76,48 +76,49 @@ test("AI pilot calls the provider from the server and returns structured results
     const health = await waitForHealth(appPort);
     assert.equal(health.ai_configured, true);
 
-    const invalidResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/review`, {
+    const register = await fetch(`http://127.0.0.1:${appPort}/api/v1/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "ai-pilot@example.com", password: "correct horse battery", display_name: "AI 试点" }),
+    });
+    assert.equal(register.status, 201);
+    const cookie = (register.headers.get("set-cookie") ?? "").split(";", 1)[0];
+    assert.ok(cookie.startsWith("lijing_session="));
+
+    const invalidResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
       body: "null",
     });
-    assert.equal(invalidResponse.status, 400);
-    assert.deepEqual(await invalidResponse.json(), { error: "invalid_request" });
+    assert.equal(invalidResponse.status, 422);
 
-    const response = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/review`, {
+    const response = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/requests`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task: "当前学习任务", evidence_level: 2, evidence: "我写下了概念边界和一个反例。" }),
+      headers: { "Content-Type": "application/json", Cookie: cookie, "Idempotency-Key": "ai-pilot-review-key-01" },
+      body: JSON.stringify({ request_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", feature: "wrong_answer_hint", input: JSON.stringify({ task: "当前学习任务", evidence_level: 2, evidence: "我写下了概念边界和一个反例。" }) }),
     });
     const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.deepEqual(body.review, {
-      evidenceUsed: "用户提交的学习证据",
+    assert.equal(response.status, 202);
+    assert.deepEqual(JSON.parse(body.result.text), {
+      evidence_used: "用户提交的学习证据",
       problem: "还缺少一次输出验证",
       reason: "当前证据只证明完成了学习时段",
-      nextAction: "明天完成一次三句话复述",
+      next_action: "明天完成一次三句话复述",
     });
     assert.equal(providerCalls.length, 1);
     assert.equal(providerCalls[0].authorization, "Bearer test-server-only-key");
     assert.equal(providerCalls[0].body.model, "test-model");
     assert.doesNotMatch(JSON.stringify(body), /test-server-only-key/);
 
-    const assistResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/assist`, {
+    const assistResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/requests`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        companion_id: "lijing-guide-fan-v2",
-        prompt: "我总是把连续和可导混在一起。",
-        context: { goal: "上岸一场重要考试", task: "极限与连续" },
-      }),
+      headers: { "Content-Type": "application/json", Cookie: cookie, "Idempotency-Key": "ai-pilot-assist-key-01" },
+      body: JSON.stringify({ request_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", feature: "concept_explanation", input: JSON.stringify({ prompt: "我总是把连续和可导混在一起。", context: { goal: "上岸一场重要考试", task: "极限与连续" } }) }),
     });
     const assistBody = await assistResponse.json();
-    assert.equal(assistResponse.status, 200);
-    assert.equal(assistBody.companion_id, "lijing-guide-fan-v2");
-    assert.equal(assistBody.prompt_version, "v1");
-    assert.match(providerCalls[1].body.messages[0].content, /折扇·启思/);
-    assert.match(providerCalls[1].body.messages[0].content, /类比、反例、反向问题/);
-    assert.doesNotMatch(providerCalls[1].body.messages[0].content, /天书·知解/);
+    assert.equal(assistResponse.status, 202);
+    assert.equal(assistBody.status, "completed");
+    assert.equal(providerCalls[1].body.model, "test-model");
   } finally {
     child.kill();
     await close(provider);

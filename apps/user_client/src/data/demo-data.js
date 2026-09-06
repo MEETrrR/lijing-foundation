@@ -47,6 +47,10 @@ export const DEMO_STATE = {
       dailyMinutes: "25",
     },
   },
+  tour: {
+    active: false,
+    step: 0,
+  },
   guide: {
     selectedAssetId: "lijing-guide-heavenly-book-v2",
     options: [

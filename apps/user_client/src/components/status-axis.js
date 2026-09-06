@@ -3,7 +3,7 @@ import { mark } from "./icons.js";
 export function renderStatusAxis(state) {
   const { currentHeight, summitHeight, visiblePercent, nextCamp } = state.mountain;
   const { focus, recovery, energy } = state.balance;
-  return `<section class="status-axis" aria-label="登山状态">
+  return `<section class="status-axis" data-tour-target="status-axis" aria-label="登山状态">
     <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">演示数据 · ${state.mountain.weather}</span></div>
     <div class="status-axis__height"><strong>${currentHeight.toLocaleString("zh-CN")}m</strong><span>当前高度</span></div>
     <div class="status-axis__track"><span class="status-axis__fill" style="--progress: ${visiblePercent}%"></span><i class="status-axis__pin"></i></div>

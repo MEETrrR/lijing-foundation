@@ -23,7 +23,7 @@ async function waitForHealth(url, child) {
   throw new Error("server did not become ready");
 }
 
-test("local client server keeps AI disabled honest by default", async () => {
+test("local client server keeps AI disabled honest and protects the formal AI route", async () => {
   const port = 4300 + Math.floor(Math.random() * 500);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [serverPath], {
@@ -46,13 +46,20 @@ test("local client server keeps AI disabled honest by default", async () => {
     assert.equal(health.ai_configured, false);
     assert.match(healthResponse.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/);
 
-    const aiResponse = await fetch(`${baseUrl}/api/v1/ai/assist`, {
+    const unauthenticatedAiResponse = await fetch(`${baseUrl}/api/v1/ai/assist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: "test" }),
     });
-    assert.equal(aiResponse.status, 503);
-    assert.deepEqual(await aiResponse.json(), { error: "ai_not_configured", message: "AI 服务尚未配置" });
+    assert.equal(unauthenticatedAiResponse.status, 401);
+
+    const aiResponse = await fetch(`${baseUrl}/api/v1/ai/requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer dev-user-001-token", "Idempotency-Key": "local-ai-key-000001" },
+      body: JSON.stringify({ request_id: "11111111-1111-4111-8111-111111111111", feature: "concept_explanation", input: "test" }),
+    });
+    assert.equal(aiResponse.status, 202);
+    assert.equal((await aiResponse.json()).status, "degraded");
 
     const pageResponse = await fetch(`${baseUrl}/knowledge`);
     assert.equal(pageResponse.status, 200);

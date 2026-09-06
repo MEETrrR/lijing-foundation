@@ -5,8 +5,11 @@
     "node": ">=22.18.0"
   },
   "scripts": {
+    "start": "node --no-warnings apps/user_client/server.mjs",
     "contract:lint": "node --no-warnings --test tests/contract/contract-lint.test.ts",
     "platform:test": "node --no-warnings --test tests/integration/platform-health.test.ts",
+    "backend:test": "node --no-warnings --test tests/integration/backend-api.test.ts tests/integration/supabase-database.test.ts",
+    "backend:serve": "node --no-warnings services/api/src/server.ts",
     "image:config:check": "node --no-warnings tools/image-generation/cli.mjs config:check",
     "image:generate": "node --no-warnings tools/image-generation/cli.mjs generate",
     "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs",
@@ -19,5 +22,8 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "yaml": "2.9.0"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
   }
 }

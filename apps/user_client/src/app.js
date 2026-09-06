@@ -3,18 +3,38 @@ import { normalizeRoute } from "./data/routes.js";
 import { renderPage } from "./pages/index.js";
 import { renderShell } from "./components/shell.js";
 
+function newRequestId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 async function requestAi(path, payload) {
-  const healthResponse = await fetch("/api/v1/health");
-  const health = await healthResponse.json().catch(() => ({}));
-  if (!healthResponse.ok || health.ai_configured !== true) throw new Error("AI 服务尚未配置");
-  const response = await fetch(path, {
+  const feature = path.endsWith("/review") ? "wrong_answer_hint" : "concept_explanation";
+  const input = path.endsWith("/review")
+    ? JSON.stringify({ task: payload.task, answer: payload.answer, evidence_level: payload.evidence_level, evidence: payload.evidence })
+    : JSON.stringify({ companion_id: payload.companion_id, prompt: payload.prompt, context: payload.context });
+  const response = await fetch("/api/v1/ai/requests", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
+    body: JSON.stringify({ request_id: newRequestId(), feature, input }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || body.error || "AI 服务暂时不可用");
-  return body;
+  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后再使用 AI" : body.message || body.error || "AI 服务暂时不可用");
+  if (body.status === "degraded") throw new Error("AI 服务暂时不可用，已保留本地学习记录");
+  if (body.status !== "completed" || !body.result?.text) throw new Error("AI 请求尚未完成，请稍后再试");
+  if (path.endsWith("/review")) {
+    const candidate = body.result.text.match(/\{[\s\S]*\}/)?.[0];
+    try {
+      const parsed = JSON.parse(candidate || "{}");
+      if (["evidence_used", "problem", "reason", "next_action"].every((key) => typeof parsed[key] === "string" && parsed[key].trim())) {
+        return { review: { evidenceUsed: parsed.evidence_used, problem: parsed.problem, reason: parsed.reason, nextAction: parsed.next_action } };
+      }
+    } catch {
+      // Keep the explicit fallback below when the provider returns plain text.
+    }
+    return { review: { evidenceUsed: payload.evidence, problem: "模型返回了非结构化复盘，需要人工确认重点。", reason: "本次结果未能解析为标准复盘字段，因此不自动推断掌握状态。", nextAction: body.result.text } };
+  }
+  return { answer: body.result.text };
 }
 
 export function createApp(root = document.querySelector("#app")) {
@@ -25,11 +45,34 @@ export function createApp(root = document.querySelector("#app")) {
   let transitionTimer = 0;
   let ascensionTimer = 0;
   let revealObserver;
+  DEMO_STATE.auth ??= { user: null, mode: "login" };
+
+  const syncSession = async () => {
+    try {
+      const response = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
+      if (!response.ok) return;
+      const body = await response.json();
+      if (body.user) {
+        DEMO_STATE.auth.user = body.user;
+        DEMO_STATE.isDemo = false;
+        DEMO_STATE.user.name = body.user.display_name;
+      }
+    } catch {
+      // The demo remains usable when the API is unavailable.
+    }
+  };
 
   const render = (route = normalizeRoute(window.location.pathname)) => {
     document.title = `砺境 · ${route === "/" ? "向山顶而行" : "云海登山"}`;
     root.innerHTML = renderShell(route, DEMO_STATE, renderPage(route, DEMO_STATE));
-    root.querySelector(".app-shell")?.setAttribute("data-motion", motionEnabled ? "on" : "off");
+    const appShell = root.querySelector(".app-shell");
+    appShell?.setAttribute("data-motion", motionEnabled ? "on" : "off");
+    if (DEMO_STATE.tour?.active && route === "/") {
+      const tour = root.querySelector(".interface-tour");
+      appShell?.setAttribute("data-tour-step", tour?.dataset.tourTargetName || "");
+    } else {
+      appShell?.removeAttribute("data-tour-step");
+    }
     root.style.setProperty("--scroll-shift", motionEnabled ? `${Math.min(window.scrollY, 700) * 0.12}px` : "0px");
     root.style.setProperty("--scroll-ratio", motionEnabled ? `${Math.min(window.scrollY / Math.max(window.innerHeight, 1), 1)}` : "0");
     root.querySelectorAll(".page > .page-intro, .page > :not(.page-intro)").forEach((element, index) => {
@@ -49,7 +92,28 @@ export function createApp(root = document.querySelector("#app")) {
       root.querySelectorAll(".reveal-item").forEach((element) => element.classList.add("is-in-view"));
     }
     bindEvents();
+    window.requestAnimationFrame(syncTourSpotlight);
     requestAnimationFrame(() => root.querySelector("#main-content")?.focus({ preventScroll: true }));
+  };
+
+  const syncTourSpotlight = () => {
+    const tour = root.querySelector(".interface-tour");
+    const spotlight = root.querySelector(".interface-tour__spotlight");
+    if (!tour || !spotlight) return;
+    const target = root.querySelector(`[data-tour-target="${tour.dataset.tourTargetName}"]`);
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    if ((rect.top < 0 || rect.bottom > window.innerHeight) && !tour.dataset.didScroll) {
+      tour.dataset.didScroll = "true";
+      target.scrollIntoView({ block: "center", behavior: motionEnabled ? "smooth" : "auto" });
+      window.requestAnimationFrame(syncTourSpotlight);
+      return;
+    }
+    const pad = window.innerWidth <= 700 ? 7 : 11;
+    spotlight.style.setProperty("--tour-x", `${Math.max(7, rect.left - pad)}px`);
+    spotlight.style.setProperty("--tour-y", `${Math.max(7, rect.top - pad)}px`);
+    spotlight.style.setProperty("--tour-w", `${Math.min(window.innerWidth - 14, rect.width + pad * 2)}px`);
+    spotlight.style.setProperty("--tour-h", `${Math.min(window.innerHeight - 14, rect.height + pad * 2)}px`);
   };
 
   const openFeatureNav = () => {
@@ -151,6 +215,10 @@ export function createApp(root = document.querySelector("#app")) {
       root.querySelectorAll(".toggle").forEach((toggle) => toggle.classList.toggle("is-on", motionEnabled));
       toast(motionEnabled ? "云雾动效已开启" : "已切换为静谧模式");
     }));
+    root.querySelectorAll('[data-action="auth-mode"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.auth.mode = element.dataset.authMode === "register" ? "register" : "login";
+      render("/auth");
+    }));
     root.querySelectorAll("[data-goal]").forEach((element) => element.addEventListener("click", () => {
       selectedGoal = element.dataset.goal;
       DEMO_STATE.goals.forEach((goal) => { goal.selected = goal.id === selectedGoal; });
@@ -210,8 +278,33 @@ export function createApp(root = document.querySelector("#app")) {
         return;
       }
       DEMO_STATE.onboarding.completed = true;
+      DEMO_STATE.tour = { active: true, step: 0 };
       navigate("/");
-      toast("山门已为你打开，今天先走下一步");
+      toast("山门已为你打开，先用半分钟认识首页");
+    }));
+    root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.tour.active = false;
+      render(window.location.pathname);
+      toast("导览已收起，可从首页右上角的帮助入口再次查看");
+    }));
+    root.querySelectorAll('[data-action="tour-open"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.tour = { active: true, step: 0 };
+      if (window.location.pathname === "/") render("/"); else navigate("/");
+    }));
+    root.querySelectorAll('[data-action="tour-prev"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.tour.step = Math.max(0, (Number(DEMO_STATE.tour.step) || 0) - 1);
+      render("/");
+    }));
+    root.querySelectorAll('[data-action="tour-next"]').forEach((element) => element.addEventListener("click", () => {
+      const lastTourStep = 3;
+      if ((Number(DEMO_STATE.tour.step) || 0) < lastTourStep) {
+        DEMO_STATE.tour.step += 1;
+        render("/");
+        return;
+      }
+      DEMO_STATE.tour.active = false;
+      render("/");
+      toast("导览完成，今天先走下一步");
     }));
     root.querySelectorAll('[data-action="answer"]').forEach((element) => element.addEventListener("click", () => {
       root.querySelectorAll('[data-action="answer"]').forEach((answer) => answer.classList.remove("is-selected"));
@@ -404,19 +497,43 @@ export function createApp(root = document.querySelector("#app")) {
       }
       if (form.dataset.demoForm === "auth") {
         const values = new FormData(form);
-        const identity = String(values.get("identity") ?? "").trim();
-        if (identity) {
-          DEMO_STATE.user.name = identity;
-          DEMO_STATE.onboarding.profile.name = identity;
+        const mode = form.dataset.authMode === "register" ? "register" : "login";
+        const endpoint = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
+        const payload = { email: String(values.get("email") ?? "").trim(), password: String(values.get("password") ?? "") };
+        if (mode === "register") payload.display_name = String(values.get("display_name") ?? "").trim();
+        const submit = form.querySelector("button[type=submit]");
+        if (submit) submit.disabled = true;
+        try {
+          const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(response.status === 409 ? "这个邮箱已经注册过了" : body.message || "账号信息不正确，请检查后再试");
+          DEMO_STATE.auth.user = body.user;
+          DEMO_STATE.isDemo = false;
+          DEMO_STATE.user.name = body.user.display_name;
+          DEMO_STATE.onboarding.profile.name = body.user.display_name;
+          DEMO_STATE.onboarding.step = 1;
+          toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
+          navigate(mode === "register" ? "/onboarding" : "/");
+        } catch (error) {
+          toast(error.message);
+        } finally {
+          if (submit) submit.disabled = false;
         }
-        DEMO_STATE.onboarding.step = 1;
-        navigate("/onboarding");
         return;
       }
       toast("演示身份已准备好，下一步请选择登山方向");
     }));
+    root.querySelectorAll('[data-action="logout"]').forEach((element) => element.addEventListener("click", async () => {
+      await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+      DEMO_STATE.auth.user = null;
+      DEMO_STATE.isDemo = true;
+      navigate("/auth");
+      toast("已退出山门");
+    }));
     root.querySelectorAll('[data-action="demo-signin"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.auth.user = { id: "account-001", display_name: "演示行者", email: "demo@local.invalid", created_at: null };
       DEMO_STATE.onboarding.completed = true;
+      DEMO_STATE.tour = { active: true, step: 0 };
       navigate("/");
     }));
   }
@@ -425,6 +542,7 @@ export function createApp(root = document.querySelector("#app")) {
     scrollFrame = 0;
     root.style.setProperty("--scroll-shift", motionEnabled ? `${Math.min(window.scrollY, 700) * 0.12}px` : "0px");
     root.style.setProperty("--scroll-ratio", motionEnabled ? `${Math.min(window.scrollY / Math.max(window.innerHeight, 1), 1)}` : "0");
+    syncTourSpotlight();
   };
 
   const updatePointer = (event) => {
@@ -440,8 +558,10 @@ export function createApp(root = document.querySelector("#app")) {
     scrollFrame = window.requestAnimationFrame(updateParallax);
   }, { passive: true });
   window.addEventListener("pointermove", updatePointer, { passive: true });
+  window.addEventListener("resize", syncTourSpotlight, { passive: true });
 
   window.addEventListener("popstate", () => render());
   render();
+  void syncSession().then(() => render());
   return { navigate, render, state: DEMO_STATE };
 }

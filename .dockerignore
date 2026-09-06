@@ -1,0 +1,16 @@
+node_modules
+.git
+.codex
+.codegraph
+.superpowers
+.worktrees
+.env
+.env.*
+!.env.example
+infra/environments/image-generation.env
+coverage
+dist
+build
+*.log
+uploads
+secrets

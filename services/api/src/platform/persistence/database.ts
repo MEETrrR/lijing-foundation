@@ -12,6 +12,7 @@ export type DatabaseTransactionWork<T> = (database: Database) => Promise<T> | T;
 export interface Database {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T): Promise<void>;
+  setIfAbsent<T>(key: string, value: T): Promise<boolean>;
   delete(key: string): Promise<boolean>;
   transaction<T>(work: DatabaseTransactionWork<T>): Promise<T>;
   healthCheck(): Promise<DependencyHealth>;
@@ -61,6 +62,12 @@ class InMemoryDatabase implements Database {
 
   async set<T>(key: string, value: T): Promise<void> {
     this.values.set(key, cloneValue(value));
+  }
+
+  async setIfAbsent<T>(key: string, value: T): Promise<boolean> {
+    if (this.values.has(key)) return false;
+    this.values.set(key, cloneValue(value));
+    return true;
   }
 
   async delete(key: string): Promise<boolean> {

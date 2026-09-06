@@ -27,6 +27,19 @@ test("every product chapter has a real page renderer", () => {
   }
 });
 
+test("auth chapter exposes real login and registration forms", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.auth = { user: null, mode: "register" };
+  const html = renderPage("/auth", state);
+  assert.equal(getAsset("lijing-auth-gate-v1")?.path, "/assets/generated/source/auth/lijing-auth-gate-v1.png");
+  assert.match(html, /auth\/lijing-auth-gate-v1\.png/);
+  assert.match(html, /class="auth-backdrop"/);
+  assert.match(html, /data-demo-form="auth" data-auth-mode="register"/);
+  assert.match(html, /name="email"/);
+  assert.match(html, /name="display_name"/);
+  assert.match(html, /data-action="auth-mode" data-auth-mode="login"/);
+});
+
 test("first-visit onboarding collects a profile, a goal, a companion and feature orientation", () => {
   const state = structuredClone(DEMO_STATE);
   state.onboarding.step = 1;
@@ -227,6 +240,28 @@ test("onboarding shell replaces the global starfield with the submitted Chinese 
   assert.match(html, /左上角 · 全部功能/);
   assert.match(html, /data-scene="onboarding"/);
   assert.doesNotMatch(html, /starforged-frontier-scene-v1\.png/);
+});
+
+test("auth shell is a focused entry surface", () => {
+  const html = renderShell("/auth", DEMO_STATE, renderPage("/auth", DEMO_STATE));
+  assert.match(html, /class="app-shell app-shell--auth"/);
+  assert.match(html, /lijing-auth-gate-v1\.png/);
+  assert.match(html, /topbar--auth/);
+  assert.doesNotMatch(html, /class="feature-nav-trigger"/);
+  assert.doesNotMatch(html, /class="status-axis"/);
+});
+
+test("home shell exposes a replayable interface tour with real targets", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.tour = { active: true, step: 0 };
+  const html = renderShell("/", state, renderPage("/", state));
+  assert.match(html, /class="interface-tour"/);
+  assert.match(html, /data-tour-target-name="feature-nav"/);
+  assert.match(html, /data-tour-target="feature-nav"/);
+  assert.match(html, /data-tour-target="topbar"/);
+  assert.match(html, /data-tour-target="daily-panel"/);
+  assert.match(html, /data-tour-target="today-route"/);
+  assert.match(html, /data-action="tour-open"/);
 });
 
 test("native browser entry loads CSS as a stylesheet, not a JS module", async () => {

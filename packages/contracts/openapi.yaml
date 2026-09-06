@@ -12,6 +12,8 @@ servers:
 tags:
   - name: platform
     description: Platform health and request context operations.
+  - name: identity
+    description: Account registration and session operations.
   - name: learning
     description: Server-authoritative learning and progress operations.
   - name: ai
@@ -32,6 +34,82 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+  /api/v1/auth/register:
+    post:
+      tags: [identity]
+      operationId: registerAccount
+      summary: Register a learner account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created and session cookie issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/auth/login:
+    post:
+      tags: [identity]
+      operationId: loginAccount
+      summary: Start a learner session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session cookie issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/auth/logout:
+    post:
+      tags: [identity]
+      operationId: logoutAccount
+      summary: Revoke the current learner session
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current session revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/auth/me:
+    get:
+      tags: [identity]
+      operationId: getCurrentAccount
+      summary: Read the current learner account
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current account profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/me/progress:
     get:
       tags: [learning]
@@ -207,11 +285,67 @@ components:
     HealthResponse:
       type: object
       additionalProperties: false
-      required: [status, request_id]
+      required: [status, ai_configured, request_id]
       properties:
         status:
           type: string
           enum: [ok, degraded]
+        request_id:
+          type: string
+          format: uuid
+        ai_configured:
+          type: boolean
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        display_name:
+          type: string
+          maxLength: 80
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, created_at]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        created_at:
+          type: [string, 'null']
+          format: date-time
+    AuthResponse:
+      type: object
+      additionalProperties: false
+      required: [user, request_id]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
         request_id:
           type: string
           format: uuid
@@ -519,3 +653,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: lijing_session

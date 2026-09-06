@@ -3,15 +3,15 @@
 > 面向中国用户的 AI 学习 RPG。把目标拆成今天能完成的一段学习，把学习证据、复盘和知识连接成自己的山路。
 
 **仓库状态：** GitHub 已公开，默认分支为 `master`<br>
-**文档更新时间：** 2026-09-04<br>
-**当前可运行内容：** `apps/user_client` 云海登山 Web 演示客户端
+**文档更新时间：** 2026-09-05<br>
+**当前可运行内容：** `apps/user_client` 一体化 Web + API 服务，支持真实注册登录和服务端 AI Gateway
 
 ## 当前进度
 
 仓库目前由两部分组成：
 
 - **可运行演示：** 用户端已经有统一的东方水墨世界壳层、八卦功能目录、页面转场、个人知识脉络、学习证据试点、回望复盘和引路灵器选择。
-- **生产基线：** API 契约、模块边界、AI 安全策略、数据分类、环境隔离、运行手册和测试基线已经建立，真实业务服务仍按文档中的实施计划推进。
+- **后端纵向切片：** 已有注册、登录、HttpOnly session、退出登录、服务端答题结算、进度读取、幂等、AI Gateway 限额/审计/Provider 适配和 HTTP 接口；本地默认使用内存适配器，部署时切换 Supabase PostgreSQL。
 
 演示客户端保留多目标入口，当前内容样例包含 **考研数学二 · 高等数学 · 极限与连续**，用于展示学习证据与复盘体验，不代表真实用户数据或生产结算。
 
@@ -30,9 +30,17 @@ pnpm client:serve
 $env:PORT=4190; pnpm client:serve
 ```
 
+启动正式 API 的本地开发适配器：
+
+```powershell
+$env:PORT=4400; pnpm backend:serve
+```
+
+接口说明、注册登录和 PowerShell 调用示例见 [`docs/backend/local-api.md`](docs/backend/local-api.md)；生产部署见 [`docs/backend/deployment.md`](docs/backend/deployment.md)。
+
 ## 真实 AI 私有试点
 
-用户端只请求本站的 `/api/v1/ai/assist` 和 `/api/v1/ai/review`，Provider 密钥只由服务端环境变量读取。接口兼容 OpenAI Chat Completions 格式，`AI_PROVIDER_BASE_URL` 填到 `/v1` 层级。
+用户端只请求本站的正式 `/api/v1/ai/requests`，Provider 密钥只由服务端环境变量读取。接口兼容 OpenAI Chat Completions 格式，`AI_PROVIDER_BASE_URL` 填到 `/v1` 层级。
 
 ```powershell
 $env:AI_ENABLED='true'
@@ -42,7 +50,7 @@ $env:AI_PROVIDER_API_KEY='只在服务器环境中设置，不要提交到 Git'
 pnpm client:serve
 ```
 
-先访问 `/api/v1/health` 确认 `ai_configured: true`，再在“引路”或“攀登”页面测试真实调用。当前接口是绑定本机的私有试点适配器，尚未替代带账号、配额账本、幂等、审计、内容安全、持久化和 kill switch 的正式 AI Gateway；不要把它部署到公网，也不要把真实敏感资料直接发送给 Provider。
+先访问 `/api/v1/health` 确认 `ai_configured: true`，注册或登录后再在“引路”或“攀登”页面测试真实调用。正式 Gateway 已具备服务端身份、幂等、输入限制、并发/突发/日配额、审计哈希、输出校验和模板降级；部署到公网前仍需完成数据库备份、预算告警、内容安全、隐私政策和真实 Provider 冒烟验证，不要把真实敏感资料直接发送给 Provider。
 
 ## 已实现演示功能
 
@@ -64,7 +72,7 @@ pnpm client:serve
 ## 演示与生产边界
 
 - 当前用户端使用集中式 `DEMO_STATE`，数据只存在浏览器内存，刷新页面会恢复演示初始状态。
-- 登录、数据库持久化、服务端掌握度/奖励/等级结算和正式 AI Gateway 尚未接入；当前只有用于私有试点的最小 AI 适配器。
+- 浏览器演示仍使用集中式 `DEMO_STATE`；正式 API 的身份、学习结算和 AI Gateway 已在本地纵向切片中接入，但默认服务仍是开发内存适配器。
 - 演示页面中的目标、进度、知识节点、复盘结论和地图路线都是合成数据，不能作为真实学习结果或机构数据使用。
 - 客户端不得保存 Provider 密钥，也不得自行宣布掌握度、奖励、能量或完成事实；生产版必须通过 `/api/v1` 契约和服务端领域模块完成。
 - 图片资源仍是候选资源，需经过艺术、内容、版权、无障碍和性能复核后才能作为正式资产。
@@ -83,6 +91,7 @@ pnpm client:serve
 ```powershell
 pnpm client:test
 pnpm client:ai:test
+pnpm backend:test
 pnpm contract:lint
 pnpm platform:test
 pnpm image:test
@@ -99,6 +108,7 @@ git diff --check
 - [`docs/security/ai-abuse-playbook.md`](docs/security/ai-abuse-playbook.md)：AI 滥用、成本和降级处理。
 - [`docs/security/data-classification.md`](docs/security/data-classification.md)：数据分类与日志边界。
 - [`docs/runbooks/incident-response.md`](docs/runbooks/incident-response.md)：事件响应和恢复流程。
+- [`docs/backend/local-api.md`](docs/backend/local-api.md)：本地后端启动、正式接口调用和生产替换边界。
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：队员本地启动、分支、PR 和同步规则。
 - [`SECURITY.md`](SECURITY.md)：公开仓库的安全问题报告边界。
 - [`docs/audits/2026-09-04-public-repository-audit.md`](docs/audits/2026-09-04-public-repository-audit.md)：本轮公开仓库审计、修复和已知限制。

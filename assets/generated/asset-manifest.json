@@ -145,6 +145,20 @@
       "notes": "No-character Chinese ink background for the guide chapter; keep dialogue and selection controls in the separate HTML layer."
     },
     {
+      "asset_id": "lijing-auth-gate-v1",
+      "path": "assets/generated/source/auth/lijing-auth-gate-v1.png",
+      "role": "runtime-candidate",
+      "usage": ["auth_background", "login_registration"],
+      "classification": "L2_until_reviewed",
+      "format": "png",
+      "width": 1672,
+      "height": 941,
+      "sha256": "817f4ce318d2c0edc04c420eed4605829e378b858f5cd1fc7e91a7d6c688e911",
+      "source": "User-provided reference",
+      "review": "pending_art_and_content_review",
+      "notes": "User-provided wide Chinese ink bamboo, mist lake, and distant mountain background for authentication. Keep the form and controls in a separate HTML layer."
+    },
+    {
       "asset_id": "lijing-onboarding-background-v2",
       "path": "assets/generated/source/onboarding/onboarding-background-v2.png",
       "role": "runtime-candidate",
