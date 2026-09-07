@@ -1,0 +1,32 @@
+[Unit]
+Description=Lijing closed pilot web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/lijing/current
+EnvironmentFile=-/opt/lijing/secrets/runtime.env
+EnvironmentFile=-/opt/lijing/secrets/ai.env
+EnvironmentFile=-/opt/lijing/secrets/pilot.env
+Environment=APP_ENV=production
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=4187
+ExecStart=/opt/node/bin/node --no-warnings apps/user_client/server.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/lijing/current
+ReadWritePaths=/opt/lijing
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lijing-web
+
+[Install]
+WantedBy=multi-user.target
