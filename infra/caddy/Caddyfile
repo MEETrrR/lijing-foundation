@@ -1,0 +1,4 @@
+lijing.space, www.lijing.space {
+    encode gzip
+    reverse_proxy 127.0.0.1:4187
+}
