@@ -91,6 +91,23 @@ test("Supabase database adapter loads a configured PostgreSQL CA", () => {
   }
 });
 
+test("Supabase database adapter separates a local connection address from certificate identity", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lijing-ca-server-name-"));
+  const caPath = path.join(directory, "ca.crt");
+  fs.writeFileSync(caPath, "TEST CA CERTIFICATE\n", "utf8");
+  try {
+    const ssl = createSslOptions(
+      { SUPABASE_DB_SSL_CA: caPath, SUPABASE_DB_SSL_SERVER_NAME: "47.122.109.183" },
+      "postgresql://user:password@127.0.0.1:33989/lijing",
+    );
+    assert.equal(ssl.rejectUnauthorized, true);
+    assert.equal(ssl.servername, undefined);
+    assert.equal(typeof ssl.checkServerIdentity, "function");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Supabase database adapter can be selected without exposing credentials in application code", async () => {
   const pool = new FakePool(new Map(), []);
   const database = createSupabaseDatabaseFromEnv({ APP_ENV: "staging", SUPABASE_DATABASE_URL: "postgres://secret@example/db" }, { pool });

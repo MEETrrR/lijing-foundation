@@ -45,11 +45,15 @@ function dependencyHealth(status, latencyMs, reasonCode) {
 function createSslOptions(env, connectionString) {
   const sslOptions = { rejectUnauthorized: true };
   const caPath = typeof env.SUPABASE_DB_SSL_CA === "string" ? env.SUPABASE_DB_SSL_CA.trim() : "";
+  const connectionHost = new URL(connectionString).hostname.replace(/^\[|\]$/g, "");
+  const certificateHost = (typeof env.SUPABASE_DB_SSL_SERVER_NAME === "string" && env.SUPABASE_DB_SSL_SERVER_NAME.trim().length > 0
+    ? env.SUPABASE_DB_SSL_SERVER_NAME.trim()
+    : connectionHost).replace(/^\[|\]$/g, "");
+  if (certificateHost !== connectionHost && net.isIP(certificateHost) === 0) sslOptions.servername = certificateHost;
   if (caPath.length > 0) {
     sslOptions.ca = fs.readFileSync(caPath, "utf8");
-    const connectionHost = new URL(connectionString).hostname.replace(/^\[|\]$/g, "");
-    if (net.isIP(connectionHost) !== 0) {
-      sslOptions.checkServerIdentity = (_actualHost, certificate) => tls.checkServerIdentity(connectionHost, certificate);
+    if (net.isIP(connectionHost) !== 0 || certificateHost !== connectionHost) {
+      sslOptions.checkServerIdentity = (_actualHost, certificate) => tls.checkServerIdentity(certificateHost, certificate);
     }
   }
   return sslOptions;

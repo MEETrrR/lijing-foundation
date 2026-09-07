@@ -25,6 +25,8 @@ SUPABASE_DATABASE_URL=<生产 Supabase PostgreSQL 连接串>
 SUPABASE_DB_SSL=true
 # 自建 PostgreSQL 使用独立 CA 时，再设置为服务器上的公开 CA 文件路径。
 # SUPABASE_DB_SSL_CA=/etc/lijing/certs/postgres-ca.crt
+# 如果连接地址是本机/内网地址，但证书签发给另一主机，再设置证书身份。
+# SUPABASE_DB_SSL_SERVER_NAME=<证书中的主机名或 IP>
 AI_ENABLED=true
 AI_PROVIDER_BASE_URL=https://api.openai.com/v1
 AI_PROVIDER_API_KEY=<仅服务器 Secret>
