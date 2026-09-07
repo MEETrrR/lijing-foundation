@@ -37,6 +37,7 @@ test("auth chapter exposes real login and registration forms", () => {
   assert.match(html, /data-demo-form="auth" data-auth-mode="register"/);
   assert.match(html, /name="email"/);
   assert.match(html, /name="display_name"/);
+  assert.match(html, /name="invite_code"/);
   assert.match(html, /data-action="auth-mode" data-auth-mode="login"/);
 });
 
@@ -46,6 +47,56 @@ test("profile settings always exposes the exit action in demo state", () => {
   const html = renderPage("/profile", state);
   assert.match(html, /class="setting-row setting-row--danger" type="button" data-action="logout"/);
   assert.match(html, /<strong>退出山门<\/strong>/);
+});
+
+test("complete settings exposes account controls, editable profile, service status, and real feedback input", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.auth = { user: { id: "user-1", email: "pilot@example.com", display_name: "试点行者", created_at: "2026-09-06T00:00:00.000Z" }, mode: "login" };
+  state.isDemo = false;
+  const html = renderPage("/settings", state);
+  assert.match(html, /data-demo-form="settings-profile"/);
+  assert.match(html, /data-demo-form="feedback"/);
+  assert.match(html, /data-action="switch-account" data-auth-mode="login"/);
+  assert.match(html, /data-action="switch-account" data-auth-mode="register"/);
+  assert.match(html, /data-action="logout"/);
+  assert.match(html, /AI 引路/);
+  assert.match(html, /name="detail"/);
+});
+
+test("learning route intake asks for real capacity and only exposes a draft after server generation", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.learningRoute = { draft: null, error: "" };
+  const emptyHtml = renderPage("/route", state);
+  assert.match(emptyHtml, /data-demo-form="learning-route"/);
+  assert.match(emptyHtml, /name="weekly_hours"/);
+  assert.match(emptyHtml, /name="constraints"/);
+  assert.match(emptyHtml, /不会拿示例计划冒充你的结果/);
+
+  state.learningRoute.draft = {
+    id: "route-11111111-1111-4111-8111-111111111111",
+    version: 1,
+    status: "draft",
+    goal: { name: "计算机专业硕士复习", type: "postgraduate_entrance_exam", target_date: "2026-12-20", baseline: "foundation", region: "江西", constraints: [], focus_areas: ["数学"] },
+    summary: "以阶段产出推进。",
+    assumptions: ["每周 10 小时。"],
+    facts_to_confirm: ["核验当年专业目录。"],
+    milestones: [{ title: "基础诊断", start_date: "2026-09-07", end_date: "2026-10-01", planned_hours: 20, outcomes: ["留下诊断记录"] }, { title: "阶段回望", start_date: "2026-10-02", end_date: "2026-12-01", planned_hours: 40, outcomes: ["留下学习证据"] }],
+    feasibility: { status: "feasible", days_remaining: 105, weekly_hours: 10, total_available_hours: 150, protected_capacity_hours: 120, planned_hours: 60, buffer_percent: 20, message: "可确认。" },
+    sources: [{ id: "chsi-postgraduate-directory", goal_type: "postgraduate_entrance_exam", title: "中国研究生招生信息网", publisher: "教育部学生服务与素质发展中心", official_url: "https://yz.chsi.com.cn/", use_for: "专业目录", freshness: "annual", region_scope: "全国" }],
+    source_registry_version: "2026-09-06.1",
+    knowledge_evidence: [{ chunk_id: "pg-directory-verification", source_id: "chsi-postgraduate-directory", title: "考研院校、专业目录与报名信息", content: "涉及目标院校时核对当年页面。", score: 1, source: { id: "chsi-postgraduate-directory", goal_type: "postgraduate_entrance_exam", title: "中国研究生招生信息网", publisher: "教育部学生服务与素质发展中心", official_url: "https://yz.chsi.com.cn/", use_for: "专业目录", freshness: "annual", region_scope: "全国" }, source_links: ["https://yz.chsi.com.cn/"], metadata: { claim_status: "conditional" }, provenance: { knowledge_index_version: "2026-09-06.rag-v2", review_status: "reviewed", region_scope: "全国", claim_status: "conditional", review_note: "年度目录需要复核。" } }],
+    knowledge_index_version: "2026-09-06.rag-v2",
+    knowledge_retrieved_at: "2026-09-06T00:00:00.000Z",
+    personal_memory_scope: "goal-exam",
+    personal_memory_refs: [],
+    created_at: "2026-09-06T00:00:00.000Z",
+    confirmed_at: null,
+  };
+  const draftHtml = renderPage("/route", state);
+  assert.match(draftHtml, /确认前核验/);
+  assert.match(draftHtml, /data-action="confirm-learning-route"/);
+  assert.match(draftHtml, /中国研究生招生信息网/);
 });
 
 test("first-visit onboarding collects a profile, a goal, a companion and feature orientation", () => {
@@ -165,6 +216,7 @@ test("approved chapter backgrounds are mapped to their matching modules", () => 
     "/map": "lijing-summit-climb-ink-v2.png",
     "/review": "lijing-recall-ink-v1.png",
     "/profile": "lijing-archive-ink-v2.png",
+    "/settings": "lijing-archive-ink-v2.png",
     "/assistant": "guides/lijing-guide-background-ink-v1.png",
     "/onboarding": "onboarding/onboarding-background-v2.png",
   };

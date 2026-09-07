@@ -79,7 +79,7 @@ if ($Mode -eq "test") {
   $env:APP_ENV = "local"
   $env:NODE_ENV = "development"
   Write-Host "Starting Lijing in test mode at http://$($env:HOST):$($env:PORT)"
-  & $node --env-file-if-exists=.env.local --watch --no-warnings $serverScript
+  & $node --env-file-if-exists=.env.local --env-file-if-exists=.env.ai.local --watch --no-warnings $serverScript
   exit $LASTEXITCODE
 }
 

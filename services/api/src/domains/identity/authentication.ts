@@ -106,6 +106,13 @@ function validateBody(input, allowed) {
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown field: ${key}`);
 }
 
+function matchesSecret(candidate, expected) {
+  if (typeof candidate !== "string" || typeof expected !== "string") return false;
+  const candidateBuffer = Buffer.from(candidate.trim(), "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  return candidateBuffer.length === expectedBuffer.length && timingSafeEqual(candidateBuffer, expectedBuffer);
+}
+
 class IdentityService {
   constructor(options = {}) {
     this.database = options.database ?? new InMemoryDatabase();
@@ -116,10 +123,16 @@ class IdentityService {
       "dev-user-002-token": "account-002",
     });
     this.allowDevTokens = options.allowDevTokens ?? true;
+    this.registrationInviteCode = typeof options.registrationInviteCode === "string" && options.registrationInviteCode.trim().length > 0
+      ? options.registrationInviteCode.trim()
+      : null;
   }
 
   async register(input) {
-    validateBody(input, new Set(["email", "password", "display_name"]));
+    validateBody(input, new Set(["email", "password", "display_name", "invite_code"]));
+    if (this.registrationInviteCode && !matchesSecret(input.invite_code, this.registrationInviteCode)) {
+      throw new PlatformError("FORBIDDEN", "registration invite code is invalid");
+    }
     const email = normalizeEmail(input.email);
     const password = validatePassword(input.password);
     const displayName = normalizeDisplayName(input.display_name, email);

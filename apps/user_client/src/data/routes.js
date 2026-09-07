@@ -44,6 +44,15 @@ export const ROUTES = {
     title: "你想先完成什么？",
     description: "调整当前最重要的方向，砺境会把它折成一条可走的路线。",
   },
+  "/route": {
+    label: "路线",
+    chapter: "路线",
+    direction: "乾位",
+    gua: "☰",
+    eyebrow: "第一章 · 可行路线",
+    title: "先把远方算清楚",
+    description: "用你的真实时间、目标和约束生成一份可确认的学习路线草案。",
+  },
   "/plan": {
     label: "行旅",
     chapter: "行旅",
@@ -116,6 +125,15 @@ export const ROUTES = {
     title: "记录属于你的登山轨迹",
     description: "偏好、通知与个人印记，都由你决定如何留在这幅长卷里。",
   },
+  "/settings": {
+    label: "设置",
+    chapter: "设置",
+    direction: "坤位",
+    gua: "☷",
+    eyebrow: "设置 · 行者控制台",
+    title: "把砺境调成你的样子",
+    description: "管理个人信息、账户会话、使用偏好，并把真实反馈交给我们。",
+  },
   "/state/loading": {
     label: "云中传信",
     chapter: "加载",
@@ -177,6 +195,7 @@ export const NAV_ITEMS = [
 
 export const FEATURE_ITEMS = [
   { href: "/goals", label: "目标", gua: "乾", detail: "调整你的主方向" },
+  { href: "/route", label: "路线", gua: "乾", detail: "生成并确认可行路线" },
   { href: "/plan", label: "行旅", gua: "艮", detail: "安排今天的路线" },
   { href: "/study", label: "攀登", gua: "离", detail: "进入当前学习山段" },
   { href: "/review", label: "回望", gua: "坎", detail: "加固走过的知识" },

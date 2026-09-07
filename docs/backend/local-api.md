@@ -128,7 +128,18 @@ Invoke-RestMethod http://127.0.0.1:4400/api/v1/ai/requests `
   -Body $body
 ```
 
-返回结果中的 `status` 可能是 `completed`、`degraded` 或 `rejected`；客户端必须按状态处理，不能把 `degraded` 当成模型成功。
+POST 会快速返回 `accepted`，客户端再用返回的 `request_id` 轮询 `GET /api/v1/ai/requests/{request_id}`，直到得到 `completed`、`degraded` 或 `rejected`；客户端必须按状态处理，不能把 `degraded` 当成模型成功。
+
+## 查询官方知识 RAG
+
+路线生成会自动按目标类型、地区和重点内容检索官方知识片段。也可以直接查看检索结果：
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:4400/api/v1/knowledge/search?goal_type=postgraduate_entrance_exam&q=专业目录%20数学&region=江西' `
+  -Headers @{ Authorization = 'Bearer dev-user-001-token' }
+```
+
+结果中的 `chunk_id`、`source_id`、`knowledge_index_version` 和 `source.official_url` 用于追溯依据。没有检索依据的动态事实不会被当成已确认事实写入路线；路线会把它们放入 `facts_to_confirm`。
 
 ## 已实现的服务端控制
 

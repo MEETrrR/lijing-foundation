@@ -1,6 +1,6 @@
 policy_id: lijing-ai-default
-policy_version: "2026-08-31.1"
-effective_from: "2026-08-31T00:00:00+08:00"
+policy_version: "2026-09-06.2"
+effective_from: "2026-09-06T00:00:00+08:00"
 effective_until: null
 status: active
 server_configurable: true
@@ -33,6 +33,10 @@ limits:
   tokens:
     max_input: 4000
     max_output: 1000
+  feature_daily:
+    learning_route_generation: 3
+    study_plan_suggestion: 10
+    emotional_support: 10
   images:
     max_images_per_request: 2
     max_size_mb_each: 5

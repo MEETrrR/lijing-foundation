@@ -11,7 +11,11 @@ const { IdentityService } = require("../domains/identity/authentication.ts");
 const { LearningService } = require("../domains/learning/learning-service.ts");
 const { MemoryService } = require("../domains/memory/memory-service.ts");
 const { UserStateService } = require("../domains/profile/user-state-service.ts");
+const { FeedbackService } = require("../domains/feedback/feedback-service.ts");
 const { AiGatewayService, MockAiProvider, OpenAiCompatibleProvider } = require("../domains/ai-gateway/ai-gateway-service.ts");
+const { LearningRouteService } = require("../domains/learning-route/learning-route-service.ts");
+const { KnowledgeRetrievalService } = require("../domains/knowledge-retrieval/knowledge-retrieval-service.ts");
+const { CompanionService } = require("../domains/companion/companion-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -77,7 +81,9 @@ function clearSessionCookie(env) {
 
 function createDefaultServices(options = {}) {
   const env = options.env ?? process.env;
+  const clock = options.clock ?? (() => Date.now());
   const isProduction = env.APP_ENV === "production" || env.NODE_ENV === "production";
+  const registrationInviteCode = typeof env.PILOT_INVITE_CODE === "string" ? env.PILOT_INVITE_CODE.trim() : "";
   const configuredDatabase = options.database ?? createSupabaseDatabaseFromEnv(env, options.supabaseDatabase);
   if (isProduction && !configuredDatabase) throw new Error("SUPABASE_DATABASE_URL is required in production");
   const database = configuredDatabase ?? new InMemoryDatabase();
@@ -88,23 +94,35 @@ function createDefaultServices(options = {}) {
     database,
     tokens: options.tokens,
     allowDevTokens: options.allowDevTokens ?? !isProduction,
-    clock: options.clock,
+    registrationInviteCode: options.registrationInviteCode ?? registrationInviteCode,
+    clock,
     sessionTtlMs: options.sessionTtlMs,
   });
-  const learning = options.learning ?? new LearningService({ database, questions: options.questions, clock: options.clock });
-  const memory = options.memory ?? new MemoryService({ database, clock: options.clock });
-  const userState = options.userState ?? new UserStateService({ database, clock: options.clock });
+  const learning = options.learning ?? new LearningService({ database, questions: options.questions, clock });
+  const memory = options.memory ?? new MemoryService({ database, clock });
+  const userState = options.userState ?? new UserStateService({ database, clock });
+  const feedback = options.feedback ?? new FeedbackService({ database, clock });
+  const companion = options.companion ?? new CompanionService({ database, clock });
+  const knowledge = options.knowledge ?? new KnowledgeRetrievalService({ database, clock });
   const providerConfigured = Boolean(env.AI_PROVIDER_BASE_URL && env.AI_PROVIDER_API_KEY && env.AI_MODEL);
   if (isProduction && env.AI_ENABLED === "true" && !providerConfigured) throw new Error("AI provider configuration is required when AI_ENABLED=true in production");
-  const configuredTimeout = Number(env.AI_REQUEST_TIMEOUT_MS ?? 30000);
-  const providerTimeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 120000 ? configuredTimeout : 30000;
+  const configuredTimeout = Number(env.AI_REQUEST_TIMEOUT_MS ?? 75000);
+  const providerTimeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 120000 ? configuredTimeout : 75000;
   const configuredProvider = options.provider ?? (providerConfigured
-    ? new OpenAiCompatibleProvider({ baseUrl: env.AI_PROVIDER_BASE_URL, apiKey: env.AI_PROVIDER_API_KEY, model: env.AI_MODEL, timeoutMs: providerTimeoutMs })
+    ? new OpenAiCompatibleProvider({
+      baseUrl: env.AI_PROVIDER_BASE_URL,
+      apiKey: env.AI_PROVIDER_API_KEY,
+      model: env.AI_MODEL,
+      timeoutMs: providerTimeoutMs,
+      maxResponseBytes: options.policy?.maxProviderResponseBytes,
+    })
     : new MockAiProvider());
   const aiEnabled = options.aiEnabled ?? (env.AI_ENABLED === "true" && providerConfigured);
-  const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, clock: options.clock });
+  if (isProduction && !registrationInviteCode) throw new Error("PILOT_INVITE_CODE is required in production");
+  const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, clock, companion, memory, knowledge });
+  const learningRoutes = options.learningRoutes ?? new LearningRouteService({ database, ai, knowledge, memory, userState, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, database, cache, queue, objectStorage, identity, learning, memory, userState, ai, health };
+  return { env, clock, database, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, ai, knowledge, learningRoutes, health };
 }
 
 function createBackendHandler(services) {
@@ -161,6 +179,27 @@ function createBackendHandler(services) {
         return;
       }
 
+      if (url.pathname === "/api/v1/me/companion" && request.method === "GET") {
+        sendJson(response, 200, await services.companion.getProfile(actor.actorId, actorContext.requestId), actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/knowledge/sources" && request.method === "GET") {
+        const goalType = url.searchParams.get("goal_type") ?? undefined;
+        sendJson(response, 200, { request_id: actorContext.requestId, knowledge_index_version: (await services.knowledge.loadIndex()).version, sources: await services.knowledge.getSources(goalType) }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/knowledge/search" && request.method === "GET") {
+        sendJson(response, 200, { request_id: actorContext.requestId, ...(await services.knowledge.search({
+          goal_type: url.searchParams.get("goal_type"),
+          query: url.searchParams.get("q") ?? "",
+          region: url.searchParams.get("region") ?? "",
+          limit: Number(url.searchParams.get("limit") ?? 6),
+        })) }, actorContext);
+        return;
+      }
+
       if (url.pathname === "/api/v1/me/state" && request.method === "GET") {
         sendJson(response, 200, await services.userState.getState(actor.actorId, actorContext.requestId), actorContext);
         return;
@@ -170,6 +209,47 @@ function createBackendHandler(services) {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
         const result = await services.userState.saveState(actor.actorId, await readJson(request), idempotencyKey(request));
         sendJson(response, 200, result.response, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/me/reminders" && request.method === "GET") {
+        const state = (await services.userState.getState(actor.actorId, actorContext.requestId)).state;
+        const route = (await services.learningRoutes.getLatest(actor.actorId)).route;
+        const profile = state?.profile ?? {};
+        let timezone = profile.timezone || "Asia/Shanghai";
+        try {
+          new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+        } catch {
+          timezone = "Asia/Shanghai";
+        }
+        const now = new Date(services.clock ? services.clock() : Date.now());
+        const localParts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
+        const localHour = localParts.find((part) => part.type === "hour")?.value ?? "00";
+        const localMinute = localParts.find((part) => part.type === "minute")?.value ?? "00";
+        const localTime = `${localHour}:${localMinute}`;
+        const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+        const tasks = route?.plan?.today?.tasks ?? state?.today?.tasks ?? [];
+        const hasOpenTask = tasks.some((task) => task.completion_status !== "done" && task.status !== "done");
+        const enabled = profile.reminder_enabled !== false;
+        const reminderTime = profile.reminder_time || "20:00";
+        sendJson(response, 200, {
+          request_id: actorContext.requestId,
+          enabled,
+          timezone,
+          local_date: localDate,
+          local_time: localTime,
+          reminder_time: reminderTime,
+          due: enabled && localTime >= reminderTime && hasOpenTask,
+          reminder_key: `${localDate}:${reminderTime}`,
+          tasks: tasks.slice(0, 8),
+        }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/feedback" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.feedback.submit(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 201, result.response, actorContext);
         return;
       }
 
@@ -197,7 +277,37 @@ function createBackendHandler(services) {
 
       if (url.pathname === "/api/v1/ai/requests" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
-        sendJson(response, 202, await services.ai.submit(actor.actorId, await readJson(request), idempotencyKey(request)), actorContext);
+        sendJson(response, 202, await services.ai.accept(actor.actorId, await readJson(request), idempotencyKey(request)), actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-routes/sources" && request.method === "GET") {
+        sendJson(response, 200, { ...services.learningRoutes.getSources(url.searchParams.get("goal_type") ?? undefined), request_id: actorContext.requestId }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-routes" && request.method === "GET") {
+        sendJson(response, 200, { ...await services.learningRoutes.getLatest(actor.actorId), request_id: actorContext.requestId }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-routes" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        sendJson(response, 200, await services.learningRoutes.generateDraft(actor.actorId, await readJson(request), idempotencyKey(request)), actorContext);
+        return;
+      }
+
+      const learningRouteConfirmation = /^\/api\/v1\/learning-routes\/(route-[0-9a-f-]{36})\/confirm$/i.exec(url.pathname);
+      if (learningRouteConfirmation && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        sendJson(response, 200, await services.learningRoutes.confirmDraft(actor.actorId, learningRouteConfirmation[1], await readJson(request), idempotencyKey(request)), actorContext);
+        return;
+      }
+
+      const learningRouteRefresh = /^\/api\/v1\/learning-routes\/(route-[0-9a-f-]{36})\/refresh$/i.exec(url.pathname);
+      if (learningRouteRefresh && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        sendJson(response, 200, await services.learningRoutes.refreshPlan(actor.actorId, learningRouteRefresh[1], await readJson(request), idempotencyKey(request)), actorContext);
         return;
       }
 

@@ -122,4 +122,8 @@ test("production backend fails closed without durable database or enabled AI pro
     () => createDefaultServices({ env: { APP_ENV: "production", AI_ENABLED: "true" }, database: new InMemoryDatabase() }),
     /AI provider configuration is required/,
   );
+  assert.throws(
+    () => createDefaultServices({ env: { APP_ENV: "production", AI_ENABLED: "false" }, database: new InMemoryDatabase() }),
+    /PILOT_INVITE_CODE is required in production/,
+  );
 });

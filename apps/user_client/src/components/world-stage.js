@@ -10,6 +10,7 @@ const ROUTE_SCENES = {
   "/map": { assetId: "lijing-summit-climb-ink-v2", key: "summit-climb" },
   "/review": { assetId: "lijing-recall-ink-v1", key: "recall" },
   "/profile": { assetId: "lijing-archive-ink-v2", key: "archive" },
+  "/settings": { assetId: "lijing-archive-ink-v2", key: "archive" },
   "/assistant": { assetId: "lijing-guide-background-ink-v1", key: "guide" },
   "/onboarding": { assetId: "lijing-onboarding-background-v2", key: "onboarding" },
 };

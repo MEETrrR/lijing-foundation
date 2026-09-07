@@ -12,6 +12,7 @@ The AI Gateway is a cost, safety, and authorization boundary. No client, worker,
 | Normal account | 20 AI requests per day | account quota gate |
 | Burst | 3 requests per 10 minutes per account, device, and IP | sliding-window/tenant limiter |
 | Per-user concurrency | 1 active request | reservation gate |
+| Feature quota | Learning route generation: 3 per day; study-plan suggestion: 10 per day; emotional support: 10 per day | AI Gateway feature quota gate |
 | Input | 4,000 tokens per request | normalized request gate |
 | Output | 1,000 tokens per request | provider request and output validator |
 | Images | 2 per request, 5 MB each | upload and AI request gate |
@@ -26,7 +27,7 @@ The limits are evaluated independently across relevant dimensions. A request mus
 3. **Normalize:** assign a request ID, policy version, feature ID, prompt version, input type, attachment metadata, and a duplicate fingerprint. Do not put complete prompt or file content in logs.
 4. **Limit:** apply account, device, IP, feature, concurrency, daily, monthly, and global budget controls. Reserve quota before queueing.
 5. **Validate input:** enforce token, image count, image size, pixel, MIME, context, and source allowlists. Reject URLs or tools outside the allowlist.
-6. **Execute:** use a provider adapter with bounded timeout and at most one retry for a known transient failure. Long or complex work enters the async queue.
+6. **Execute:** use a provider adapter with a bounded timeout. The current synchronous path does not automatically retry provider failures; it degrades to a safe template response.
 7. **Validate output:** apply schema, sensitive-content, source/version, and tool-result checks. Unsafe, malformed, or unverifiable output is rejected or replaced with a safe fallback.
 8. **Settle:** record estimated and actual tokens, cost, policy/model/prompt versions, cache/degradation state, and the final decision. Release unused reservations on failure, timeout, or cancellation.
 9. **Respond:** return a safe result with request/trace identifiers, a stable reason code, and a retry hint. Never return provider credentials, internal prompts, stack traces, or hidden policy details.

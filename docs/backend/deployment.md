@@ -29,6 +29,7 @@ AI_ENABLED=true
 AI_PROVIDER_BASE_URL=https://api.openai.com/v1
 AI_PROVIDER_API_KEY=<仅服务器 Secret>
 AI_MODEL=<已批准且有预算的模型名>
+PILOT_INVITE_CODE=<仅服务器保存的封闭试点邀请码>
 ```
 
 不要把 `SUPABASE_DATABASE_URL`、`AI_PROVIDER_API_KEY` 或任何 session/token 写入 Git、前端变量、日志和聊天记录。生产环境必须保留 `APP_ENV=production`，这样固定开发 token 会被关闭，session cookie 会带 `Secure`。
@@ -50,10 +51,12 @@ Invoke-RestMethod https://<你的域名>/api/v1/health
 
 响应中的 `ai_configured` 只有在 `AI_ENABLED=true`、Provider URL、密钥和模型都存在时才为 `true`。健康检查为 `200` 不代表 AI Provider 已通过真实调用，仍需用新注册账号完成一次 AI 请求验证。
 
+生产环境必须设置 `PILOT_INVITE_CODE`。服务会在启动时拒绝缺失邀请码的生产配置；注册请求必须携带正确邀请码，登录不受影响。邀请码不写入前端、Git、日志或聊天记录。
+
 ## 4. 账号和 AI 冒烟验证
 
 ```powershell
-$register = @{ email = 'pilot@example.com'; password = 'change-this-password'; display_name = '试点行者' } | ConvertTo-Json
+$register = @{ email = 'pilot@example.com'; password = 'change-this-password'; display_name = '试点行者'; invite_code = '<从生产 Secret 读取>' } | ConvertTo-Json
 $session = Invoke-WebRequest https://<你的域名>/api/v1/auth/register -Method Post -ContentType 'application/json' -Body $register -SessionVariable webSession
 
 Invoke-RestMethod https://<你的域名>/api/v1/auth/me -WebSession $webSession
@@ -67,7 +70,7 @@ $ai = @{
 Invoke-RestMethod https://<你的域名>/api/v1/ai/requests -Method Post -ContentType 'application/json' -Body $ai -Headers @{ 'Idempotency-Key' = [guid]::NewGuid().ToString() } -WebSession $webSession
 ```
 
-`/api/v1/auth/register`、`/api/v1/auth/login` 和 `/api/v1/auth/me` 返回的用户对象不包含密码哈希。AI Provider 失败时返回 `degraded` 模板状态，不伪装成模型成功。
+`/api/v1/auth/register`、`/api/v1/auth/login` 和 `/api/v1/auth/me` 返回的用户对象不包含密码哈希。AI 请求先快速返回 `accepted`，再通过 request state 查询最终结果；AI Provider 失败时返回 `degraded` 模板状态，不伪装成模型成功。
 
 ## 5. 上线前检查
 

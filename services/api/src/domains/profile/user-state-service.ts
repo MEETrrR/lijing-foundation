@@ -39,6 +39,25 @@ function optionalString(value, field, maximum) {
   return requireString(value, field, maximum, { optional: true });
 }
 
+function optionalIntegerString(value, field, minimum, maximum) {
+  const normalized = optionalString(value, field, 8);
+  if (!normalized) return "";
+  if (!/^\d+$/.test(normalized)) throw new PlatformError("VALIDATION_ERROR", `${field} is invalid`);
+  const number = Number(normalized);
+  if (!Number.isInteger(number) || number < minimum || number > maximum) throw new PlatformError("VALIDATION_ERROR", `${field} is invalid`);
+  return String(number);
+}
+
+function validTimezone(value, field) {
+  const normalized = requireString(value, field, 80);
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: normalized }).format();
+  } catch {
+    throw new PlatformError("VALIDATION_ERROR", `${field} is invalid`);
+  }
+  return normalized;
+}
+
 function requireId(value, field) {
   const normalized = requireString(value, field, 120);
   if (!SAFE_ID.test(normalized)) throw new PlatformError("VALIDATION_ERROR", `${field} is invalid`);
@@ -63,7 +82,20 @@ function idempotencyKey(actorId, key) {
 function initialState() {
   return {
     version: STATE_VERSION,
-    profile: { name: "", stage: "", school: "", major: "", daily_minutes: "25" },
+    profile: {
+      name: "",
+      stage: "",
+      school: "",
+      major: "",
+      age: "",
+      region: "",
+      notes: "",
+      daily_minutes: "25",
+      weekly_hours: "",
+      reminder_enabled: true,
+      reminder_time: "20:00",
+      timezone: "Asia/Shanghai",
+    },
     goal_id: "goal-exam",
     guide_asset_id: "lijing-guide-heavenly-book-v2",
     onboarding_completed: false,
@@ -76,14 +108,25 @@ function initialState() {
 function validateProfile(value, fallback) {
   if (value === undefined) return { ...fallback };
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformError("VALIDATION_ERROR", "profile must be an object");
-  const allowed = new Set(["name", "stage", "school", "major", "daily_minutes"]);
+  const allowed = new Set(["name", "stage", "school", "major", "age", "region", "notes", "daily_minutes", "weekly_hours", "reminder_enabled", "reminder_time", "timezone"]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown profile field: ${key}`);
+  const reminderEnabled = value.reminder_enabled === undefined ? Boolean(fallback.reminder_enabled) : value.reminder_enabled;
+  if (typeof reminderEnabled !== "boolean") throw new PlatformError("VALIDATION_ERROR", "profile.reminder_enabled is invalid");
+  const reminderTime = value.reminder_time === undefined ? fallback.reminder_time : requireString(value.reminder_time, "profile.reminder_time", 5);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderTime)) throw new PlatformError("VALIDATION_ERROR", "profile.reminder_time is invalid");
   return {
     name: requireString(value.name, "profile.name", 80),
     stage: requireString(value.stage, "profile.stage", 80),
     school: optionalString(value.school, "profile.school", 160),
     major: optionalString(value.major, "profile.major", 160),
-    daily_minutes: requireString(value.daily_minutes, "profile.daily_minutes", 3),
+    age: optionalIntegerString(value.age, "profile.age", 13, 100),
+    region: optionalString(value.region, "profile.region", 120),
+    notes: optionalString(value.notes, "profile.notes", 2000),
+    daily_minutes: optionalIntegerString(value.daily_minutes, "profile.daily_minutes", 5, 1440) || "25",
+    weekly_hours: optionalIntegerString(value.weekly_hours, "profile.weekly_hours", 1, 168),
+    reminder_enabled: reminderEnabled,
+    reminder_time: reminderTime,
+    timezone: value.timezone === undefined ? fallback.timezone : validTimezone(value.timezone, "profile.timezone"),
   };
 }
 

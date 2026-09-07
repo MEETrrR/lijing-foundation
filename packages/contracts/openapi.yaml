@@ -155,6 +155,76 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
+  /api/v1/knowledge/sources:
+    get:
+      tags: [knowledge]
+      operationId: getOfficialKnowledgeSources
+      summary: Read the official RAG source registry
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: goal_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+      responses:
+        '200':
+          description: Official sources available to the retrieval index.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeSourceRegistryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/knowledge/search:
+    get:
+      tags: [knowledge]
+      operationId: searchOfficialKnowledge
+      summary: Search reviewed official knowledge chunks for grounding
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: goal_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 1200
+        - name: region
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 6
+      responses:
+        '200':
+          description: Reviewed retrieval results with source provenance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeSearchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/me/state:
     get:
       tags: [profile]
@@ -202,6 +272,71 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v1/feedback:
+    post:
+      tags: [profile]
+      operationId: submitFeedback
+      summary: Submit authenticated product feedback
+      description: Stores feedback under the authenticated learner and accepts safe retries through idempotency.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '201':
+          description: Feedback received.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/me/reminders:
+    get:
+      tags: [profile]
+      operationId: getMyReminders
+      summary: Read due learning reminders
+      description: Returns the authenticated learner's local reminder window and today's open plan tasks.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reminder projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/me/companion:
+    get:
+      tags: [profile]
+      operationId: getMyCompanionProfile
+      summary: Read the authenticated learner's companion continuity profile
+      description: Returns server-recorded companion interactions and prompt version without exposing conversation text.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Companion continuity profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanionProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/learning/attempts:
     post:
       tags: [learning]
@@ -333,6 +468,156 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v1/learning-routes/sources:
+    get:
+      tags: [learning]
+      operationId: getLearningRouteSources
+      summary: Read the official-source registry used for route drafts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: goal_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+      responses:
+        '200':
+          description: Official-source registry for supported route domains.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRouteSourceRegistryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/learning-routes:
+    get:
+      tags: [learning]
+      operationId: getMyLearningRoute
+      summary: Read my latest learning route draft or confirmed route
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Latest draft or confirmed route for the authenticated learner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRouteLatestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [learning]
+      operationId: generateLearningRouteDraft
+      summary: Generate a source-bound learning route draft
+      description: The server validates the AI draft, calculates capacity from user-declared time, and never treats dynamic public facts as confirmed without a source check.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningRouteDraftRequest'
+      responses:
+        '200':
+          description: Structured draft or an explicit AI-degraded result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRouteGenerationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/AiRateLimited'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /api/v1/learning-routes/{route_id}/confirm:
+    post:
+      tags: [learning]
+      operationId: confirmLearningRouteDraft
+      summary: Confirm a feasible learning route draft
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: route_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^route-[0-9a-fA-F-]{36}$'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningRouteConfirmationRequest'
+      responses:
+        '200':
+          description: The confirmed, versioned route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRouteConfirmationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/learning-routes/{route_id}/refresh:
+    post:
+      tags: [learning]
+      operationId: refreshLearningRoutePlan
+      summary: Apply learning evidence to the current plan
+      description: Updates today's executable plan from completed or skipped task evidence and keeps the route versioned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: route_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^route-[0-9a-fA-F-]{36}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningRouteRefreshRequest'
+      responses:
+        '200':
+          description: Updated route.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRouteConfirmationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/ai/requests:
     post:
       tags: [ai]
@@ -364,6 +649,7 @@ paths:
                     - concept_explanation
                     - wrong_answer_hint
                     - study_plan_suggestion
+                    - learning_route_generation
                     - progress_query
                     - emotional_support
                 input:
@@ -461,6 +747,11 @@ components:
         display_name:
           type: string
           maxLength: 80
+        invite_code:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Required when the deployment enables closed-pilot registration.
     LoginRequest:
       type: object
       additionalProperties: false
@@ -630,6 +921,38 @@ components:
         iteration_count:
           type: integer
           minimum: 0
+    CompanionProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, version, companion_id, prompt_version, interaction_count, first_seen_at, last_seen_at, last_request_id, last_topic, recent_topics]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        companion_id:
+          type: string
+        prompt_version:
+          type: string
+        interaction_count:
+          type: integer
+          minimum: 0
+        first_seen_at:
+          type: [string, 'null']
+          format: date-time
+        last_seen_at:
+          type: [string, 'null']
+          format: date-time
+        last_request_id:
+          type: [string, 'null']
+        last_topic:
+          type: [string, 'null']
+        recent_topics:
+          type: array
+          items:
+            type: string
     UserStateRequest:
       type: object
       additionalProperties: false
@@ -652,6 +975,89 @@ components:
           oneOf:
             - $ref: '#/components/schemas/UserState'
             - type: 'null'
+    FeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, category, title, detail]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [bug, idea, account, ai, other]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        detail:
+          type: string
+          minLength: 1
+          maxLength: 3000
+        contact_email:
+          type: string
+          format: email
+          maxLength: 320
+    FeedbackResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, feedback]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        feedback:
+          type: object
+          additionalProperties: false
+          required: [id, category, title, detail, contact_email, status, created_at]
+          properties:
+            id:
+              type: string
+            category:
+              type: string
+              enum: [bug, idea, account, ai, other]
+            title:
+              type: string
+            detail:
+              type: string
+            contact_email:
+              type: string
+            status:
+              const: received
+            created_at:
+              type: string
+              format: date-time
+    ReminderResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, enabled, timezone, local_date, local_time, reminder_time, due, reminder_key, tasks]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        enabled:
+          type: boolean
+        timezone:
+          type: string
+        local_date:
+          type: string
+          format: date
+        local_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        reminder_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        due:
+          type: boolean
+        reminder_key:
+          type: string
+        tasks:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: true
     UserState:
       type: object
       additionalProperties: false
@@ -679,10 +1085,29 @@ components:
             major:
               type: string
               maxLength: 160
+            age:
+              type: string
+              pattern: '^(1[3-9]|[2-9][0-9]|100)$'
+            region:
+              type: string
+              maxLength: 120
+            notes:
+              type: string
+              maxLength: 2000
             daily_minutes:
               type: string
-              minLength: 1
-              maxLength: 3
+              pattern: '^[0-9]{1,4}$'
+            weekly_hours:
+              type: string
+              pattern: '^[0-9]{1,3}$'
+            reminder_enabled:
+              type: boolean
+            reminder_time:
+              type: string
+              pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+            timezone:
+              type: string
+              maxLength: 80
         goal_id:
           type: string
           enum: [goal-exam, goal-skill, goal-life]
@@ -933,6 +1358,644 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Memory'
+    LearningRouteDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, goal_type, goal_name, target_date, weekly_hours, baseline]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        goal_type:
+          type: string
+          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+        goal_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        target_date:
+          type: string
+          format: date
+        weekly_hours:
+          type: integer
+          minimum: 1
+          maximum: 60
+        daily_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+        baseline:
+          type: string
+          enum: [starting, foundation, advanced]
+        region:
+          type: string
+          minLength: 1
+          maxLength: 120
+        constraints:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
+            maxLength: 160
+        focus_areas:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            minLength: 1
+            maxLength: 80
+    LearningRouteSource:
+      type: object
+      additionalProperties: false
+      required: [id, goal_type, title, publisher, official_url, use_for, freshness, region_scope]
+      properties:
+        id:
+          type: string
+        goal_type:
+          type: string
+          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+        title:
+          type: string
+        publisher:
+          type: string
+        official_url:
+          type: string
+          format: uri
+        use_for:
+          type: string
+        freshness:
+          type: string
+          enum: [annual, regional_annual, rolling]
+        region_scope:
+          type: string
+    LearningRouteSourceRegistryResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, source_registry_version, sources]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        source_registry_version:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningRouteSource'
+    KnowledgeSourceRegistryResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, knowledge_index_version, sources]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        knowledge_index_version:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningRouteSource'
+    KnowledgeEvidence:
+      type: object
+      additionalProperties: false
+      required: [chunk_id, source_id, title, content, score, source, source_links, metadata, provenance]
+      properties:
+        chunk_id:
+          type: string
+        source_id:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        score:
+          type: number
+        source:
+          $ref: '#/components/schemas/LearningRouteSource'
+        source_links:
+          type: array
+          items:
+            type: string
+            format: uri
+        metadata:
+          type: object
+          additionalProperties: true
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [knowledge_index_version, review_status, region_scope, claim_status, review_note]
+          properties:
+            knowledge_index_version:
+              type: string
+            review_status:
+              type: string
+              const: reviewed
+            region_scope:
+              type: string
+            claim_status:
+              type: string
+              enum: [reviewed, conditional, context_only]
+            review_note:
+              type: string
+    KnowledgeSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, query, goal_type, region, knowledge_index_version, retrieved_at, results]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        query:
+          type: string
+        goal_type:
+          type: string
+          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+        region:
+          oneOf:
+            - type: string
+            - type: 'null'
+        knowledge_index_version:
+          type: string
+        retrieved_at:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeEvidence'
+    LearningRouteMilestone:
+      type: object
+      additionalProperties: false
+      required: [title, start_date, end_date, planned_hours, outcomes]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        planned_hours:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        outcomes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            type: string
+            minLength: 1
+            maxLength: 180
+    LearningPlanDay:
+      type: object
+      additionalProperties: false
+      required: [id, date, title, type, planned_minutes, milestone_title, completion_status, review_prompt]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        title:
+          type: string
+        type:
+          type: string
+          enum: [学习, 练习, 产出, 修正, 复盘]
+        planned_minutes:
+          type: integer
+          minimum: 5
+        milestone_title:
+          type: string
+        milestone_outcome:
+          type: string
+        action:
+          type: string
+        expected_output:
+          type: string
+        completion_standard:
+          type: string
+        completion_status:
+          type: string
+          enum: [planned, active, done]
+        review_prompt:
+          type: string
+    LearningPlanWeek:
+      type: object
+      additionalProperties: false
+      required: [week_start, week_end, focus, planned_minutes, days]
+      properties:
+        week_start:
+          type: string
+          format: date
+        week_end:
+          type: string
+          format: date
+        focus:
+          type: string
+        planned_minutes:
+          type: integer
+          minimum: 0
+        days:
+          type: array
+          items:
+            type: string
+    LearningPlanMonth:
+      type: object
+      additionalProperties: false
+      required: [id, month, label, start_date, end_date, title, focus, planned_hours, weeks, days]
+      properties:
+        id:
+          type: string
+        month:
+          type: string
+          pattern: '^\\d{4}-\\d{2}$'
+        label:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        title:
+          type: string
+        focus:
+          type: string
+        planned_hours:
+          type: number
+          minimum: 0
+        weeks:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningPlanWeek'
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningPlanDay'
+    LearningPlanYear:
+      type: object
+      additionalProperties: false
+      required: [year, start_date, end_date, title, objective, milestone_titles, planned_hours]
+      properties:
+        year:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        title:
+          type: string
+        objective:
+          type: string
+        milestone_titles:
+          type: array
+          items:
+            type: string
+        planned_hours:
+          type: number
+          minimum: 0
+    LearningPlanCurrentYear:
+      allOf:
+        - $ref: '#/components/schemas/LearningPlanYear'
+        - type: object
+          additionalProperties: false
+          required: [months]
+          properties:
+            months:
+              type: array
+              items:
+                $ref: '#/components/schemas/LearningPlanMonth'
+    LearningPlan:
+      type: object
+      additionalProperties: false
+      required: [version, generated_at, daily_minutes, horizon, current_year, months, today]
+      properties:
+        version:
+          type: integer
+          const: 1
+        generated_at:
+          type: string
+          format: date-time
+        daily_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+        horizon:
+          type: object
+          additionalProperties: false
+          required: [start_date, end_date, years]
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+            years:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/LearningPlanYear'
+        current_year:
+          oneOf:
+            - $ref: '#/components/schemas/LearningPlanCurrentYear'
+            - type: 'null'
+        months:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LearningPlanMonth'
+        today:
+          type: object
+          additionalProperties: false
+          required: [date, tasks]
+          properties:
+            date:
+              type: string
+              format: date
+            tasks:
+              type: array
+            items:
+              $ref: '#/components/schemas/LearningPlanDay'
+        last_updated_at:
+          type: string
+          format: date-time
+        update_reason:
+          type: string
+          maxLength: 240
+    LearningRouteFeasibility:
+      type: object
+      additionalProperties: false
+      required: [status, days_remaining, weekly_hours, total_available_hours, protected_capacity_hours, planned_hours, buffer_percent, message, capacity_by_milestone, issues]
+      properties:
+        status:
+          type: string
+          enum: [feasible, tight, needs_adjustment]
+        days_remaining:
+          type: integer
+          minimum: 1
+        weekly_hours:
+          type: integer
+          minimum: 1
+        total_available_hours:
+          type: integer
+          minimum: 0
+        protected_capacity_hours:
+          type: integer
+          minimum: 0
+        planned_hours:
+          type: integer
+          minimum: 0
+        buffer_percent:
+          type: integer
+          const: 20
+        message:
+          type: string
+        capacity_by_milestone:
+          type: array
+          minItems: 2
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, days, available_hours, protected_hours, planned_hours, status]
+            properties:
+              title:
+                type: string
+              days:
+                type: integer
+                minimum: 1
+              available_hours:
+                type: integer
+                minimum: 0
+              protected_hours:
+                type: integer
+                minimum: 0
+              planned_hours:
+                type: integer
+                minimum: 1
+              status:
+                type: string
+                enum: [feasible, tight, over_capacity]
+        issues:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+    LearningRoute:
+      type: object
+      additionalProperties: false
+      required: [id, version, status, goal, summary, assumptions, facts_to_confirm, milestones, plan, feasibility, sources, source_registry_version, knowledge_evidence, knowledge_index_version, knowledge_retrieved_at, personal_memory_scope, personal_memory_refs, created_at, confirmed_at]
+      properties:
+        id:
+          type: string
+          pattern: '^route-[0-9a-fA-F-]{36}$'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [draft, confirmed]
+        goal:
+          type: object
+          additionalProperties: false
+          required: [type, name, target_date, baseline, region, constraints, focus_areas]
+          properties:
+            type:
+              type: string
+              enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+            name:
+              type: string
+            target_date:
+              type: string
+              format: date
+            weekly_hours:
+              type: integer
+              minimum: 1
+              maximum: 60
+            baseline:
+              type: string
+              enum: [starting, foundation, advanced]
+            region:
+              oneOf:
+                - type: string
+                - type: 'null'
+            constraints:
+              type: array
+              items:
+                type: string
+            focus_areas:
+              type: array
+              items:
+                type: string
+            daily_minutes:
+              type: integer
+              minimum: 5
+              maximum: 1440
+        summary:
+          type: string
+          maxLength: 500
+        assumptions:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items:
+            type: string
+            maxLength: 240
+        facts_to_confirm:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            type: string
+            maxLength: 240
+        milestones:
+          type: array
+          minItems: 2
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/LearningRouteMilestone'
+        plan:
+          $ref: '#/components/schemas/LearningPlan'
+        feasibility:
+          $ref: '#/components/schemas/LearningRouteFeasibility'
+        sources:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LearningRouteSource'
+        source_registry_version:
+          type: string
+        knowledge_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeEvidence'
+        knowledge_index_version:
+          type: string
+        knowledge_retrieved_at:
+          type: string
+          format: date-time
+        personal_memory_scope:
+          type: string
+          enum: [global, goal-exam, goal-skill, goal-life]
+        personal_memory_refs:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        updated_at:
+          type: string
+          format: date-time
+    LearningRouteDraftResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, route]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: draft
+        route:
+          $ref: '#/components/schemas/LearningRoute'
+    LearningRouteDegradedResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, reason_code]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          const: degraded
+        reason_code:
+          const: ai_unavailable
+    LearningRouteGenerationResponse:
+      oneOf:
+        - $ref: '#/components/schemas/LearningRouteDraftResponse'
+        - $ref: '#/components/schemas/LearningRouteDegradedResponse'
+      discriminator:
+        propertyName: status
+        mapping:
+          draft: '#/components/schemas/LearningRouteDraftResponse'
+          degraded: '#/components/schemas/LearningRouteDegradedResponse'
+    LearningRouteLatestResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, route]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        route:
+          oneOf:
+            - $ref: '#/components/schemas/LearningRoute'
+            - type: 'null'
+    LearningRouteConfirmationRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, expected_version]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        expected_version:
+          type: integer
+          minimum: 1
+    LearningRouteRefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, expected_version]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        expected_version:
+          type: integer
+          minimum: 1
+        completed_task_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            pattern: '^plan-day-\\d{4}-\\d{2}-\\d{2}$'
+        skipped_task_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            pattern: '^plan-day-\\d{4}-\\d{2}-\\d{2}$'
+        available_minutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+    LearningRouteConfirmationResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, route, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        route:
+          $ref: '#/components/schemas/LearningRoute'
+        replayed:
+          type: boolean
     AiRequestResponse:
       type: object
       oneOf:
@@ -1123,6 +2186,12 @@ components:
         retryable:
           type: boolean
   responses:
+    NotFound:
+      description: The requested resource was not found for the authenticated actor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Authentication is missing or invalid.
       content:
@@ -1164,6 +2233,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/AiRequestRateLimitedResponse'
+    DependencyUnavailable:
+      description: A required dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   securitySchemes:
     bearerAuth:
       type: http

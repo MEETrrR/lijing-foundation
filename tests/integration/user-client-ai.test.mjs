@@ -37,6 +37,17 @@ async function waitForHealth(port) {
   throw new Error("AI pilot server did not become healthy");
 }
 
+async function waitForAi(baseUrl, requestId, cookie) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`${baseUrl}/api/v1/ai/requests/${requestId}`, { headers: { Cookie: cookie } });
+    const body = await response.json();
+    if (["completed", "degraded", "rejected"].includes(body.status)) return body;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`AI request ${requestId} did not finish`);
+}
+
 test("AI pilot calls the provider from the server and returns structured results", async () => {
   const providerCalls = [];
   const provider = http.createServer(async (request, response) => {
@@ -99,7 +110,9 @@ test("AI pilot calls the provider from the server and returns structured results
     });
     const body = await response.json();
     assert.equal(response.status, 202);
-    assert.deepEqual(JSON.parse(body.result.text), {
+    assert.equal(body.status, "accepted");
+    const completed = await waitForAi(`http://127.0.0.1:${appPort}`, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", cookie);
+    assert.deepEqual(JSON.parse(completed.result.text), {
       evidence_used: "用户提交的学习证据",
       problem: "还缺少一次输出验证",
       reason: "当前证据只证明完成了学习时段",
@@ -117,7 +130,9 @@ test("AI pilot calls the provider from the server and returns structured results
     });
     const assistBody = await assistResponse.json();
     assert.equal(assistResponse.status, 202);
-    assert.equal(assistBody.status, "completed");
+    assert.equal(assistBody.status, "accepted");
+    const assistCompleted = await waitForAi(`http://127.0.0.1:${appPort}`, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", cookie);
+    assert.equal(assistCompleted.status, "completed");
     assert.equal(providerCalls[1].body.model, "test-model");
   } finally {
     child.kill();
