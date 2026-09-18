@@ -3,8 +3,15 @@ import { mark } from "./icons.js";
 export function renderStatusAxis(state) {
   const { currentHeight, summitHeight, visiblePercent, nextCamp } = state.mountain;
   const { focus, recovery, energy } = state.balance;
+  const recordLabel = state.isDemo
+    ? "演示数据"
+    : state.service?.persistence === "durable"
+      ? "可恢复记录"
+      : state.service?.persistence === "ephemeral"
+        ? "临时会话记录"
+        : "保存方式待确认";
   return `<section class="status-axis" data-tour-target="status-axis" aria-label="登山状态">
-    <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">${state.isDemo ? "演示数据" : "服务端记录"} · ${state.mountain.weather}</span></div>
+    <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">${recordLabel} · ${state.mountain.weather}</span></div>
     <div class="status-axis__height"><strong>${currentHeight.toLocaleString("zh-CN")}m</strong><span>当前高度</span></div>
     <div class="status-axis__track"><span class="status-axis__fill" style="--progress: ${visiblePercent}%"></span><i class="status-axis__pin"></i></div>
     <div class="status-axis__legend"><span>山脚</span><span>${nextCamp}</span><span>主峰 ${summitHeight.toLocaleString("zh-CN")}m</span></div>

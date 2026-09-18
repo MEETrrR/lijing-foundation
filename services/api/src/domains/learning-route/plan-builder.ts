@@ -1,4 +1,5 @@
 const DAY_MS = 86400000;
+const { effectiveDailyMinutes, scheduleBudgetForDate } = require("./plan-validator.ts");
 
 function dateValue(value) {
   return Date.parse(`${value}T00:00:00.000Z`);
@@ -37,8 +38,7 @@ function monthKeys(startDate, endDate) {
 }
 
 function milestoneFor(date, milestones) {
-  return milestones.find((milestone) => date >= milestone.start_date && date <= milestone.end_date)
-    ?? milestones.at(-1);
+  return milestones.find((milestone) => date >= milestone.start_date && date <= milestone.end_date) ?? null;
 }
 
 function weekStart(date) {
@@ -83,11 +83,38 @@ function taskModesFor(goalType) {
   return PATH_TASK_MODES[goalType] ?? PATH_TASK_MODES.personal_growth;
 }
 
-function buildDayTask(date, milestone, dailyMinutes, today, goalType) {
+function assessmentBlockerLabel(value) {
+  return {
+    scope: "范围与优先级",
+    concept: "概念与条件",
+    application: "解题与迁移",
+    speed: "速度与时间分配",
+    consistency: "稳定开始与持续",
+  }[value] ?? "当前卡点";
+}
+
+function buildDayTask(date, milestone, plannedMinutes, today, input) {
+  const goalType = input.goal_type;
   const isReviewDay = new Date(dateValue(date)).getUTCDay() === 0;
-  const plannedMinutes = isReviewDay ? Math.max(5, Math.round(dailyMinutes * 0.5)) : dailyMinutes;
   const phaseDayIndex = Math.max(0, Math.floor((dateValue(date) - dateValue(milestone.start_date)) / DAY_MS));
   const outcome = milestone.outcomes[phaseDayIndex % milestone.outcomes.length];
+  const assessment = input.baseline_assessment;
+  if (assessment && date === today) {
+    return {
+      id: `plan-day-${date}`,
+      date,
+      title: `起点校准 · ${assessment.subject}独立练习`,
+      type: "诊断",
+      planned_minutes: plannedMinutes,
+      milestone_title: milestone.title,
+      milestone_outcome: outcome,
+      action: `围绕“${assessment.subject}”完成 3 道不看答案的独立练习，重点观察${assessmentBlockerLabel(assessment.primary_blocker)}。`,
+      expected_output: "3 道独立作答、总用时、每题判断依据和 1 条错因",
+      completion_standard: "不以自我感觉判定；每题都留下答案、用时或卡点，下一步据此调整。",
+      completion_status: date === today ? "active" : "planned",
+      review_prompt: "记录三道题的作答、用时和最主要的卡点，不宣称已经掌握。",
+    };
+  }
   const mode = taskModesFor(goalType)[phaseDayIndex % taskModesFor(goalType).length];
   if (isReviewDay) {
     return {
@@ -138,16 +165,24 @@ function buildWeeks(days) {
 }
 
 function buildPlanHierarchy({ input, milestones, today, summary, profile = {}, clock = () => Date.now() }) {
-  const profileDailyMinutes = Number(profile.daily_minutes);
-  const requestedDailyMinutes = Number(input.daily_minutes ?? profileDailyMinutes);
-  const dailyMinutes = Number.isInteger(requestedDailyMinutes) && requestedDailyMinutes >= 5
-    ? Math.min(requestedDailyMinutes, 1440)
-    : Math.max(25, Math.floor((input.weekly_hours * 60) / 7));
+  const requestedDailyMinutes = Number(input.daily_minutes ?? profile.daily_minutes);
+  const dailyMinutes = effectiveDailyMinutes(input, profile);
+  const dayTasks = [];
+  const remainingMinutes = new Map(milestones.map((milestone) => [milestone.title, milestone.planned_hours * 60]));
   const dates = [];
   for (let cursor = today; cursor <= input.target_date; cursor = addDays(cursor, 1)) {
     dates.push(cursor);
   }
-  const dayTasks = dates.map((date) => buildDayTask(date, milestoneFor(date, milestones), dailyMinutes, today, input.goal_type));
+  for (const date of dates) {
+    const milestone = milestoneFor(date, milestones);
+    if (!milestone) continue;
+    const remaining = remainingMinutes.get(milestone.title) ?? 0;
+    if (remaining < 5) continue;
+    const budget = scheduleBudgetForDate(date, dailyMinutes);
+    const plannedMinutes = Math.min(budget, remaining);
+    dayTasks.push(buildDayTask(date, milestone, plannedMinutes, today, input));
+    remainingMinutes.set(milestone.title, remaining - plannedMinutes);
+  }
   const daysByMonth = new Map();
   dayTasks.forEach((day) => {
     const key = day.date.slice(0, 7);
@@ -156,10 +191,10 @@ function buildPlanHierarchy({ input, milestones, today, summary, profile = {}, c
   });
   const months = monthKeys(today, input.target_date).map((month) => {
     const days = daysByMonth.get(month) ?? [];
-    const first = days[0]?.date ?? monthStart(`${month}-01`);
-    const last = days.at(-1)?.date ?? monthEnd(`${month}-01`);
+    const first = monthStart(`${month}-01`);
+    const last = monthEnd(`${month}-01`);
     const monthMilestones = milestones.filter((milestone) => milestone.end_date >= first && milestone.start_date <= last);
-    const lead = monthMilestones[0] ?? milestoneFor(first, milestones);
+    const lead = monthMilestones[0] ?? { title: "留白与复盘", outcomes: ["保留时间处理复盘、核验和现实变化"] };
     return {
       id: `plan-month-${month}`,
       month,
@@ -187,11 +222,12 @@ function buildPlanHierarchy({ input, milestones, today, summary, profile = {}, c
     };
   });
   const currentYear = years.find((year) => year.year === Number(today.slice(0, 4))) ?? years[0];
-  const todayMonth = months.find((month) => month.month === today.slice(0, 7));
   return {
     version: 1,
     generated_at: new Date(clock()).toISOString(),
     daily_minutes: dailyMinutes,
+    requested_daily_minutes: Number.isInteger(requestedDailyMinutes) ? requestedDailyMinutes : null,
+    weekly_hours: input.weekly_hours,
     horizon: {
       start_date: today,
       end_date: input.target_date,
@@ -204,8 +240,9 @@ function buildPlanHierarchy({ input, milestones, today, summary, profile = {}, c
     months,
     today: {
       date: today,
-      tasks: todayMonth?.days ?? [],
+      tasks: dayTasks.filter((day) => day.date === today),
     },
+    upcoming_tasks: dayTasks.filter((day) => day.date > today).slice(0, 14),
   };
 }
 

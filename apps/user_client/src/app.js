@@ -7,7 +7,80 @@ function newRequestId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-const AI_POLL_ATTEMPTS = 90;
+function notifySessionExpired() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("lijing-session-expired"));
+}
+
+function apiError(response, body, fallback) {
+  if (response.status === 401) {
+    notifySessionExpired();
+    return new Error("登录状态已过期，请重新登录");
+  }
+  return new Error(body.message || fallback);
+}
+
+function baselineForRouteAssessment(assessment) {
+  if (assessment.study_stage === "not_started") return "starting";
+  if (assessment.study_stage === "practiced" && assessment.recent_result === "above_70") return "advanced";
+  return "foundation";
+}
+
+const DIAGNOSTIC_OUTCOMES = new Set(["correct", "incorrect", "unverified"]);
+const DIAGNOSTIC_OUTCOME_TEXT = { correct: "正确", incorrect: "错误", unverified: "待核对" };
+
+function diagnosticNextAction(summary) {
+  if (summary.unverified > 0) return "先用原题答案核对尚未核对的题；在核对前，不把这次记录当作能力结论。";
+  if (summary.incorrect >= 2) return "下一段只选其中一个错因，用两道同类基础题重做；每题先写判断条件，再看答案。";
+  if (summary.incorrect === 1) return "下一段围绕这道错题补一个判断条件，再做一道同类题验证能否独立迁移。";
+  return "下一段先不看资料，用一道同范围题复现关键判断；复测前不把三题正确当作掌握。";
+}
+
+function collectInitialDiagnostic(root) {
+  const panel = root.querySelector("[data-initial-diagnostic]");
+  if (!panel) return null;
+  const subject = panel.dataset.diagnosticSubject?.trim() || "当前科目";
+  const items = [1, 2, 3].map((index) => {
+    const source = panel.querySelector(`[data-diagnostic-source="${index}"]`)?.value.trim() ?? "";
+    const outcome = panel.querySelector(`[data-diagnostic-outcome="${index}"]`)?.value ?? "";
+    const minutes = Number(panel.querySelector(`[data-diagnostic-minutes="${index}"]`)?.value);
+    const note = panel.querySelector(`[data-diagnostic-note="${index}"]`)?.value.trim() ?? "";
+    if (source.length < 6 || source.length > 120 || note.length < 4 || note.length > 180 || !DIAGNOSTIC_OUTCOMES.has(outcome) || !Number.isInteger(minutes) || minutes < 1 || minutes > 180) {
+      throw new Error(`请完整填写第 ${index} 道题的来源、对照结果、用时和判断依据`);
+    }
+    return { source, outcome, minutes, note };
+  });
+  const summary = {
+    subject,
+    correct: items.filter((item) => item.outcome === "correct").length,
+    incorrect: items.filter((item) => item.outcome === "incorrect").length,
+    unverified: items.filter((item) => item.outcome === "unverified").length,
+    totalMinutes: items.reduce((total, item) => total + item.minutes, 0),
+  };
+  summary.nextAction = diagnosticNextAction(summary);
+  summary.completedAt = new Date().toISOString();
+  const evidence = [
+    `起点独立诊断（${subject}；学习者按已有题目与答案自行核对，非系统评分）`,
+    ...items.map((item, index) => `题${index + 1}：${item.source}；${DIAGNOSTIC_OUTCOME_TEXT[item.outcome]}；${item.minutes} 分钟；${item.note}`),
+    `汇总：正确 ${summary.correct}，错误 ${summary.incorrect}，待核对 ${summary.unverified}，总用时 ${summary.totalMinutes} 分钟。`,
+  ].join("\n");
+  return { items, summary, evidence };
+}
+
+function initialDiagnosticReview(summary, evidence) {
+  return {
+    evidenceUsed: evidence,
+    problem: summary.unverified > 0
+      ? `三道题中有 ${summary.unverified} 道尚未核对，当前还不能判断起点。`
+      : summary.incorrect > 0
+        ? `三道题中有 ${summary.incorrect} 道对照为错误，需要先缩小到一个具体错因。`
+        : "三道题均由学习者自行对照为正确，但样本太小，不能据此宣称掌握。",
+    reason: `只根据三道独立作答的自核对记录和 ${summary.totalMinutes} 分钟用时安排下一步，不生成分数或掌握结论。`,
+    nextAction: summary.nextAction,
+  };
+}
+
+const AI_POLL_ATTEMPTS = 30;
+const PUBLIC_ROUTES = new Set(["/auth", "/404", "/privacy", "/terms", "/contact"]);
 
 async function requestAi(path, payload) {
   const feature = path.endsWith("/review") ? "wrong_answer_hint" : "concept_explanation";
@@ -23,8 +96,9 @@ async function requestAi(path, payload) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) throw new Error("请先登录后再使用 AI");
+    if (response.status === 401) throw apiError(response, body, "请先登录后再使用 AI");
     if (body.reason_code === "daily_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
+    if (body.reason_code === "feature_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
     if (body.reason_code === "burst_limit_exhausted") throw new Error("AI 请求过于频繁，请稍等一分钟再试");
     if (body.reason_code === "concurrency_limit_exhausted") throw new Error("上一条 AI 请求还在处理中，请稍等再试");
     throw new Error(body.message || body.error || `AI 服务暂时不可用（${response.status}）`);
@@ -33,7 +107,8 @@ async function requestAi(path, payload) {
   let resultBody = body;
   if (body.status === "accepted" || body.status === "processing") {
     for (let attempt = 0; attempt < AI_POLL_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 120 : 450));
+      const delay = attempt === 0 ? 250 : Math.min(2000, 500 + attempt * 100);
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
       const statusResponse = await fetch(`/api/v1/ai/requests/${encodeURIComponent(body.request_id)}`, { credentials: "same-origin", cache: "no-store" });
       const statusBody = await statusResponse.json().catch(() => ({}));
       if (statusResponse.ok) {
@@ -56,6 +131,17 @@ async function requestAi(path, payload) {
     }
     return { review: { evidenceUsed: payload.evidence, problem: "模型返回了非结构化复盘，需要人工确认重点。", reason: "本次结果未能解析为标准复盘字段，因此不自动推断掌握状态。", nextAction: resultBody.result.text } };
   }
+  try {
+    const parsed = JSON.parse(resultBody.result.text);
+    if (parsed?.type === "answer" && typeof parsed.message === "string") {
+      return { answer: parsed.message, suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [] };
+    }
+    if (Array.isArray(parsed?.milestones) || parsed?.plan) {
+      return { answer: "这次返回的内容更像路线草案，已经拦截；请回到路线页面确认目标和时间。" };
+    }
+  } catch {
+    // Plain text remains a valid fallback for older providers.
+  }
   return { answer: resultBody.result.text };
 }
 
@@ -67,7 +153,7 @@ async function requestMemoryIteration(payload) {
     body: JSON.stringify({ request_id: newRequestId(), ...payload }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后保存长期记忆" : body.message || "记忆暂时没有写入");
+  if (!response.ok) throw apiError(response, body, "记忆暂时没有写入");
   return body;
 }
 
@@ -79,14 +165,38 @@ async function requestMemoryFeedback(memoryId, action, content) {
     body: JSON.stringify({ request_id: newRequestId(), action, ...(content ? { content } : {}) }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || "记忆状态暂时没有更新");
+  if (!response.ok) throw apiError(response, body, "记忆状态暂时没有更新");
   return body;
 }
 
 async function requestCompanionProfile() {
   const response = await fetch("/api/v1/me/companion", { credentials: "same-origin", cache: "no-store" });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || "陪伴档案暂时无法同步");
+  if (!response.ok) throw apiError(response, body, "陪伴档案暂时无法同步");
+  return body;
+}
+
+async function requestCompanionToday() {
+  const response = await fetch("/api/v1/companion/today", { credentials: "same-origin", cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "今日行动暂时无法同步");
+  return body;
+}
+
+async function requestCompanionCheckIn(payload) {
+  const requestId = newRequestId();
+  const response = await fetch("/api/v1/companion/check-ins", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+    body: JSON.stringify({ request_id: requestId, ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) throw apiError(response, body, "今日行动暂时没有保存");
+    if (response.status === 409) throw new Error(body.message || "这段行动状态已经变化，请刷新后继续");
+    throw new Error(body.message || "今日行动暂时没有保存");
+  }
   return body;
 }
 
@@ -98,7 +208,7 @@ async function requestLearningAttempt(payload) {
     body: JSON.stringify({ request_id: newRequestId(), ...payload }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后记录学习结果" : body.message || "学习结果暂时没有写入");
+  if (!response.ok) throw apiError(response, body, "学习结果暂时没有写入");
   return body;
 }
 
@@ -110,7 +220,7 @@ async function requestUserState(state) {
     body: JSON.stringify({ request_id: newRequestId(), state }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后保存个人状态" : body.message || "个人状态暂时没有写入");
+  if (!response.ok) throw apiError(response, body, "个人状态暂时没有写入");
   return body;
 }
 
@@ -122,7 +232,7 @@ async function requestFeedback(payload) {
     body: JSON.stringify({ request_id: newRequestId(), ...payload }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(response.status === 401 ? "请先登录后提交反馈" : body.message || "反馈暂时没有提交成功");
+  if (!response.ok) throw apiError(response, body, "反馈暂时没有提交成功");
   return body;
 }
 
@@ -135,12 +245,15 @@ async function requestLearningRoute(payload) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) throw new Error("请先登录真实账号，再生成学习路线");
+    if (response.status === 401) throw apiError(response, body, "学习路线暂时没有生成成功");
     if (body.reason_code === "daily_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
+    if (body.reason_code === "feature_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
     if (body.reason_code === "burst_limit_exhausted") throw new Error("请求过于频繁，请稍等一分钟再试");
+    if (body.reason_code === "concurrency_limit_exhausted") throw new Error("上一条路线还在处理中，请稍等再试");
     throw new Error(body.message || "学习路线暂时没有生成成功");
   }
   if (body.status === "degraded") throw new Error("AI 服务暂时无法生成可校验草案，请稍后再试");
+  if (body.status === "clarification_required") return body;
   if (body.status !== "draft" || !body.route) throw new Error("学习路线返回格式不完整，请稍后再试");
   return body.route;
 }
@@ -153,7 +266,7 @@ async function confirmLearningRoute(routeId, expectedVersion) {
     body: JSON.stringify({ request_id: newRequestId(), expected_version: expectedVersion }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || "路线暂时不能确认，请重新生成后再试");
+  if (!response.ok) throw apiError(response, body, "路线暂时不能确认，请重新生成后再试");
   return body.route;
 }
 
@@ -165,19 +278,34 @@ async function refreshLearningPlan(routeId, expectedVersion, completedTaskIds = 
     body: JSON.stringify({ request_id: newRequestId(), expected_version: expectedVersion, completed_task_ids: completedTaskIds, skipped_task_ids: skippedTaskIds, ...(availableMinutes === undefined ? {} : { available_minutes: availableMinutes }) }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || "今日记录已保存，但计划暂时没有更新");
+  if (!response.ok) throw apiError(response, body, "今日记录已保存，但计划暂时没有更新");
   return body.route;
 }
 
-function localReview(evidence, evidenceLevel, answer) {
+function localReview(evidence, evidenceLevel) {
   return {
     evidenceUsed: evidence,
-    problem: answer.includes("B")
-      ? "你已经抓住结论，但还需要把边界条件和反例连起来。"
-      : "这次短测答案还没有形成可回看的判断依据。",
-    reason: `本轮留下了 L${evidenceLevel} 证据，先把能被复查的步骤留下来，再判断是否掌握。`,
-    nextAction: "明天用 15 分钟写出一个反例，再用三句话解释它为什么成立。",
+    problem: evidenceLevel >= 3
+      ? "这次留下了可复查的过程，但还需要一次间隔回忆来验证是否能独立复现。"
+      : "当前证据还不足以支持掌握判断，需要补一条可复查的过程或结果。",
+    reason: `这是规则复盘：本轮留下了 L${evidenceLevel} 证据，只据此安排下一步，不推断你已经掌握。`,
+    nextAction: evidenceLevel >= 3
+      ? "明天先不看资料，用 10 分钟复现关键步骤；卡住后再对照原记录补全。"
+      : "下次先用 10 分钟留下一个步骤、答案或反例，再回看哪里还不能解释。",
   };
+}
+
+function routeTasksForToday(route) {
+  const tasks = route?.plan?.today?.tasks;
+  if (!Array.isArray(tasks)) return null;
+  return tasks.map((task) => ({
+    id: task.id,
+    type: task.type,
+    title: task.title,
+    meta: `${task.planned_minutes ?? 25} 分钟 · ${task.action || task.review_prompt || "按计划完成本段"}${task.expected_output ? ` · 产出：${task.expected_output}` : ""}`,
+    status: task.completion_status === "active" ? "active" : task.completion_status === "done" ? "done" : "locked",
+    gua: task.type === "复盘" ? "☵" : "☲",
+  }));
 }
 
 function localMemoryCandidates(payload, iterationId) {
@@ -236,6 +364,15 @@ function userStatePayload() {
         next_action: pilot.review.nextAction,
       } : null,
       review_ready: Boolean(pilot.reviewReady),
+      initial_diagnostic: pilot.initialDiagnostic ? {
+        subject: pilot.initialDiagnostic.subject,
+        correct: pilot.initialDiagnostic.correct,
+        incorrect: pilot.initialDiagnostic.incorrect,
+        unverified: pilot.initialDiagnostic.unverified,
+        total_minutes: pilot.initialDiagnostic.totalMinutes,
+        next_action: pilot.initialDiagnostic.nextAction,
+        completed_at: pilot.initialDiagnostic.completedAt,
+      } : null,
     },
     knowledge: DEMO_STATE.knowledge.map((item) => ({
       id: item.id,
@@ -319,6 +456,15 @@ function applyUserState(state) {
         nextAction: state.pilot.review.next_action,
       } : DEMO_STATE.pilot.review,
       reviewReady: state.pilot.review_ready ?? DEMO_STATE.pilot.reviewReady,
+      initialDiagnostic: state.pilot.initial_diagnostic ? {
+        subject: state.pilot.initial_diagnostic.subject,
+        correct: state.pilot.initial_diagnostic.correct,
+        incorrect: state.pilot.initial_diagnostic.incorrect,
+        unverified: state.pilot.initial_diagnostic.unverified,
+        totalMinutes: state.pilot.initial_diagnostic.total_minutes,
+        nextAction: state.pilot.initial_diagnostic.next_action,
+        completedAt: state.pilot.initial_diagnostic.completed_at,
+      } : null,
     };
   }
   if (Array.isArray(state.knowledge)) {
@@ -363,8 +509,9 @@ export function createApp(root = document.querySelector("#app")) {
     };
     state.tour = { active: false, step: 0 };
     state.memory = { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
+    state.companionCycle = null;
     state.preferences = { notifications: "important", motion: true };
-    state.service = { api: "unknown", aiConfigured: null };
+    state.service = { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown" };
     state.pilot = {
       ...state.pilot,
       selectedEvidenceLevel: 1,
@@ -377,6 +524,7 @@ export function createApp(root = document.querySelector("#app")) {
       reviewError: "",
       review: null,
       reviewReady: false,
+      initialDiagnostic: null,
     };
     state.mountain = {
       ...state.mountain,
@@ -392,7 +540,7 @@ export function createApp(root = document.querySelector("#app")) {
     state.knowledge = [];
     state.knowledgeComposerOpen = false;
     state.knowledgeCaptureDraft = null;
-    state.learningRoute = { draft: null, error: "" };
+    state.learningRoute = { draft: null, clarification: null, error: "" };
     state.today = { completed: 0, total: 0, streak: 0, minutes: 0, tasks: [] };
     state.achievements = [];
     state.map = [{ title: "山脚 · 初入", subtitle: "完成入山信息后开始", state: "current", height: "0 m" }];
@@ -404,19 +552,66 @@ export function createApp(root = document.querySelector("#app")) {
   let scrollFrame = 0;
   let transitionTimer = 0;
   let ascensionTimer = 0;
+  let renderedRoute = null;
   let revealObserver;
+  if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
   DEMO_STATE.auth ??= { user: null, mode: "login" };
   DEMO_STATE.memory ??= { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
   DEMO_STATE.companion ??= { interactionCount: 0, promptVersion: "", firstSeenAt: null, lastSeenAt: null, companionId: DEMO_STATE.guide.selectedAssetId };
+  DEMO_STATE.companionCycle ??= null;
   DEMO_STATE.preferences ??= { notifications: window.localStorage?.getItem("lijing-notifications") ?? "important", motion: motionEnabled };
-  DEMO_STATE.service ??= { api: "unknown", aiConfigured: null };
-  DEMO_STATE.learningRoute ??= { draft: null, error: "" };
+  DEMO_STATE.service ??= { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", syncStatus: "unknown" };
+  DEMO_STATE.learningRoute ??= { draft: null, clarification: null, error: "" };
 
   const applyMemoryResponse = (body) => {
     DEMO_STATE.memory.iterationCount = Number(body.iteration_count ?? DEMO_STATE.memory.iterationCount ?? 0);
     DEMO_STATE.memory.memories = Array.isArray(body.memories) ? body.memories : (Array.isArray(body.candidates) ? body.candidates : []);
     DEMO_STATE.memory.lastIterationId = body.iteration_id ?? DEMO_STATE.memory.lastIterationId;
     DEMO_STATE.memory.syncStatus = "synced";
+  };
+
+  const applyCompanionCycle = (body) => {
+    DEMO_STATE.companionCycle = {
+      date: body.date ?? null,
+      routeAvailable: Boolean(body.route_available),
+      task: body.task ?? null,
+      cycle: body.cycle ?? null,
+      nextAction: body.next_action ?? "",
+      replayed: Boolean(body.replayed),
+    };
+  };
+
+  const applyLearningRoute = (route) => {
+    DEMO_STATE.learningRoute = { draft: route ?? null, clarification: null, error: "" };
+    const tasks = routeTasksForToday(route);
+    const firstTask = route?.plan?.today?.tasks?.[0] ?? null;
+    const firstMilestone = route?.milestones?.[0] ?? null;
+    if (route) {
+      const confirmed = route.status === "confirmed";
+      DEMO_STATE.mountain = {
+        ...DEMO_STATE.mountain,
+        currentChapter: firstMilestone?.title ? `${confirmed ? "当前阶段" : "路线草案"} · ${firstMilestone.title}` : DEMO_STATE.mountain.currentChapter,
+        nextCamp: firstTask?.title ?? firstMilestone?.title ?? (confirmed ? "等待今日任务" : "等待确认"),
+        nextCampDistance: firstTask?.planned_minutes ? `${firstTask.planned_minutes} 分钟` : confirmed ? "今日计划已建立" : "待确认",
+        weather: confirmed ? "路线已建立" : "等待确认",
+      };
+    }
+    if (route?.status === "confirmed" && tasks) {
+      DEMO_STATE.today = {
+        ...DEMO_STATE.today,
+        completed: tasks.filter((task) => task.status === "done").length,
+        total: tasks.length,
+        tasks,
+      };
+    }
+  };
+
+  const syncAuthenticatedAccount = async () => {
+    await syncServiceHealth();
+    await syncUserState();
+    await Promise.all([syncMemories(), syncCompanion(), syncCompanionCycle()]);
+    await syncLearningRoute();
+    await syncReminders();
   };
 
   const replaceState = (nextState) => {
@@ -463,16 +658,30 @@ export function createApp(root = document.querySelector("#app")) {
     }
   };
 
+  const syncCompanionCycle = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    try {
+      applyCompanionCycle(await requestCompanionToday());
+    } catch {
+      DEMO_STATE.companionCycle = { ...DEMO_STATE.companionCycle, syncStatus: "offline" };
+    }
+  };
+
   const syncUserState = async () => {
     if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
     try {
       const response = await fetch("/api/v1/me/state", { credentials: "same-origin" });
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (response.status === 401) notifySessionExpired();
+        DEMO_STATE.service.syncStatus = "degraded";
+        return;
+      }
       const body = await response.json();
       applyUserState(body.state);
       selectedGoal = body.state?.goal_id ?? selectedGoal;
+      DEMO_STATE.service.syncStatus = "synced";
     } catch {
-      // The current account remains usable with its server session if state recovery is unavailable.
+      DEMO_STATE.service.syncStatus = "degraded";
     }
   };
 
@@ -481,9 +690,17 @@ export function createApp(root = document.querySelector("#app")) {
       const response = await fetch("/api/v1/health", { credentials: "same-origin" });
       if (!response.ok) throw new Error("health request failed");
       const body = await response.json();
-      DEMO_STATE.service = { api: body.status === "ok" ? "up" : "degraded", aiConfigured: body.ai_configured === true };
+      DEMO_STATE.service = {
+        api: body.status === "ok" ? "up" : "degraded",
+        aiConfigured: body.ai_configured === true,
+        aiAvailable: body.ai_available === true,
+        aiStatus: body.ai_status ?? (body.ai_configured === true ? "unknown" : "disabled"),
+        aiReasonCode: body.ai_reason_code ?? "",
+        persistence: body.status === "ok" && (body.persistence === "durable" || body.persistence === "ephemeral") ? body.persistence : "unknown",
+        syncStatus: DEMO_STATE.service?.syncStatus ?? "unknown",
+      };
     } catch {
-      DEMO_STATE.service = { api: "down", aiConfigured: null };
+      DEMO_STATE.service = { api: "down", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", syncStatus: "degraded" };
     }
   };
 
@@ -491,9 +708,13 @@ export function createApp(root = document.querySelector("#app")) {
     if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
     try {
       const response = await fetch("/api/v1/learning-routes", { credentials: "same-origin" });
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (response.status === 401) notifySessionExpired();
+        DEMO_STATE.learningRoute.error = "路线暂时无法同步";
+        return;
+      }
       const body = await response.json();
-      DEMO_STATE.learningRoute = { draft: body.route ?? null, error: "" };
+      applyLearningRoute(body.route ?? null);
     } catch {
       DEMO_STATE.learningRoute.error = "路线暂时无法同步";
     }
@@ -506,7 +727,7 @@ export function createApp(root = document.querySelector("#app")) {
       if (!response.ok) return;
       const body = await response.json();
       if (!body.due || DEMO_STATE.preferences?.notifications === "off") return;
-      const storageKey = `lijing-reminder:${body.reminder_key}`;
+      const storageKey = `lijing-reminder:${DEMO_STATE.auth.user.id}:${body.reminder_key}`;
       if (window.localStorage?.getItem(storageKey)) return;
       window.localStorage?.setItem(storageKey, "shown");
       const message = body.tasks?.[0]?.title ? `今天还有：${body.tasks[0].title}` : "今天还有一段学习计划等待完成";
@@ -522,25 +743,37 @@ export function createApp(root = document.querySelector("#app")) {
   const syncSession = async () => {
     try {
       const response = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (response.status === 401) resetToDemoState();
+        return;
+      }
       const body = await response.json();
       if (body.user) {
         resetToRealState(body.user);
-        await Promise.all([syncUserState(), syncMemories(), syncCompanion(), syncServiceHealth(), syncLearningRoute(), syncReminders()]);
+        await syncAuthenticatedAccount();
       }
     } catch {
-      // Keep the sign-in surface usable when the API is unavailable.
+      DEMO_STATE.service.syncStatus = "degraded";
     }
   };
 
   const render = (requestedRoute = normalizeRoute(window.location.pathname)) => {
     const authenticated = Boolean(DEMO_STATE.auth?.user) && DEMO_STATE.isDemo === false;
-    const route = authenticated && requestedRoute === "/auth"
+    const isNotFound = requestedRoute === "/404";
+    const route = isNotFound
+      ? "/404"
+      : authenticated && requestedRoute === "/auth"
       ? "/"
-      : !authenticated && requestedRoute !== "/auth"
-        ? "/auth"
-        : requestedRoute;
-    document.title = `砺境 · ${route === "/" ? "向山顶而行" : "云海登山"}`;
+        : !authenticated && !PUBLIC_ROUTES.has(requestedRoute)
+          ? "/auth"
+          : requestedRoute;
+    const routeChanged = renderedRoute !== route;
+    if (routeChanged) window.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    renderedRoute = route;
+    if (authenticated && requestedRoute === "/auth" && window.location.pathname !== "/") {
+      window.history.replaceState({}, "", "/");
+    }
+    document.title = `砺境 · ${route === "/" ? "向山顶而行" : route === "/404" ? "页面不存在" : "云海登山"}`;
     root.innerHTML = renderShell(route, DEMO_STATE, renderPage(route, DEMO_STATE));
     const appShell = root.querySelector(".app-shell");
     appShell?.setAttribute("data-motion", motionEnabled ? "on" : "off");
@@ -622,6 +855,13 @@ export function createApp(root = document.querySelector("#app")) {
     region.classList.add("is-visible");
     window.setTimeout(() => region.classList.remove("is-visible"), 2200);
   };
+
+  window.addEventListener("lijing-session-expired", () => {
+    if (DEMO_STATE.isDemo) return;
+    resetToDemoState();
+    navigate("/auth");
+    toast("登录已过期，请重新登录后继续");
+  });
 
   const closeFeatureNav = () => {
     const overlay = root.querySelector("#feature-nav-overlay");
@@ -742,19 +982,6 @@ export function createApp(root = document.querySelector("#app")) {
       event.preventDefault();
       playAscensionIntro(element.getAttribute("href") || "/features");
     }));
-    root.querySelectorAll('[data-action="onboarding-next"]').forEach((element) => element.addEventListener("click", async () => {
-      element.disabled = true;
-      try {
-        await persistUserState();
-        DEMO_STATE.onboarding.step = 3;
-        DEMO_STATE.onboarding.featureIndex = 0;
-        render("/onboarding");
-        toast(`${DEMO_STATE.guide.options.find((option) => option.assetId === DEMO_STATE.guide.selectedAssetId)?.name ?? "书鼎"} 已认领`);
-      } catch (error) {
-        toast(error.message);
-        element.disabled = false;
-      }
-    }));
     root.querySelectorAll('[data-action="onboarding-back"]').forEach((element) => element.addEventListener("click", () => {
       if (DEMO_STATE.onboarding.step <= 1) {
         navigate("/auth");
@@ -763,35 +990,8 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.onboarding.step -= 1;
       render("/onboarding");
     }));
-    root.querySelectorAll('[data-action="onboarding-select-guide"]').forEach((element) => element.addEventListener("click", () => {
-      DEMO_STATE.guide.selectedAssetId = element.dataset.guide;
-      render("/onboarding");
-      if (!DEMO_STATE.isDemo) void persistUserState().catch((error) => toast(error.message));
-    }));
-    root.querySelectorAll('[data-action="onboarding-feature-select"]').forEach((element) => element.addEventListener("click", () => {
-      DEMO_STATE.onboarding.featureIndex = Number(element.dataset.featureIndex) || 0;
-      render("/onboarding");
-    }));
-    root.querySelectorAll('[data-action="onboarding-feature-open"]').forEach((element) => element.addEventListener("click", () => {
-      navigate(element.dataset.featureRoute || "/plan");
-    }));
     root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", async () => {
-      const lastFeature = 5;
-      if (DEMO_STATE.onboarding.featureIndex < lastFeature) {
-        DEMO_STATE.onboarding.featureIndex += 1;
-        render("/onboarding");
-        return;
-      }
-      DEMO_STATE.onboarding.completed = true;
-      try {
-        await persistUserState();
-        DEMO_STATE.tour = { active: true, step: 0 };
-        navigate("/");
-        toast("山门已为你打开，先用半分钟认识首页");
-      } catch (error) {
-        DEMO_STATE.onboarding.completed = false;
-        toast(error.message);
-      }
+      navigate("/route", () => toast("方向和节律已带入，补充路线条件后即可生成今日计划"));
     }));
     root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.tour.active = false;
@@ -816,6 +1016,27 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.tour.active = false;
       render("/");
       toast("导览完成，今天先走下一步");
+    }));
+    root.querySelectorAll('[data-action="companion-check-in"]').forEach((element) => element.addEventListener("click", async () => {
+      const intent = element.dataset.companionIntent;
+      const taskId = element.dataset.taskId;
+      if (!intent || !taskId) return;
+      if (DEMO_STATE.isDemo) {
+        toast("登录后，器灵会把这次行动保存到你的今日循环");
+        return;
+      }
+      element.disabled = true;
+      try {
+        const payload = { intent, task_id: taskId };
+        if (intent === "stuck") payload.blocker_type = root.querySelector("[data-companion-blocker]")?.value || "unknown";
+        applyCompanionCycle(await requestCompanionCheckIn(payload));
+        render(window.location.pathname);
+        toast(intent === "start" ? "已开始这一段，完成后回来留下证据" : intent === "stuck" ? "已记下卡住的位置，先按器灵给出的最小一步继续" : "今天先缓一缓，下一次会从更小的一步开始");
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        element.disabled = false;
+      }
     }));
     root.querySelectorAll('[data-action="answer"]').forEach((element) => element.addEventListener("click", () => {
       root.querySelectorAll('[data-action="answer"]').forEach((answer) => answer.classList.remove("is-selected"));
@@ -855,36 +1076,70 @@ export function createApp(root = document.querySelector("#app")) {
     }));
     root.querySelectorAll('[data-action="submit-evidence"]').forEach((element) => element.addEventListener("click", async () => {
       const input = root.querySelector("[data-evidence-input]");
-      const evidence = input?.value.trim() ?? "";
+      let diagnostic;
+      try {
+        diagnostic = collectInitialDiagnostic(root);
+      } catch (error) {
+        toast(error.message);
+        return;
+      }
+      const evidence = diagnostic?.evidence ?? input?.value.trim() ?? "";
+      const evidenceLevel = diagnostic ? 3 : DEMO_STATE.pilot.selectedEvidenceLevel;
       if (!evidence) {
         toast("请先写一句你实际留下的证据");
         input?.focus();
         return;
       }
       DEMO_STATE.pilot.submittedEvidence = evidence;
+      if (diagnostic) {
+        DEMO_STATE.pilot.selectedEvidenceLevel = evidenceLevel;
+        DEMO_STATE.pilot.initialDiagnostic = diagnostic.summary;
+      }
       element.disabled = true;
-      const activeTask = DEMO_STATE.today.tasks.find((task) => task.status === "active");
+      const companionTaskId = element.dataset.taskId || DEMO_STATE.companionCycle?.task?.id;
+      const activeTask = DEMO_STATE.today.tasks.find((task) => task.id === companionTaskId)
+        ?? DEMO_STATE.today.tasks.find((task) => task.status === "active");
+      if (!DEMO_STATE.isDemo) {
+        try {
+          if (!companionTaskId) throw new Error("今日任务尚未同步，请刷新后再提交证据");
+          applyCompanionCycle(await requestCompanionCheckIn({
+            intent: "complete",
+            task_id: companionTaskId,
+            evidence_level: evidenceLevel,
+            evidence,
+          }));
+        } catch (error) {
+          element.disabled = false;
+          toast(error.message);
+          return;
+        }
+      }
       const iterationId = `iteration-${Date.now()}`;
       let iterationReview;
-      try {
-        const result = await requestAi("/api/v1/ai/review", {
-          task: activeTask?.title || "当前学习任务",
-          answer: DEMO_STATE.pilot.selectedAnswer,
-          evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
-          evidence,
-        });
-        iterationReview = result.review;
-        DEMO_STATE.pilot.review = iterationReview;
-        DEMO_STATE.pilot.reviewReady = true;
-        DEMO_STATE.pilot.reviewError = "";
-      } catch (error) {
-        iterationReview = DEMO_STATE.isDemo
-          ? localReview(evidence, DEMO_STATE.pilot.selectedEvidenceLevel, DEMO_STATE.pilot.selectedAnswer)
-          : null;
+      if (diagnostic) {
+        iterationReview = initialDiagnosticReview(diagnostic.summary, evidence);
         DEMO_STATE.pilot.review = iterationReview;
         DEMO_STATE.pilot.reviewReady = false;
-        DEMO_STATE.pilot.reviewError = error.message;
-        toast(DEMO_STATE.isDemo ? "证据已留下，先用本地复盘继续走" : "证据已留下，但服务端 AI 暂时不可用，未生成复盘");
+        DEMO_STATE.pilot.reviewError = "起点诊断使用确定性规则，避免把三道自核对题伪装成 AI 评分。";
+      } else {
+        try {
+          const result = await requestAi("/api/v1/ai/review", {
+            task: activeTask?.title || "当前学习任务",
+            answer: DEMO_STATE.pilot.selectedAnswer,
+            evidence_level: evidenceLevel,
+            evidence,
+          });
+          iterationReview = result.review;
+          DEMO_STATE.pilot.review = iterationReview;
+          DEMO_STATE.pilot.reviewReady = true;
+          DEMO_STATE.pilot.reviewError = "";
+        } catch (error) {
+          iterationReview = localReview(evidence, evidenceLevel);
+          DEMO_STATE.pilot.review = iterationReview;
+          DEMO_STATE.pilot.reviewReady = false;
+          DEMO_STATE.pilot.reviewError = error.message;
+          toast("证据已留下，AI 暂时不可用，已用规则复盘继续沉淀");
+        }
       }
       if (activeTask) {
         activeTask.status = "done";
@@ -893,7 +1148,7 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
         const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
         if (knowledge) {
-          knowledge.evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
+          knowledge.evidenceLevel = evidenceLevel;
           knowledge.updated = "刚刚";
         }
       }
@@ -903,7 +1158,7 @@ export function createApp(root = document.querySelector("#app")) {
           goal_scope: DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "global",
           goal_title: DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? "当前学习目标",
           task_id: activeTask?.id ?? "current-task",
-          evidence_level: DEMO_STATE.pilot.selectedEvidenceLevel,
+          evidence_level: evidenceLevel,
           evidence,
           review: { problem: iterationReview.problem, reason: iterationReview.reason, next_action: iterationReview.nextAction },
         };
@@ -927,8 +1182,9 @@ export function createApp(root = document.querySelector("#app")) {
           const route = DEMO_STATE.learningRoute?.draft;
           const planTask = route?.plan?.today?.tasks?.find((task) => task.completion_status === "active") ?? route?.plan?.today?.tasks?.[0];
           if (route?.id && Number.isInteger(route.version) && planTask?.id) {
-            DEMO_STATE.learningRoute.draft = await refreshLearningPlan(route.id, route.version, [planTask.id], [], Number(DEMO_STATE.user.dailyMinutes));
+            applyLearningRoute(await refreshLearningPlan(route.id, route.version, [planTask.id], [], Number(DEMO_STATE.user.dailyMinutes)));
           }
+          await syncCompanionCycle();
         } catch (error) {
           toast(error.message);
         }
@@ -1009,10 +1265,12 @@ export function createApp(root = document.querySelector("#app")) {
       if (!routeId || !Number.isInteger(expectedVersion)) return;
       element.disabled = true;
       try {
-        DEMO_STATE.learningRoute.draft = await confirmLearningRoute(routeId, expectedVersion);
+        applyLearningRoute(await confirmLearningRoute(routeId, expectedVersion));
         DEMO_STATE.learningRoute.error = "";
-        render("/route");
-        toast("路线已确认，后续学习计划会以它为依据");
+        DEMO_STATE.onboarding.completed = true;
+        await persistUserState();
+        await syncCompanionCycle();
+        navigate("/plan", () => toast("路线已确认，已进入你的今日计划"));
       } catch (error) {
         toast(error.message);
         element.disabled = false;
@@ -1026,10 +1284,15 @@ export function createApp(root = document.querySelector("#app")) {
     }));
     root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (form.dataset.submitting === "true") return;
+      form.dataset.submitting = "true";
+      form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = true; });
+      try {
       if (form.dataset.demoForm === "knowledge-capture") {
         const values = new FormData(form);
         const title = String(values.get("title") ?? "").trim();
         if (!title) return;
+        const previousKnowledge = structuredClone(DEMO_STATE.knowledge);
         const strand = String(values.get("strand") ?? "新知识").trim() || "新知识";
         const source = String(values.get("source") ?? "手动收录").trim() || "手动收录";
         const note = String(values.get("note") ?? "").trim() || "这是一条刚刚进入个人知识库的新节点。";
@@ -1045,6 +1308,7 @@ export function createApp(root = document.querySelector("#app")) {
           try {
             await persistUserState();
           } catch (error) {
+            DEMO_STATE.knowledge = previousKnowledge;
             toast(error.message);
             return;
           }
@@ -1064,6 +1328,8 @@ export function createApp(root = document.querySelector("#app")) {
           toast("行者名和当前阶段不能为空");
           return;
         }
+        const previousUser = structuredClone(DEMO_STATE.user);
+        const previousProfile = structuredClone(DEMO_STATE.onboarding.profile);
         DEMO_STATE.user = {
           ...DEMO_STATE.user,
           name,
@@ -1100,6 +1366,8 @@ export function createApp(root = document.querySelector("#app")) {
           render("/settings");
           toast("个人信息已保存到当前账户");
         } catch (error) {
+          DEMO_STATE.user = previousUser;
+          DEMO_STATE.onboarding.profile = previousProfile;
           toast(error.message);
         }
         return;
@@ -1111,7 +1379,11 @@ export function createApp(root = document.querySelector("#app")) {
         }
         const values = new FormData(form);
         const submit = form.querySelector("button[type=submit]");
-        if (submit) submit.disabled = true;
+        const submitLabel = submit?.innerHTML;
+        if (submit) {
+          submit.disabled = true;
+          submit.textContent = "正在提交反馈...";
+        }
         try {
           await requestFeedback({
             category: String(values.get("category") ?? "other"),
@@ -1124,7 +1396,10 @@ export function createApp(root = document.querySelector("#app")) {
         } catch (error) {
           toast(error.message);
         } finally {
-          if (submit) submit.disabled = false;
+          if (submit?.isConnected) {
+            submit.disabled = false;
+            submit.innerHTML = submitLabel;
+          }
         }
         return;
       }
@@ -1136,27 +1411,55 @@ export function createApp(root = document.querySelector("#app")) {
         const values = new FormData(form);
         const splitEntries = (value, separator) => String(value ?? "").split(separator).map((entry) => entry.trim()).filter(Boolean);
         const submit = form.querySelector("button[type=submit]");
-        if (submit) submit.disabled = true;
+        const submitLabel = submit?.innerHTML;
+        if (submit) {
+          submit.disabled = true;
+          submit.textContent = "正在核算时间并生成今天的第一步...";
+        }
         try {
-          DEMO_STATE.learningRoute.draft = await requestLearningRoute({
+          const baselineAssessment = {
+            subject: String(values.get("assessment_subject") ?? "").trim(),
+            study_stage: String(values.get("assessment_study_stage") ?? ""),
+            recent_result: String(values.get("assessment_recent_result") ?? ""),
+            primary_blocker: String(values.get("assessment_primary_blocker") ?? ""),
+            evidence: String(values.get("assessment_evidence") ?? "").trim(),
+          };
+          const routeResult = await requestLearningRoute({
             goal_type: String(values.get("goal_type") ?? ""),
             goal_name: String(values.get("goal_name") ?? "").trim(),
             target_date: String(values.get("target_date") ?? ""),
             daily_minutes: Number(values.get("daily_minutes")),
             weekly_hours: Number(values.get("weekly_hours")),
-            baseline: String(values.get("baseline") ?? ""),
+            baseline: baselineForRouteAssessment(baselineAssessment),
+            baseline_assessment: baselineAssessment,
             region: String(values.get("region") ?? "").trim(),
             focus_areas: splitEntries(values.get("focus_areas"), /[，,]/),
             constraints: splitEntries(values.get("constraints"), /\r?\n/),
           });
+          if (routeResult.status === "clarification_required") {
+            DEMO_STATE.learningRoute = { draft: null, clarification: routeResult, error: "" };
+            render("/route");
+            toast("还需要补充目标范围和现实约束");
+            return;
+          }
+          applyLearningRoute(routeResult);
+          DEMO_STATE.service.aiStatus = "available";
+          DEMO_STATE.service.aiAvailable = true;
           DEMO_STATE.learningRoute.error = "";
           render("/route");
           toast("路线草案已生成，请先核对动态信息再确认");
         } catch (error) {
           DEMO_STATE.learningRoute.error = error.message;
+          if (/服务商|AI 服务暂时|AI 还在恢复/.test(String(error.message))) {
+            DEMO_STATE.service.aiStatus = "unavailable";
+            DEMO_STATE.service.aiAvailable = false;
+          }
           toast(error.message);
         } finally {
-          if (submit) submit.disabled = false;
+          if (submit?.isConnected) {
+            submit.disabled = false;
+            submit.innerHTML = submitLabel;
+          }
         }
         return;
       }
@@ -1174,6 +1477,9 @@ export function createApp(root = document.querySelector("#app")) {
           toast("请先留下行者名、当前阶段和一个主方向");
           return;
         }
+        const previousUser = structuredClone(DEMO_STATE.user);
+        const previousProfile = structuredClone(DEMO_STATE.onboarding.profile);
+        const previousGoals = structuredClone(DEMO_STATE.goals);
         const goal = DEMO_STATE.goals.find((item) => item.id === goalId) ?? DEMO_STATE.goals[0];
         DEMO_STATE.goals.forEach((item) => { item.selected = item.id === goal.id; });
         DEMO_STATE.user = {
@@ -1191,10 +1497,12 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.onboarding.profile = { name, stage, school, major, age, region, target: goal.id, dailyMinutes };
         try {
           await persistUserState();
-          DEMO_STATE.onboarding.step = 2;
-          render("/onboarding");
-          toast("你的方向已保存，现在认领一位书鼎");
+          DEMO_STATE.onboarding.step = 1;
+          navigate("/route", () => toast("目标和时间已带入；填完目标名称即可生成今天的第一步"));
         } catch (error) {
+          DEMO_STATE.user = previousUser;
+          DEMO_STATE.onboarding.profile = previousProfile;
+          DEMO_STATE.goals = previousGoals;
           toast(error.message);
         }
         return;
@@ -1239,8 +1547,14 @@ export function createApp(root = document.querySelector("#app")) {
           });
           DEMO_STATE.pilot.assistantResponse = result.answer;
           DEMO_STATE.pilot.assistantError = "";
+          DEMO_STATE.service.aiStatus = "available";
+          DEMO_STATE.service.aiAvailable = true;
         } catch (error) {
           DEMO_STATE.pilot.assistantError = error.message;
+          if (/服务商|AI 服务暂时|AI 还在恢复/.test(String(error.message))) {
+            DEMO_STATE.service.aiStatus = "unavailable";
+            DEMO_STATE.service.aiAvailable = false;
+          }
         } finally {
           await syncCompanion();
           DEMO_STATE.pilot.assistantPending = false;
@@ -1255,16 +1569,25 @@ export function createApp(root = document.querySelector("#app")) {
         const payload = { email: String(values.get("email") ?? "").trim(), password: String(values.get("password") ?? "") };
         if (mode === "register") {
           payload.display_name = String(values.get("display_name") ?? "").trim();
-          payload.invite_code = String(values.get("invite_code") ?? "").trim();
+          if (!payload.display_name) delete payload.display_name;
         }
         const submit = form.querySelector("button[type=submit]");
         if (submit) submit.disabled = true;
         try {
           const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const body = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(response.status === 409 ? "这个邮箱已经注册过了" : response.status === 403 ? "当前试点仅限受邀用户，请输入有效邀请码" : body.message || "账号信息不正确，请检查后再试");
+          if (!response.ok) {
+            const message = response.status === 401 && mode === "login"
+              ? "账号或密码不正确"
+              : response.status === 409
+                  ? "这个邮箱已经注册过了"
+                  : response.status >= 500
+                    ? "服务暂时不可用，请稍后重试"
+                    : body.message || "账号信息不正确，请检查后再试";
+            throw new Error(message);
+          }
           resetToRealState(body.user);
-           await Promise.all([syncUserState(), syncMemories(), syncCompanion(), syncServiceHealth(), syncLearningRoute(), syncReminders()]);
+          await syncAuthenticatedAccount();
           toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
           navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/");
         } catch (error) {
@@ -1274,6 +1597,12 @@ export function createApp(root = document.querySelector("#app")) {
         }
         return;
       }
+      } finally {
+        if (form.isConnected) {
+          form.dataset.submitting = "false";
+          form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = false; });
+        }
+      }
     }));
     root.querySelectorAll('[data-action="switch-account"]').forEach((element) => element.addEventListener("click", async () => {
       await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
@@ -1281,6 +1610,9 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.auth.mode = element.dataset.authMode === "register" ? "register" : "login";
       navigate("/auth");
       toast(DEMO_STATE.auth.mode === "register" ? "已退出当前账号，可以注册新账号" : "已退出当前账号，可以登录另一账号");
+    }));
+    root.querySelectorAll('[data-action="forgot-password"]').forEach((element) => element.addEventListener("click", () => {
+      toast("密码找回暂未开放；当前试点请保留登录设备，邮件服务接入后再开放。");
     }));
     root.querySelectorAll('[data-action="logout"]').forEach((element) => element.addEventListener("click", async () => {
       await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
@@ -1314,7 +1646,7 @@ export function createApp(root = document.querySelector("#app")) {
 
   window.addEventListener("popstate", () => render());
   render();
-  void syncSession().then(() => render());
+  void syncSession().then(syncServiceHealth).then(() => render());
   window.setInterval(() => { void syncReminders(); }, 60000);
   return { navigate, render, state: DEMO_STATE };
 }

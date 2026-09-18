@@ -33,19 +33,20 @@ function renderInterfaceTour(state) {
 
 export function renderShell(currentRoute, state, content = "") {
   const meta = getRouteMeta(currentRoute);
-  const shellMode = currentRoute === "/onboarding" ? "onboarding" : currentRoute === "/auth" ? "auth" : "standard";
+  const isOnboarding = currentRoute === "/onboarding";
+  const shellMode = isOnboarding ? "onboarding" : currentRoute === "/auth" ? "auth" : "standard";
   const isAuth = currentRoute === "/auth";
-  const onboardingStyle = currentRoute === "/onboarding"
+  const onboardingStyle = isOnboarding
     ? ` style="--onboarding-image: url('${assetUrl("lijing-onboarding-background-v2")}')"`
     : "";
   return `<div class="app-shell app-shell--${shellMode}"${onboardingStyle} data-motion="on" data-current-route="${currentRoute}" data-route-phase="in">
     ${isAuth ? "" : renderWorldStage(currentRoute)}
-    ${isAuth ? "" : renderNavigation(currentRoute)}
+    ${isAuth || isOnboarding ? "" : renderNavigation(currentRoute)}
     <div class="app-frame">
       ${renderTopbar(meta, state, currentRoute)}
       <main id="main-content" tabindex="-1"><div class="page-view" data-page="${currentRoute}">${content}</div></main>
     </div>
-    <div class="shell-status">${isAuth ? "" : renderStatusAxis(state)}</div>
+    <div class="shell-status">${isAuth || isOnboarding ? "" : renderStatusAxis(state)}</div>
     <div class="toast-region" aria-live="polite" aria-atomic="true"></div>
     ${currentRoute === "/" && state.tour?.active ? renderInterfaceTour(state) : ""}
     ${renderAscensionIntro()}

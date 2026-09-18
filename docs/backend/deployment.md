@@ -31,10 +31,9 @@ AI_ENABLED=true
 AI_PROVIDER_BASE_URL=https://api.openai.com/v1
 AI_PROVIDER_API_KEY=<仅服务器 Secret>
 AI_MODEL=<已批准且有预算的模型名>
-PILOT_INVITE_CODE=<仅服务器保存的封闭试点邀请码>
 ```
 
-不要把 `SUPABASE_DATABASE_URL`、`AI_PROVIDER_API_KEY` 或任何 session/token 写入 Git、前端变量、日志和聊天记录。生产环境必须保留 `APP_ENV=production`，这样固定开发 token 会被关闭，session cookie 会带 `Secure`。
+不要把 `SUPABASE_DATABASE_URL`、`AI_PROVIDER_API_KEY` 或任何 session/token 写入 Git、前端变量、日志和聊天记录。生产环境必须保留 `APP_ENV=production`，这样固定开发 token 会被关闭，session cookie 会带 `Secure`。注册现为公开注册，仍需保留账号频控、AI 配额和异常关闭注册的运维开关。
 
 ## 3. Docker 部署
 
@@ -53,12 +52,12 @@ Invoke-RestMethod https://<你的域名>/api/v1/health
 
 响应中的 `ai_configured` 只有在 `AI_ENABLED=true`、Provider URL、密钥和模型都存在时才为 `true`。健康检查为 `200` 不代表 AI Provider 已通过真实调用，仍需用新注册账号完成一次 AI 请求验证。
 
-生产环境必须设置 `PILOT_INVITE_CODE`。服务会在启动时拒绝缺失邀请码的生产配置；注册请求必须携带正确邀请码，登录不受影响。邀请码不写入前端、Git、日志或聊天记录。
+公开测试版不再要求邀请码。上线前仍需用新注册账号完成一次注册、登录、状态保存、刷新恢复和 AI 请求验证。
 
 ## 4. 账号和 AI 冒烟验证
 
 ```powershell
-$register = @{ email = 'pilot@example.com'; password = 'change-this-password'; display_name = '试点行者'; invite_code = '<从生产 Secret 读取>' } | ConvertTo-Json
+$register = @{ email = 'pilot@example.com'; password = 'change-this-password'; display_name = '公开测试行者' } | ConvertTo-Json
 $session = Invoke-WebRequest https://<你的域名>/api/v1/auth/register -Method Post -ContentType 'application/json' -Body $register -SessionVariable webSession
 
 Invoke-RestMethod https://<你的域名>/api/v1/auth/me -WebSession $webSession

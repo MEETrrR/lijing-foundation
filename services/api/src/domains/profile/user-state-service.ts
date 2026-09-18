@@ -178,11 +178,35 @@ function validateReview(value) {
   };
 }
 
+function validateInitialDiagnostic(value) {
+  if (value === null || value === undefined) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformError("VALIDATION_ERROR", "pilot.initial_diagnostic must be an object");
+  const allowed = new Set(["subject", "correct", "incorrect", "unverified", "total_minutes", "next_action", "completed_at"]);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown pilot.initial_diagnostic field: ${key}`);
+  for (const key of ["correct", "incorrect", "unverified"]) {
+    if (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > 3) throw new PlatformError("VALIDATION_ERROR", `pilot.initial_diagnostic.${key} is invalid`);
+  }
+  if (!Number.isInteger(value.total_minutes) || value.total_minutes < 1 || value.total_minutes > 540) {
+    throw new PlatformError("VALIDATION_ERROR", "pilot.initial_diagnostic.total_minutes is invalid");
+  }
+  if (value.correct + value.incorrect + value.unverified !== 3) throw new PlatformError("VALIDATION_ERROR", "pilot.initial_diagnostic must describe exactly three exercises");
+  if (typeof value.completed_at !== "string" || Number.isNaN(Date.parse(value.completed_at))) throw new PlatformError("VALIDATION_ERROR", "pilot.initial_diagnostic.completed_at is invalid");
+  return {
+    subject: requireString(value.subject, "pilot.initial_diagnostic.subject", 80),
+    correct: value.correct,
+    incorrect: value.incorrect,
+    unverified: value.unverified,
+    total_minutes: value.total_minutes,
+    next_action: requireString(value.next_action, "pilot.initial_diagnostic.next_action", 500),
+    completed_at: value.completed_at,
+  };
+}
+
 function validatePilot(value, fallback) {
   if (value === null) return null;
   if (value === undefined) return fallback ? structuredClone(fallback) : null;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformError("VALIDATION_ERROR", "pilot must be an object");
-  const allowed = new Set(["selected_evidence_level", "submitted_evidence", "selected_answer", "review", "review_ready"]);
+  const allowed = new Set(["selected_evidence_level", "submitted_evidence", "selected_answer", "review", "review_ready", "initial_diagnostic"]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown pilot field: ${key}`);
   if (!Number.isInteger(value.selected_evidence_level) || value.selected_evidence_level < 1 || value.selected_evidence_level > 4) {
     throw new PlatformError("VALIDATION_ERROR", "pilot.selected_evidence_level is invalid");
@@ -194,6 +218,7 @@ function validatePilot(value, fallback) {
     selected_answer: optionalString(value.selected_answer, "pilot.selected_answer", 1000),
     review: validateReview(value.review),
     review_ready: value.review_ready,
+    initial_diagnostic: validateInitialDiagnostic(value.initial_diagnostic),
   };
 }
 

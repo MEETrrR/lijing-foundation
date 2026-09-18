@@ -149,9 +149,9 @@ export const DEMO_STATE = {
     ],
   },
   goals: [
-    { id: "goal-exam", title: "上岸一场重要考试", detail: "把备考变成每天可见的山路", selected: true, icon: "峰" },
-    { id: "goal-skill", title: "掌握一项长期技能", detail: "让知识沉淀为可以迁移的能力", selected: false, icon: "脉" },
-    { id: "goal-life", title: "建立稳定的生活节律", detail: "先照顾好脚下，再走得更远", selected: false, icon: "息" },
+    { id: "goal-exam", title: "考研备考", detail: "首期试点：把备考变成每天可执行的一步", selected: true, available: true, icon: "峰" },
+    { id: "goal-skill", title: "长期技能伴学", detail: "开发中，试点验证后再开放", selected: false, available: false, icon: "脉" },
+    { id: "goal-life", title: "生活节律陪伴", detail: "开发中，暂不进入学习路线", selected: false, available: false, icon: "息" },
   ],
   knowledge: [
     { id: "limits-continuity", title: "极限与连续", domain: "数学 · 当前山段", strand: "微积分基础", mastery: 78, state: "稳固", gua: "☲", color: "gold", source: "攀登 · 第 03 段", updated: "今天 09:24", summary: "连续描述的是函数在一点附近没有断开，极限则是我判断这种稳定性的入口。", note: "我现在会先看‘靠近时发生什么’，再决定要不要使用连续性的结论。", relatedIds: ["function-basics", "derivative-geometry", "error-attribution"], position: "north" },

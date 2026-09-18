@@ -3,6 +3,7 @@ const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { buildLearningRoutePrompt } = require("./learning-route-prompt.ts");
 const { buildPlanHierarchy, buildWeeks } = require("./plan-builder.ts");
+const { effectiveDailyMinutes, flattenTasks, validatePlan } = require("./plan-validator.ts");
 const { OFFICIAL_SOURCE_REGISTRY } = require("../knowledge-retrieval/knowledge-catalog.ts");
 
 const GOAL_TYPES = Object.freeze([
@@ -13,9 +14,12 @@ const GOAL_TYPES = Object.freeze([
   "personal_growth",
 ]);
 const BASELINES = new Set(["starting", "foundation", "advanced"]);
+const ASSESSMENT_STAGES = new Set(["not_started", "reviewed_once", "practiced"]);
+const ASSESSMENT_RESULTS = new Set(["no_recent_practice", "below_40", "between_40_69", "above_70"]);
+const ASSESSMENT_BLOCKERS = new Set(["scope", "concept", "application", "speed", "consistency"]);
 const CAPACITY_BUFFER_PERCENT = 20;
 const DAY_MS = 86400000;
-const MAX_PLAN_MILESTONES = 6;
+const MAX_PLAN_MILESTONES = 4;
 
 const SOURCE_REGISTRY = OFFICIAL_SOURCE_REGISTRY;
 
@@ -78,7 +82,10 @@ function memoryScopeFor(goalType) {
 function uniqueTexts(values, label, max) {
   return [...new Map(values.map((value) => [value, value])).values()]
     .slice(0, max)
-    .map((value) => normalizeText(value, label, { min: 1, max: label === "milestone outcome" ? 180 : 240 }));
+    .map((value) => normalizeText(value, label, {
+      min: 1,
+      max: label === "assumption" ? 45 : label === "fact_to_confirm" ? 60 : label === "milestone outcome" ? 42 : 240,
+    }));
 }
 
 function requiredFactsFor(input) {
@@ -95,9 +102,39 @@ function requiredFactsFor(input) {
   return facts;
 }
 
+function validateBaselineAssessment(value, required) {
+  if (value === undefined || value === null) {
+    if (required) throw new PlatformError("VALIDATION_ERROR", "baseline_assessment is required for the postgraduate pilot");
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new PlatformError("VALIDATION_ERROR", "baseline_assessment must be an object");
+  }
+  const allowed = new Set(["subject", "study_stage", "recent_result", "primary_blocker", "evidence"]);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown baseline_assessment field: ${key}`);
+  const subject = normalizeText(value.subject, "baseline_assessment.subject", { min: 1, max: 80 });
+  if (!ASSESSMENT_STAGES.has(value.study_stage)) throw new PlatformError("VALIDATION_ERROR", "baseline_assessment.study_stage is invalid");
+  if (!ASSESSMENT_RESULTS.has(value.recent_result)) throw new PlatformError("VALIDATION_ERROR", "baseline_assessment.recent_result is invalid");
+  if (!ASSESSMENT_BLOCKERS.has(value.primary_blocker)) throw new PlatformError("VALIDATION_ERROR", "baseline_assessment.primary_blocker is invalid");
+  return {
+    subject,
+    study_stage: value.study_stage,
+    recent_result: value.recent_result,
+    primary_blocker: value.primary_blocker,
+    evidence: normalizeText(value.evidence, "baseline_assessment.evidence", { min: 12, max: 360 }),
+  };
+}
+
+function baselineForAssessment(assessment, fallback) {
+  if (!assessment) return fallback;
+  if (assessment.study_stage === "not_started") return "starting";
+  if (assessment.study_stage === "practiced" && assessment.recent_result === "above_70") return "advanced";
+  return "foundation";
+}
+
 function validateRouteRequest(input, clock) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new PlatformError("VALIDATION_ERROR", "learning route request must be an object");
-  const allowed = new Set(["request_id", "goal_type", "goal_name", "target_date", "weekly_hours", "daily_minutes", "baseline", "region", "constraints", "focus_areas"]);
+  const allowed = new Set(["request_id", "goal_type", "goal_name", "target_date", "weekly_hours", "daily_minutes", "baseline", "baseline_assessment", "region", "constraints", "focus_areas"]);
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown field: ${key}`);
   if (!isValidRequestId(input.request_id)) throw new PlatformError("VALIDATION_ERROR", "request_id must be a UUID");
   if (!GOAL_TYPES.includes(input.goal_type)) throw new PlatformError("VALIDATION_ERROR", "goal_type is not supported");
@@ -115,11 +152,13 @@ function validateRouteRequest(input, clock) {
     throw new PlatformError("VALIDATION_ERROR", "daily_minutes must be an integer from 5 to 1440");
   }
   if (!BASELINES.has(input.baseline)) throw new PlatformError("VALIDATION_ERROR", "baseline is not supported");
+  const baselineAssessment = validateBaselineAssessment(input.baseline_assessment, input.goal_type === "postgraduate_entrance_exam");
   const region = input.region === undefined || input.region === null || input.region === "" ? "" : normalizeText(input.region, "region", { min: 1, max: 120 });
   if (input.constraints !== undefined && (!Array.isArray(input.constraints) || input.constraints.length > 10)) throw new PlatformError("VALIDATION_ERROR", "constraints must contain at most 10 entries");
   if (input.focus_areas !== undefined && (!Array.isArray(input.focus_areas) || input.focus_areas.length > 8)) throw new PlatformError("VALIDATION_ERROR", "focus_areas must contain at most 8 entries");
   const constraints = [...new Set((input.constraints ?? []).map((value) => normalizeText(value, "constraint", { min: 1, max: 160 })))];
   const focusAreas = [...new Set((input.focus_areas ?? []).map((value) => normalizeText(value, "focus_area", { min: 1, max: 80 })))];
+  if (baselineAssessment && !focusAreas.length) focusAreas.push(baselineAssessment.subject);
   return {
     request_id: input.request_id,
     goal_type: input.goal_type,
@@ -127,10 +166,60 @@ function validateRouteRequest(input, clock) {
     target_date: input.target_date,
     weekly_hours: input.weekly_hours,
     daily_minutes: dailyMinutes,
-    baseline: input.baseline,
+    baseline: baselineForAssessment(baselineAssessment, input.baseline),
+    baseline_assessment: baselineAssessment,
     region,
     constraints,
     focus_areas: focusAreas,
+  };
+}
+
+function clarificationFor(input) {
+  const goalText = input.goal_name.toLowerCase();
+  const contextText = [input.goal_name, ...input.focus_areas, ...input.constraints].join(" ").toLowerCase();
+  const genericGoal = [
+    "我要变强",
+    "我想变强",
+    "我要学会ai",
+    "我想学会ai",
+    "我要学ai",
+    "我想学ai",
+    "我要找到工作",
+    "我想找到工作",
+    "我想学python",
+    "我想学 python",
+    "学习python",
+    "学习 python",
+    "提高计算机基础",
+    "我想准备考研",
+    "准备考研",
+  ].some((value) => goalText === value);
+  const postgraduateScopeMissing = input.goal_type === "postgraduate_entrance_exam"
+    && /考研|研究生|硕士/.test(goalText)
+    && input.focus_areas.length <= 1
+    && input.region === ""
+    && input.goal_name.length < 14;
+  const multiGoal = /(同时|还想|并且|以及|考研.*实习|实习.*考研|参加比赛|比赛.*实习|实习.*比赛)/.test(contextText);
+  if (!genericGoal && !postgraduateScopeMissing && !multiGoal) return null;
+  const missingFields = [];
+  const questions = [];
+  if (multiGoal) {
+    missingFields.push("primary_goal", "goal_priority", "time_split");
+    questions.push("如果考研、实习和比赛不能同时拉满，你希望接下来 4 周优先保住哪一个？", "其他目标每周至少保留多少时间，哪些目标可以暂缓？");
+  } else {
+    missingFields.push("specific_scope", "measurable_outcome");
+    questions.push("你要学习的具体范围是什么，例如考试科目、岗位方向、技术栈或作品类型？", "到目标日期时，什么结果可以让你判断自己真的完成了，而不只是看过资料？");
+  }
+  if (!input.constraints.length) {
+    missingFields.push("realistic_constraints");
+    questions.push("哪些日期或时段不能学习？工作日和周末分别能拿出多少时间？");
+  }
+  return {
+    status: "clarification_required",
+    reason_code: "insufficient_context",
+    message: "先补充两三个关键条件，再生成路线；否则计划会建立在猜测上。",
+    missing_fields: [...new Set(missingFields)],
+    questions: [...new Set(questions)],
   };
 }
 
@@ -138,57 +227,71 @@ function parseProviderDraft(text, input, today) {
   if (typeof text !== "string" || text.length > 12000) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft was missing or too large");
   let value;
   try {
-    value = JSON.parse(text);
+    const normalized = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    try {
+      value = JSON.parse(normalized);
+    } catch {
+      const start = normalized.indexOf("{");
+      const end = normalized.lastIndexOf("}");
+      if (start < 0 || end <= start) throw new Error("route draft did not contain a JSON object");
+      value = JSON.parse(normalized.slice(start, end + 1));
+    }
   } catch (error) {
     throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft was not valid JSON", { cause: error });
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft must be an object");
   const allowed = new Set(["summary", "assumptions", "facts_to_confirm", "milestones"]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft contains unsupported fields");
-  const summary = normalizeText(value.summary, "summary", { min: 1, max: 500 });
-  if (!Array.isArray(value.assumptions) || value.assumptions.length < 1 || value.assumptions.length > 6) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft assumptions are invalid");
-  if (!Array.isArray(value.facts_to_confirm) || value.facts_to_confirm.length < 1 || value.facts_to_confirm.length > 8) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft facts_to_confirm are invalid");
+  const summary = normalizeText(value.summary, "summary", { min: 1, max: 120 });
+  if (!Array.isArray(value.assumptions) || value.assumptions.length < 1 || value.assumptions.length > 4) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft assumptions are invalid");
+  if (!Array.isArray(value.facts_to_confirm) || value.facts_to_confirm.length < 1 || value.facts_to_confirm.length > 4) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft facts_to_confirm are invalid");
   if (!Array.isArray(value.milestones) || value.milestones.length < 2 || value.milestones.length > MAX_PLAN_MILESTONES) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route draft milestones are invalid");
   const assumptions = uniqueTexts([
     `按每周${input.weekly_hours}小时安排。`,
     `当前基础按${input.baseline}处理。`,
     ...value.assumptions,
-  ], "assumption", 6);
+    ], "assumption", 4);
   const factsToConfirm = uniqueTexts([
     ...requiredFactsFor(input),
     ...value.facts_to_confirm,
-  ], "fact_to_confirm", 8);
+  ], "fact_to_confirm", 4);
   let previousEnd = dateValue(today) - DAY_MS;
+  let firstMilestone = true;
   const milestones = value.milestones.map((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone is invalid");
     const keys = Object.keys(item);
     if (keys.some((key) => !["title", "start_date", "end_date", "planned_hours", "outcomes"].includes(key))) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone contains unsupported fields");
-    const title = normalizeText(item.title, "milestone title", { min: 1, max: 100 });
+    const title = normalizeText(item.title, "milestone title", { min: 1, max: 24 });
     if (!isDateOnly(item.start_date) || !isDateOnly(item.end_date)) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone dates are invalid");
     const start = dateValue(item.start_date);
     const end = dateValue(item.end_date);
+    if (firstMilestone && item.start_date !== today) {
+      throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route must start with an executable task today");
+    }
     if (start < dateValue(today) || start <= previousEnd || end < start || end > dateValue(input.target_date)) {
       throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone dates are not feasible");
     }
     if (!Number.isInteger(item.planned_hours) || item.planned_hours < 1 || item.planned_hours > 1000) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone planned_hours are invalid");
-    if (!Array.isArray(item.outcomes) || item.outcomes.length < 1 || item.outcomes.length > 4) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone outcomes are invalid");
+    if (!Array.isArray(item.outcomes) || item.outcomes.length < 1 || item.outcomes.length > 2) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route milestone outcomes are invalid");
     previousEnd = end;
+    firstMilestone = false;
     return {
       title,
       start_date: item.start_date,
       end_date: item.end_date,
       planned_hours: item.planned_hours,
-      outcomes: uniqueTexts(item.outcomes, "milestone outcome", 4),
+      outcomes: uniqueTexts(item.outcomes, "milestone outcome", 2),
     };
   });
   return { summary, assumptions, facts_to_confirm: factsToConfirm, milestones };
 }
 
-function feasibilityFor(input, milestones, today) {
+function feasibilityFor(input, milestones, today, plan) {
   const daysRemaining = Math.round((dateValue(input.target_date) - dateValue(today)) / DAY_MS) + 1;
   const totalAvailableHours = Math.floor((daysRemaining / 7) * input.weekly_hours);
   const protectedCapacityHours = Math.floor(totalAvailableHours * ((100 - CAPACITY_BUFFER_PERCENT) / 100));
   const plannedHours = milestones.reduce((total, milestone) => total + milestone.planned_hours, 0);
+  const scheduledMinutes = flattenTasks(plan).reduce((total, task) => total + (Number(task.planned_minutes) || 0), 0);
   const capacityByMilestone = milestones.map((milestone) => {
     const days = Math.round((dateValue(milestone.end_date) - dateValue(milestone.start_date)) / DAY_MS) + 1;
     const availableHours = Math.floor((days / 7) * input.weekly_hours);
@@ -229,6 +332,9 @@ function feasibilityFor(input, milestones, today) {
     total_available_hours: totalAvailableHours,
     protected_capacity_hours: protectedCapacityHours,
     planned_hours: plannedHours,
+    scheduled_hours: Math.round(scheduledMinutes / 60 * 10) / 10,
+    requested_daily_minutes: input.daily_minutes,
+    effective_daily_minutes: plan?.daily_minutes ?? effectiveDailyMinutes(input),
     buffer_percent: CAPACITY_BUFFER_PERCENT,
     message,
     capacity_by_milestone: capacityByMilestone,
@@ -266,7 +372,9 @@ function roundHours(minutes) {
 }
 
 function replanAfterRefresh(plan, request, clock) {
-  const dailyMinutes = request.available_minutes === null ? plan.daily_minutes : Math.max(5, request.available_minutes);
+  const dailyMinutes = request.available_minutes === null
+    ? plan.daily_minutes
+    : Math.max(5, Math.min(plan.daily_minutes, request.available_minutes));
   const completed = new Set(request.completed_task_ids);
   const skipped = new Set(request.skipped_task_ids);
   const today = plan.today?.date;
@@ -337,6 +445,11 @@ class LearningRouteService {
     const input = validateRouteRequest(body, this.clock);
     const normalizedIdempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     const fingerprint = sha256(stableStringify(input));
+    const replay = await this.database.get(idempotencyKey(actorId, normalizedIdempotencyKey));
+    if (replay) {
+      if (replay.fingerprint !== fingerprint) throw new PlatformError("CONFLICT", "idempotency key was reused with a different route request");
+      return replay.response;
+    }
     const existing = await this.database.get(`learning-route:request:${actorId}:${input.request_id}`);
     if (existing) {
       if (existing.fingerprint !== fingerprint) throw new PlatformError("CONFLICT", "request_id was reused with a different route request");
@@ -350,6 +463,20 @@ class LearningRouteService {
       ...input,
       daily_minutes: input.daily_minutes ?? (Number.isInteger(savedDailyMinutes) ? savedDailyMinutes : null),
     };
+    const clarification = clarificationFor(routeInput);
+    if (clarification) {
+      const response = { request_id: input.request_id, ...clarification };
+      await this.database.transaction(async (database) => {
+        const existingReplay = await database.get(idempotencyKey(actorId, normalizedIdempotencyKey));
+        if (existingReplay) {
+          if (existingReplay.fingerprint !== fingerprint) throw new PlatformError("CONFLICT", "idempotency key was reused with a different route request");
+          return;
+        }
+        await database.set(`learning-route:request:${actorId}:${input.request_id}`, { fingerprint, response });
+        await database.set(idempotencyKey(actorId, normalizedIdempotencyKey), { fingerprint, response });
+      });
+      return response;
+    }
     const sourcePack = sourcePackFor(input.goal_type);
     const today = currentDate(this.clock);
     const retrieval = this.knowledge
@@ -371,12 +498,20 @@ class LearningRouteService {
     }, normalizedIdempotencyKey);
     if (aiResponse.status !== "completed") {
       const response = { request_id: input.request_id, status: "degraded", reason_code: "ai_unavailable" };
-      await this.database.set(`learning-route:request:${actorId}:${input.request_id}`, { fingerprint, response });
+      await this.database.transaction(async (database) => {
+        await database.set(`learning-route:request:${actorId}:${input.request_id}`, { fingerprint, response });
+        await database.set(idempotencyKey(actorId, normalizedIdempotencyKey), { fingerprint, response });
+      });
       return response;
     }
     const draft = parseProviderDraft(aiResponse.result.text, input, today);
-    const feasibility = feasibilityFor(routeInput, draft.milestones, today);
     const plan = buildPlanHierarchy({ input: routeInput, milestones: draft.milestones, today, summary: draft.summary, profile: savedProfile, clock: this.clock });
+    const planValidation = validatePlan({ plan, milestones: draft.milestones, input: routeInput, profile: savedProfile, today });
+    if (!planValidation.ok) {
+      throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI route plan failed deterministic validation", { metadata: { planValidation } });
+    }
+    plan.validation_warnings = planValidation.warnings;
+    const feasibility = feasibilityFor(routeInput, draft.milestones, today, plan);
     const route = {
       id: `route-${crypto.randomUUID()}`,
       version: 1,
@@ -387,10 +522,12 @@ class LearningRouteService {
         target_date: routeInput.target_date,
         weekly_hours: routeInput.weekly_hours,
         baseline: routeInput.baseline,
+        baseline_assessment: routeInput.baseline_assessment,
         region: routeInput.region || savedProfile.region || null,
         constraints: routeInput.constraints,
         focus_areas: routeInput.focus_areas,
         daily_minutes: plan.daily_minutes,
+        requested_daily_minutes: routeInput.daily_minutes,
       },
       summary: draft.summary,
       assumptions: draft.assumptions,
@@ -443,7 +580,7 @@ class LearningRouteService {
       const route = await database.get(routeKey(actorId, routeId));
       if (!route) throw new PlatformError("NOT_FOUND", "learning route was not found");
       if (route.version !== body.expected_version) throw new PlatformError("CONFLICT", "learning route version has changed");
-      if (route.feasibility.status !== "feasible") throw new PlatformError("VALIDATION_ERROR", "only feasible learning routes can be confirmed");
+      if (!["feasible", "tight"].includes(route.feasibility.status)) throw new PlatformError("VALIDATION_ERROR", "only feasible or tight learning routes can be confirmed");
       const confirmed = {
         ...route,
         version: route.version + 1,

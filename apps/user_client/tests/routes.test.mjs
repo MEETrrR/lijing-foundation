@@ -7,8 +7,8 @@ import { DEMO_STATE } from "../src/data/demo-data.js";
 import { getAsset } from "../src/data/assets.js";
 import { readFile } from "node:fs/promises";
 
-test("normalizes unknown paths to the world entrance", () => {
-  assert.equal(normalizeRoute("/missing"), "/");
+test("normalizes unknown paths to the real not-found route", () => {
+  assert.equal(normalizeRoute("/missing"), "/404");
   assert.equal(normalizeRoute("/plan/"), "/plan");
 });
 
@@ -37,8 +37,48 @@ test("auth chapter exposes real login and registration forms", () => {
   assert.match(html, /data-demo-form="auth" data-auth-mode="register"/);
   assert.match(html, /name="email"/);
   assert.match(html, /name="display_name"/);
-  assert.match(html, /name="invite_code"/);
+  assert.doesNotMatch(html, /name="invite_code"/);
   assert.match(html, /data-action="auth-mode" data-auth-mode="login"/);
+  assert.match(html, /砺境帮助你制定目标、生成学习计划，并用学习证据生成下一步。/);
+  assert.match(html, /正在核验数据保存方式/);
+  assert.match(html, /公开测试版/);
+  assert.match(html, /创建账号/);
+
+  state.auth.mode = "login";
+  const loginHtml = renderPage("/auth", state);
+  assert.match(loginHtml, /登录并继续/);
+  assert.match(loginHtml, /当前试点尚未接入邮件验证/);
+  assert.match(loginHtml, /data-action="forgot-password"/);
+});
+
+test("unknown pages expose a recoverable 404 surface", () => {
+  const html = renderPage("/404", DEMO_STATE);
+  assert.match(html, /404/);
+  assert.match(html, /地址可能写错了/);
+  assert.match(html, /data-route="\/"/);
+});
+
+test("public legal pages are reachable before authentication and state their pilot limits", () => {
+  for (const route of ["/privacy", "/terms", "/contact"]) {
+    const html = renderPage(route, DEMO_STATE);
+    assert.match(html, /公开试点版/);
+    assert.match(html, /当前/);
+  }
+  assert.match(renderPage("/privacy", DEMO_STATE), /尚未接入邮箱验证/);
+  assert.match(renderPage("/contact", DEMO_STATE), /没有配置独立客服邮箱/);
+});
+
+test("home task content is escaped before it enters the HTML surface", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.today = {
+    ...state.today,
+    tasks: [{ id: "task-xss", type: "练习", title: '<img src=x onerror="window.__xss=1">', meta: "可复查记录" , status: "active", gua: "☲" }],
+    total: 1,
+    completed: 0,
+  };
+  const html = renderPage("/", state);
+  assert.doesNotMatch(html, /<img src=x onerror/);
+  assert.match(html, /&lt;img src=x onerror=&quot;window\.__xss=1&quot;&gt;/);
 });
 
 test("profile settings always exposes the exit action in demo state", () => {
@@ -53,6 +93,7 @@ test("complete settings exposes account controls, editable profile, service stat
   const state = structuredClone(DEMO_STATE);
   state.auth = { user: { id: "user-1", email: "pilot@example.com", display_name: "试点行者", created_at: "2026-09-06T00:00:00.000Z" }, mode: "login" };
   state.isDemo = false;
+  state.service = { api: "up", aiConfigured: true, persistence: "ephemeral" };
   const html = renderPage("/settings", state);
   assert.match(html, /data-demo-form="settings-profile"/);
   assert.match(html, /data-demo-form="feedback"/);
@@ -60,7 +101,13 @@ test("complete settings exposes account controls, editable profile, service stat
   assert.match(html, /data-action="switch-account" data-auth-mode="register"/);
   assert.match(html, /data-action="logout"/);
   assert.match(html, /AI 引路/);
+  assert.match(html, /临时本地会话，服务重启后数据会清空/);
+  assert.doesNotMatch(html, /刷新和换设备仍可恢复/);
   assert.match(html, /name="detail"/);
+
+  const authHtml = renderPage("/auth", state);
+  assert.match(authHtml, /当前为公开测试版/);
+  assert.doesNotMatch(authHtml, /可跨重启恢复/);
 });
 
 test("learning route intake asks for real capacity and only exposes a draft after server generation", () => {
@@ -69,19 +116,28 @@ test("learning route intake asks for real capacity and only exposes a draft afte
   state.learningRoute = { draft: null, error: "" };
   const emptyHtml = renderPage("/route", state);
   assert.match(emptyHtml, /data-demo-form="learning-route"/);
+  assert.match(emptyHtml, /当前试点方向/);
+  assert.match(emptyHtml, /考公、就业与泛学习方向开发中/);
   assert.match(emptyHtml, /name="weekly_hours"/);
   assert.match(emptyHtml, /name="constraints"/);
+  assert.match(emptyHtml, /起点校准 · 先测一科/);
+  assert.match(emptyHtml, /name="assessment_subject"/);
+  assert.match(emptyHtml, /name="assessment_evidence"/);
   assert.match(emptyHtml, /不会拿示例计划冒充你的结果/);
 
   state.learningRoute.draft = {
     id: "route-11111111-1111-4111-8111-111111111111",
     version: 1,
     status: "draft",
-    goal: { name: "计算机专业硕士复习", type: "postgraduate_entrance_exam", target_date: "2026-12-20", baseline: "foundation", region: "江西", constraints: [], focus_areas: ["数学"] },
+    goal: {
+      name: "计算机专业硕士复习", type: "postgraduate_entrance_exam", target_date: "2026-12-20", baseline: "foundation", region: "江西", constraints: [], focus_areas: ["数学"],
+      baseline_assessment: { subject: "数学二", study_stage: "reviewed_once", recent_result: "between_40_69", primary_blocker: "concept", evidence: "最近做分段函数极限题时，不确定该先判断哪一段。" },
+    },
     summary: "以阶段产出推进。",
     assumptions: ["每周 10 小时。"],
     facts_to_confirm: ["核验当年专业目录。"],
     milestones: [{ title: "基础诊断", start_date: "2026-09-07", end_date: "2026-10-01", planned_hours: 20, outcomes: ["留下诊断记录"] }, { title: "阶段回望", start_date: "2026-10-02", end_date: "2026-12-01", planned_hours: 40, outcomes: ["留下学习证据"] }],
+    plan: { daily_minutes: 25, current_year: { months: [{ month: "2026-09", title: "基础诊断" }] }, today: { date: "2026-09-08", tasks: [{ title: "基础诊断 · 建立框架", planned_minutes: 25, action: "整理知识边界" }] } },
     feasibility: { status: "feasible", days_remaining: 105, weekly_hours: 10, total_available_hours: 150, protected_capacity_hours: 120, planned_hours: 60, buffer_percent: 20, message: "可确认。" },
     sources: [{ id: "chsi-postgraduate-directory", goal_type: "postgraduate_entrance_exam", title: "中国研究生招生信息网", publisher: "教育部学生服务与素质发展中心", official_url: "https://yz.chsi.com.cn/", use_for: "专业目录", freshness: "annual", region_scope: "全国" }],
     source_registry_version: "2026-09-06.1",
@@ -97,35 +153,41 @@ test("learning route intake asks for real capacity and only exposes a draft afte
   assert.match(draftHtml, /确认前核验/);
   assert.match(draftHtml, /data-action="confirm-learning-route"/);
   assert.match(draftHtml, /中国研究生招生信息网/);
+  assert.match(draftHtml, /确认后会展开/);
+  assert.match(draftHtml, /起点校准 · 学习者陈述/);
+  assert.match(draftHtml, /数学二/);
+  assert.match(draftHtml, /不把这份陈述当作已验证的分数或掌握结论/);
+  assert.doesNotMatch(draftHtml, /route-plan-preview/);
+
+  state.learningRoute.draft.feasibility = { ...state.learningRoute.draft.feasibility, status: "tight", message: "计划接近可用时长。" };
+  const tightHtml = renderPage("/route", state);
+  assert.match(tightHtml, /时间过紧/);
+  assert.match(tightHtml, /data-action="confirm-learning-route"/);
+  assert.match(tightHtml, /接受紧凑安排，开始今天这一步/);
 });
 
-test("first-visit onboarding collects a profile, a goal, a companion and feature orientation", () => {
+test("first-visit onboarding collects only the minimum setup before route building", () => {
   const state = structuredClone(DEMO_STATE);
   state.onboarding.step = 1;
   const profileHtml = renderPage("/onboarding", state);
   assert.equal(getAsset("lijing-onboarding-background-v2")?.path, "/assets/generated/source/onboarding/onboarding-background-v2.png");
-  assert.match(profileHtml, /onboarding\/onboarding-background-v2\.png/);
+  assert.doesNotMatch(profileHtml, /onboarding\/onboarding-background-v2\.png/);
   assert.match(profileHtml, /data-demo-form="onboarding-profile"/);
   assert.match(profileHtml, /name="school"/);
   assert.match(profileHtml, /你现在最想完成什么/);
+  assert.match(profileHtml, /先完成最少信息，其他资料之后也能补充/);
+  assert.match(profileHtml, /长期技能伴学/);
+  assert.match(profileHtml, /开发中/);
+  assert.match(profileHtml, /继续补充路线/);
+  assert.match(profileHtml, /补充更多资料/);
+  assert.doesNotMatch(profileHtml, /继续选择书鼎/);
 
   state.onboarding.step = 2;
-  const guideHtml = renderPage("/onboarding", state);
-  assert.match(guideHtml, /第二步 · 选择书鼎/);
-  assert.equal((guideHtml.match(/data-action="onboarding-select-guide"/g) ?? []).length, 4);
-  assert.match(guideHtml, /教学方式/);
-
-  state.onboarding.step = 3;
-  state.onboarding.featureIndex = 5;
-  const featureHtml = renderPage("/onboarding", state);
-  assert.match(featureHtml, /第三步 · 认识功能/);
-  assert.equal((featureHtml.match(/data-action="onboarding-feature-select"/g) ?? []).length, 6);
-  for (const title of ["今日计划", "专注学习", "学习复盘", "知识库", "问书鼎", "成长记录"]) {
-    assert.match(featureHtml, new RegExp(title));
-  }
-  assert.doesNotMatch(featureHtml, /data-feature-route="\/goals"/);
-  assert.match(featureHtml, /data-action="onboarding-feature-open"/);
-  assert.match(featureHtml, /完成引导，进入砺境/);
+  const repeatedHtml = renderPage("/onboarding", state);
+  assert.match(repeatedHtml, /入山引导 · 一次填写/);
+  assert.match(repeatedHtml, /data-demo-form="onboarding-profile"/);
+  assert.doesNotMatch(repeatedHtml, /第二步 · 建立路线/);
+  assert.doesNotMatch(repeatedHtml, /开始补充路线条件/);
 });
 
 test("bagua reference is registered and integrated into orientation chapters", () => {
@@ -177,6 +239,55 @@ test("study chapter exposes the evidence protocol and action-oriented review con
   for (const label of ["用了什么证据", "发现了什么问题", "为什么这样判断", "明日行动"]) assert.match(reviewHtml, new RegExp(label));
 });
 
+test("study chapter uses the server-selected companion cycle instead of a fixed mathematics prompt", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.companionCycle = {
+    routeAvailable: true,
+    task: { id: "route-task-writing-01", title: "完成论文提纲的三个小节", type: "写作", estimated_minutes: 35 },
+    cycle: {
+      status: "stuck",
+      task: { id: "route-task-writing-01", title: "完成论文提纲的三个小节", type: "写作", estimated_minutes: 35 },
+      intervention: { next_action: "先列出三个小标题，再补每个标题的一句话。" },
+    },
+    nextAction: "先列出三个小标题，再补每个标题的一句话。",
+  };
+  const html = renderPage("/study", state);
+  assert.match(html, /完成论文提纲的三个小节/);
+  assert.match(html, /先列出三个小标题/);
+  assert.equal((html.match(/data-action="companion-check-in"/g) ?? []).length, 3);
+  assert.match(html, /data-task-id="route-task-writing-01"/);
+  assert.doesNotMatch(html, /函数在某点连续/);
+});
+
+test("initial postgraduate diagnostic requires three real exercises instead of a fabricated platform score", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.companionCycle = {
+    routeAvailable: true,
+    task: { id: "plan-day-2026-09-09", title: "围绕数学二完成 3 道不看答案的独立练习。", type: "诊断", estimated_minutes: 30 },
+    cycle: { status: "started", task: { id: "plan-day-2026-09-09", title: "围绕数学二完成 3 道不看答案的独立练习。", type: "诊断", estimated_minutes: 30 } },
+  };
+  state.learningRoute = {
+    draft: {
+      plan: {
+        today: {
+          tasks: [{ id: "plan-day-2026-09-09", title: "起点校准 · 数学二独立练习", type: "诊断", planned_minutes: 30, action: "围绕数学二完成 3 道不看答案的独立练习。" }],
+        },
+      },
+    },
+    error: "",
+  };
+  const html = renderPage("/study", state);
+  assert.match(html, /首日独立诊断 · 数学二/);
+  assert.equal((html.match(/data-diagnostic-source=/g) ?? []).length, 3);
+  assert.equal((html.match(/data-diagnostic-outcome=/g) ?? []).length, 3);
+  assert.equal((html.match(/data-diagnostic-minutes=/g) ?? []).length, 3);
+  assert.match(html, /按原题答案自行核对。砺境只记录过程和结果，不生成虚假分数/);
+  assert.match(html, /保存诊断并生成下一步/);
+  assert.doesNotMatch(html, /data-evidence-input/);
+});
+
 test("review chapter exposes the user-controlled memory loop", () => {
   const state = structuredClone(DEMO_STATE);
   state.memory = {
@@ -206,22 +317,24 @@ test("knowledge can be captured from study and added through a composer", () => 
   assert.match(knowledgeHtml, /收录进知识库/);
 });
 
-test("approved chapter backgrounds are mapped to their matching modules", () => {
+test("functional chapters keep their approved full-screen scene backgrounds", () => {
   const expectedScenes = {
     "/": "lijing-horizon-ink-v1.png",
+    "/route": "lijing-growth-journey-ink-v1.png",
     "/plan": "lijing-growth-journey-ink-v1.png",
-    "/growth": "lijing-growth-journey-ink-v1.png",
     "/study": "lijing-summit-climb-ink-v2.png",
+    "/review": "lijing-recall-ink-v1.png",
     "/knowledge": "lijing-summit-climb-ink-v2.png",
     "/map": "lijing-summit-climb-ink-v2.png",
-    "/review": "lijing-recall-ink-v1.png",
     "/profile": "lijing-archive-ink-v2.png",
     "/settings": "lijing-archive-ink-v2.png",
     "/assistant": "guides/lijing-guide-background-ink-v1.png",
     "/onboarding": "onboarding/onboarding-background-v2.png",
   };
   for (const [route, filename] of Object.entries(expectedScenes)) {
-    assert.match(renderShell(route, DEMO_STATE), new RegExp(`/assets/generated/source/${filename}`));
+    const html = renderShell(route, DEMO_STATE);
+    assert.match(html, /class="world-stage/);
+    assert.match(html, new RegExp(`/assets/generated/source/${filename}`));
   }
 });
 
@@ -299,6 +412,9 @@ test("onboarding completion exposes the approved dragon-phoenix video transition
 
 test("core actions use human language", () => {
   assert.equal(renderPage("/", DEMO_STATE).includes("开始今日行旅"), true);
+  const newUserState = structuredClone(DEMO_STATE);
+  newUserState.today = { completed: 0, total: 0, streak: 0, minutes: 0, tasks: [] };
+  assert.equal(renderPage("/", newUserState).includes("继续建立路线"), true);
   assert.equal(renderPage("/plan", DEMO_STATE).includes("今日行旅"), true);
   assert.equal(renderPage("/growth", DEMO_STATE).includes("回望来路"), true);
 });
@@ -313,13 +429,13 @@ test("shell exposes navigation, motion controls and content landmarks", () => {
   assert.equal(html.includes("当前章节"), true);
 });
 
-test("onboarding shell replaces the global starfield with the submitted Chinese landscape", () => {
+test("onboarding shell keeps the focused surface and approved background", () => {
   const html = renderShell("/onboarding", DEMO_STATE, renderPage("/onboarding", DEMO_STATE));
   assert.match(html, /class="app-shell app-shell--onboarding"/);
+  assert.match(html, /约 2 分钟 · 可随时修改/);
+  assert.doesNotMatch(html, /class="feature-nav-trigger"/);
   assert.match(html, /onboarding\/onboarding-background-v2\.png/);
-  assert.match(html, /左上角 · 全部功能/);
   assert.match(html, /data-scene="onboarding"/);
-  assert.doesNotMatch(html, /starforged-frontier-scene-v1\.png/);
 });
 
 test("auth shell is a focused entry surface", () => {

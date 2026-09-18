@@ -1,19 +1,20 @@
 const { normalizeRequestId } = require("../http/correlation-id.ts");
 
 const ERROR_CATALOG = Object.freeze({
-  INVALID_REQUEST: Object.freeze({ publicCode: "invalid_request", publicMessage: "The request is invalid.", retryable: false, httpStatus: 400 }),
-  VALIDATION_ERROR: Object.freeze({ publicCode: "invalid_request", publicMessage: "The request is invalid.", retryable: false, httpStatus: 422 }),
-  POLICY_REJECTED: Object.freeze({ publicCode: "policy_rejected", publicMessage: "The request is not allowed by policy.", retryable: false, httpStatus: 422 }),
-  UNAUTHENTICATED: Object.freeze({ publicCode: "unauthenticated", publicMessage: "Authentication is required.", retryable: false, httpStatus: 401 }),
-  FORBIDDEN: Object.freeze({ publicCode: "forbidden", publicMessage: "This action is not allowed.", retryable: false, httpStatus: 403 }),
-  NOT_FOUND: Object.freeze({ publicCode: "not_found", publicMessage: "The requested resource was not found.", retryable: false, httpStatus: 404 }),
-  CONFLICT: Object.freeze({ publicCode: "conflict", publicMessage: "The request conflicts with current state.", retryable: false, httpStatus: 409 }),
-  RATE_LIMITED: Object.freeze({ publicCode: "rate_limited", publicMessage: "Too many requests. Please try again later.", retryable: true, httpStatus: 429 }),
-  DEPENDENCY_UNAVAILABLE: Object.freeze({ publicCode: "dependency_unavailable", publicMessage: "A required service is temporarily unavailable.", retryable: true, httpStatus: 503 }),
-  TIMEOUT: Object.freeze({ publicCode: "timeout", publicMessage: "The operation timed out. Please try again.", retryable: true, httpStatus: 504 }),
-  MESSAGE_DELIVERY_FAILED: Object.freeze({ publicCode: "message_delivery_failed", publicMessage: "The operation could not be completed yet.", retryable: true, httpStatus: 503 }),
-  INTERNAL_ERROR: Object.freeze({ publicCode: "internal_error", publicMessage: "Something went wrong.", retryable: true, httpStatus: 500 }),
-  CONFIGURATION_ERROR: Object.freeze({ publicCode: "internal_error", publicMessage: "Something went wrong.", retryable: false, httpStatus: 500 }),
+  INVALID_REQUEST: Object.freeze({ publicCode: "invalid_request", publicMessage: "请求无效，请检查填写内容。", retryable: false, httpStatus: 400 }),
+  VALIDATION_ERROR: Object.freeze({ publicCode: "invalid_request", publicMessage: "请求内容不完整或格式不正确。", retryable: false, httpStatus: 422 }),
+  POLICY_REJECTED: Object.freeze({ publicCode: "policy_rejected", publicMessage: "这项操作不符合当前服务规则。", retryable: false, httpStatus: 422 }),
+  UNAUTHENTICATED: Object.freeze({ publicCode: "unauthenticated", publicMessage: "请先登录后再继续。", retryable: false, httpStatus: 401 }),
+  INVALID_CREDENTIALS: Object.freeze({ publicCode: "invalid_credentials", publicMessage: "账号或密码不正确", retryable: false, httpStatus: 401 }),
+  FORBIDDEN: Object.freeze({ publicCode: "forbidden", publicMessage: "你没有权限执行这项操作。", retryable: false, httpStatus: 403 }),
+  NOT_FOUND: Object.freeze({ publicCode: "not_found", publicMessage: "没有找到这项内容。", retryable: false, httpStatus: 404 }),
+  CONFLICT: Object.freeze({ publicCode: "conflict", publicMessage: "内容已经发生变化，请刷新后再试。", retryable: false, httpStatus: 409 }),
+  RATE_LIMITED: Object.freeze({ publicCode: "rate_limited", publicMessage: "操作太频繁，请稍后再试。", retryable: true, httpStatus: 429 }),
+  DEPENDENCY_UNAVAILABLE: Object.freeze({ publicCode: "dependency_unavailable", publicMessage: "AI 服务暂时不可用，请稍后再试。", retryable: true, httpStatus: 503 }),
+  TIMEOUT: Object.freeze({ publicCode: "timeout", publicMessage: "AI 响应超时，请稍后再试。", retryable: true, httpStatus: 504 }),
+  MESSAGE_DELIVERY_FAILED: Object.freeze({ publicCode: "message_delivery_failed", publicMessage: "这次操作还没有完成，请稍后再试。", retryable: true, httpStatus: 503 }),
+  INTERNAL_ERROR: Object.freeze({ publicCode: "internal_error", publicMessage: "服务暂时遇到问题，请稍后再试。", retryable: true, httpStatus: 500 }),
+  CONFIGURATION_ERROR: Object.freeze({ publicCode: "internal_error", publicMessage: "服务配置暂时不可用，请稍后再试。", retryable: false, httpStatus: 500 }),
 });
 
 class PlatformError extends Error {

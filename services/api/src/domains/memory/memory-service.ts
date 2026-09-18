@@ -228,6 +228,7 @@ class MemoryService {
       const response = {
         request_id: request.request_id,
         iteration_id: request.iteration_id,
+        iteration_count: nextProfile.iterations.length,
         replayed: false,
         new_memory_count: candidates.filter((candidate) => !existingFriction && candidate.kind === "friction" || !existingStrategy && candidate.kind === "strategy").length,
         candidates: candidates.filter((candidate) => !rejectedIds.has(candidate.id)).map(publicMemory),

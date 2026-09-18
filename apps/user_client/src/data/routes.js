@@ -26,6 +26,42 @@ export const ROUTES = {
     title: "先立一枚自己的山门印",
     description: "从今天开始，把遥远的目标拆成可以走的下一步。",
   },
+  "/privacy": {
+    label: "隐私说明",
+    chapter: "公开说明",
+    direction: "中宫",
+    gua: "☷",
+    eyebrow: "公开试点 · 隐私边界",
+    title: "你的数据，先说明白再留下",
+    description: "这里说明砺境在公开试点阶段收集什么、为什么收集，以及目前还没有完成什么。",
+  },
+  "/terms": {
+    label: "用户协议",
+    chapter: "公开说明",
+    direction: "中宫",
+    gua: "☷",
+    eyebrow: "公开试点 · 使用规则",
+    title: "先约定边界，再一起走路",
+    description: "公开试点使用规则、服务边界和问题反馈方式。",
+  },
+  "/contact": {
+    label: "联系方式",
+    chapter: "公开说明",
+    direction: "中宫",
+    gua: "☷",
+    eyebrow: "公开试点 · 联系我们",
+    title: "遇到问题，留下可追踪的反馈",
+    description: "当前通过站内反馈处理问题；独立客服邮箱和人工响应时段将在正式运营前补充。",
+  },
+  "/404": {
+    label: "页面不存在",
+    chapter: "迷路",
+    direction: "中宫",
+    gua: "☷",
+    eyebrow: "404 · 云路未铺",
+    title: "这条山路还没有铺开",
+    description: "地址可能写错了，或内容已经移动。已保存的账户数据不会受影响。",
+  },
   "/onboarding": {
     label: "初次入山",
     chapter: "入山引导",
@@ -210,7 +246,7 @@ const FIRST_PHASE_ROUTES = new Set(Object.keys(ROUTES));
 export function normalizeRoute(pathname = "/") {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   if (FIRST_PHASE_ROUTES.has(normalized)) return normalized;
-  return "/";
+  return "/404";
 }
 
 export function getRouteMeta(pathname) {

@@ -3,6 +3,7 @@ import { assetUrl } from "../data/assets.js";
 const ROUTE_SCENES = {
   "/features": { assetId: "lijing-horizon-ink-v1", key: "directory" },
   "/": { assetId: "lijing-horizon-ink-v1", key: "horizon" },
+  "/route": { assetId: "lijing-growth-journey-ink-v1", key: "growth-journey" },
   "/plan": { assetId: "lijing-growth-journey-ink-v1", key: "growth-journey" },
   "/growth": { assetId: "lijing-growth-journey-ink-v1", key: "growth-journey" },
   "/study": { assetId: "lijing-summit-climb-ink-v2", key: "summit-climb" },

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="砺境">
+  <rect width="64" height="64" rx="12" fill="#0d171a"/>
+  <path d="M32 10 48 20v24L32 54 16 44V20L32 10Z" fill="none" stroke="#d8b36a" stroke-width="3"/>
+  <path d="M32 19v26M19 26l13 7 13-7M19 39l13-7 13 7" fill="none" stroke="#f0eade" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

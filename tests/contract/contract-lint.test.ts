@@ -24,6 +24,8 @@ const OPERATION_SECURITY = {
   "GET /api/v1/me/state": "bearer",
   "GET /api/v1/me/reminders": "bearer",
   "GET /api/v1/me/companion": "bearer",
+  "GET /api/v1/companion/today": "bearer",
+  "POST /api/v1/companion/check-ins": "bearer",
   "PUT /api/v1/me/state": "bearer",
   "POST /api/v1/feedback": "bearer",
   "POST /api/v1/learning/attempts": "bearer",

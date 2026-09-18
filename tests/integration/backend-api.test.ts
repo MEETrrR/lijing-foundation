@@ -52,7 +52,10 @@ test("backend exposes public health and protects user progress with bearer ident
   try {
     const health = await jsonRequest(baseUrl, "/api/v1/health");
     assert.equal(health.response.status, 200);
-    assert.equal(health.body.status, "ok");
+  assert.equal(health.body.status, "ok");
+  assert.equal(health.body.persistence, "ephemeral");
+  assert.equal(health.body.ai_available, false);
+  assert.equal(health.body.ai_status, "disabled");
     assert.match(health.body.request_id, /^[0-9a-f-]{36}$/);
 
     const unauthorized = await jsonRequest(baseUrl, "/api/v1/me/progress");
@@ -63,6 +66,52 @@ test("backend exposes public health and protects user progress with bearer ident
     assert.equal(progress.response.status, 200);
     assert.deepEqual(progress.body.mastery_summary, { mastered: 0, review_due: 0 });
     assert.deepEqual(progress.body.energy, { current: 100, maximum: 100 });
+  } finally {
+    await close(server);
+  }
+});
+
+test("health does not advertise durable persistence while the database dependency is down", async () => {
+  const { server } = createBackendServer({
+    aiEnabled: false,
+    persistence: "durable",
+    health: { async check() { return { status: "down" }; } },
+  });
+  const baseUrl = await listen(server);
+  try {
+    const health = await jsonRequest(baseUrl, "/api/v1/health");
+    assert.equal(health.response.status, 200);
+    assert.equal(health.body.status, "degraded");
+    assert.equal(health.body.persistence, "unknown");
+  } finally {
+    await close(server);
+  }
+});
+
+test("health distinguishes configured AI from a provider that has actually completed a request", async () => {
+  const provider = { async complete() { return { text: "先写出一个反例，再用十分钟复现关键判断。", source_type: "ai_assisted" }; } };
+  const { server } = createBackendServer({ provider, aiEnabled: true });
+  const baseUrl = await listen(server);
+  try {
+    const before = await jsonRequest(baseUrl, "/api/v1/health");
+    assert.equal(before.body.ai_configured, true);
+    assert.equal(before.body.ai_available, false);
+    assert.equal(before.body.ai_status, "unknown");
+    assert.equal(before.body.ai_checked_at, null);
+
+    const request = await jsonRequest(baseUrl, "/api/v1/ai/requests", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "ai-health-transition-0001" },
+      body: JSON.stringify({ request_id: "13131313-1313-4131-8131-131313131313", feature: "concept_explanation", input: JSON.stringify({ prompt: "请给我一个复习动作。" }) }),
+    });
+    assert.equal(request.response.status, 202);
+    assert.equal((await waitForAi(baseUrl, "13131313-1313-4131-8131-131313131313")).body.status, "completed");
+
+    const after = await jsonRequest(baseUrl, "/api/v1/health");
+    assert.equal(after.body.ai_available, true);
+    assert.equal(after.body.ai_status, "available");
+    assert.equal(after.body.ai_reason_code, null);
+    assert.match(after.body.ai_checked_at, /^20/);
   } finally {
     await close(server);
   }
@@ -82,6 +131,7 @@ test("registers accounts, persists hashed credentials, authenticates with an Htt
       email: "pilot@example.com",
       display_name: "试点行者",
       created_at: registration.body.user.created_at,
+      email_verified: false,
     });
     assert.match(registration.response.headers.get("set-cookie") ?? "", /lijing_session=.*HttpOnly/);
     const cookie = (registration.response.headers.get("set-cookie") ?? "").split(";", 1)[0];
@@ -107,6 +157,8 @@ test("registers accounts, persists hashed credentials, authenticates with an Htt
       body: JSON.stringify({ email: "pilot@example.com", password: "wrongpass" }),
     });
     assert.equal(wrongPassword.response.status, 401);
+    assert.equal(wrongPassword.body.code, "invalid_credentials");
+    assert.equal(wrongPassword.body.message, "账号或密码不正确");
 
     const logout = await jsonRequest(baseUrl, "/api/v1/auth/logout", { method: "POST", headers: { Cookie: cookie } });
     assert.equal(logout.response.status, 200);
@@ -117,31 +169,19 @@ test("registers accounts, persists hashed credentials, authenticates with an Htt
   }
 });
 
-test("closed pilot registration requires the server-side invite code while login remains available", async () => {
-  const { server } = createBackendServer({ allowDevTokens: false, registrationInviteCode: "pilot-secret-2026" });
+test("public registration creates an account and login remains available", async () => {
+  const { server } = createBackendServer({ allowDevTokens: false });
   const baseUrl = await listen(server);
   try {
-    const missing = await jsonRequest(baseUrl, "/api/v1/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ email: "closed-missing@example.com", password: "correct horse battery", display_name: "未受邀" }),
-    });
-    assert.equal(missing.response.status, 403);
-
-    const wrong = await jsonRequest(baseUrl, "/api/v1/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ email: "closed-wrong@example.com", password: "correct horse battery", invite_code: "wrong-code" }),
-    });
-    assert.equal(wrong.response.status, 403);
-
     const registration = await jsonRequest(baseUrl, "/api/v1/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email: "closed-valid@example.com", password: "correct horse battery", invite_code: "pilot-secret-2026" }),
+      body: JSON.stringify({ email: "public-user@example.com", password: "correct horse battery", display_name: "公开行者" }),
     });
     assert.equal(registration.response.status, 201);
 
     const login = await jsonRequest(baseUrl, "/api/v1/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email: "closed-valid@example.com", password: "correct horse battery" }),
+      body: JSON.stringify({ email: "public-user@example.com", password: "correct horse battery" }),
     });
     assert.equal(login.response.status, 200);
   } finally {
@@ -159,7 +199,14 @@ test("user state persists by authenticated user and cannot be read across accoun
     guide_asset_id: "lijing-guide-ding-v2",
     onboarding_completed: true,
     today: null,
-    pilot: null,
+    pilot: {
+      selected_evidence_level: 3,
+      submitted_evidence: "三道独立作答已按原题答案自行核对。",
+      selected_answer: "",
+      review: { evidence_used: "三道独立作答已按原题答案自行核对。", problem: "其中一道题尚未核对。", reason: "只按学习者留下的过程安排下一步。", next_action: "先核对原题答案，再决定下一组练习。" },
+      review_ready: false,
+      initial_diagnostic: { subject: "数学二", correct: 1, incorrect: 1, unverified: 1, total_minutes: 28, next_action: "先核对原题答案，再决定下一组练习。", completed_at: "2026-09-09T12:00:00.000Z" },
+    },
     knowledge: [{
       id: "knowledge-user-state-1",
       title: "用户级知识节点",
@@ -188,11 +235,15 @@ test("user state persists by authenticated user and cannot be read across accoun
     assert.equal(saved.body.state.profile.age, "20");
     assert.equal(saved.body.state.profile.daily_minutes, "120");
     assert.equal(saved.body.state.goal_id, "goal-skill");
+    assert.equal(saved.body.state.pilot.initial_diagnostic.subject, "数学二");
+    assert.equal(saved.body.state.pilot.initial_diagnostic.correct + saved.body.state.pilot.initial_diagnostic.incorrect + saved.body.state.pilot.initial_diagnostic.unverified, 3);
+    assert.match(saved.body.state.pilot.initial_diagnostic.next_action, /核对原题答案/);
     assert.equal((await services.database.get("user:state:account-001")).profile.school, "某某大学");
 
     const readBack = await jsonRequest(baseUrl, "/api/v1/me/state", { headers: auth() });
     assert.equal(readBack.response.status, 200);
     assert.equal(readBack.body.state.knowledge[0].id, "knowledge-user-state-1");
+    assert.equal(readBack.body.state.pilot.initial_diagnostic.unverified, 1);
 
     const otherUser = await jsonRequest(baseUrl, "/api/v1/me/state", { headers: auth("dev-user-002-token") });
     assert.equal(otherUser.response.status, 200);
@@ -335,6 +386,7 @@ test("memory iterations create user-scoped candidates and feedback changes their
       body: JSON.stringify(iteration),
     });
     assert.equal(first.response.status, 201);
+    assert.equal(first.body.iteration_count, 1);
     assert.equal(first.body.new_memory_count, 2);
     assert.equal(first.body.candidates.length, 2);
     assert.equal(first.body.candidates.every((memory) => memory.status === "candidate"), true);
@@ -367,6 +419,109 @@ test("memory iterations create user-scoped candidates and feedback changes their
       body: JSON.stringify({ request_id: "99999999-9999-4999-8999-999999999999", action: "confirm" }),
     });
     assert.equal(otherUser.response.status, 404);
+  } finally {
+    await close(server);
+  }
+});
+
+test("companion daily cycles select the server task, keep evidence private, and return bounded recovery actions", async () => {
+  const clock = () => Date.parse("2026-09-09T12:00:00.000Z");
+  const { server, services } = createBackendServer({ aiEnabled: false, clock });
+  const baseUrl = await listen(server);
+  const route = {
+    id: "route-companion-001",
+    version: 1,
+    status: "confirmed",
+    plan: {
+      today: {
+        date: "2026-09-09",
+        tasks: [{
+          id: "plan-day-2026-09-09",
+          date: "2026-09-09",
+          type: "练习",
+          action: "完成极限专题的 5 道错题复盘",
+          planned_minutes: 25,
+          completion_status: "active",
+        }],
+      },
+    },
+  };
+  await services.database.set("learning-route:account-001:route-companion-001", route);
+  await services.database.set("learning-route:latest:account-001", route.id);
+  try {
+    const unauthenticated = await jsonRequest(baseUrl, "/api/v1/companion/today");
+    assert.equal(unauthenticated.response.status, 401);
+
+    const today = await jsonRequest(baseUrl, "/api/v1/companion/today", { headers: auth() });
+    assert.equal(today.response.status, 200);
+    assert.equal(today.body.route_available, true);
+    assert.equal(today.body.task.id, "plan-day-2026-09-09");
+    assert.equal(today.body.cycle, null);
+
+    const start = await jsonRequest(baseUrl, "/api/v1/companion/check-ins", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "companion-start-key-0001" },
+      body: JSON.stringify({ request_id: "a1111111-1111-4111-8111-111111111111", intent: "start", task_id: "plan-day-2026-09-09", energy: "normal" }),
+    });
+    assert.equal(start.response.status, 200);
+    assert.equal(start.body.cycle.status, "started");
+    assert.equal(start.body.cycle.intervention.type, "encourage");
+
+    const replay = await jsonRequest(baseUrl, "/api/v1/companion/check-ins", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "companion-start-key-0001" },
+      body: JSON.stringify({ request_id: "a1111111-1111-4111-8111-111111111111", intent: "start", task_id: "plan-day-2026-09-09", energy: "normal" }),
+    });
+    assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.replayed, true);
+
+    const stuck = await jsonRequest(baseUrl, "/api/v1/companion/check-ins", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "companion-stuck-key-0001" },
+      body: JSON.stringify({ request_id: "a2222222-2222-4222-8222-222222222222", intent: "stuck", blocker_type: "time" }),
+    });
+    assert.equal(stuck.response.status, 200);
+    assert.equal(stuck.body.cycle.status, "stuck");
+    assert.equal(stuck.body.cycle.intervention.type, "reduce_scope");
+
+    const missingEvidence = await jsonRequest(baseUrl, "/api/v1/companion/check-ins", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "companion-complete-key-0000" },
+      body: JSON.stringify({ request_id: "a3333333-3333-4333-8333-333333333333", intent: "complete" }),
+    });
+    assert.equal(missingEvidence.response.status, 422);
+
+    const completed = await jsonRequest(baseUrl, "/api/v1/companion/check-ins", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "companion-complete-key-0001" },
+      body: JSON.stringify({ request_id: "a4444444-4444-4444-8444-444444444444", intent: "complete", evidence_level: 2, evidence: "private evidence: wrote a counterexample" }),
+    });
+    assert.equal(completed.response.status, 200);
+    assert.equal(completed.body.cycle.status, "completed");
+    assert.equal(completed.body.cycle.intervention.type, "review");
+    assert.equal(JSON.stringify(await services.database.get("companion:cycle:account-001:2026-09-09")).includes("private evidence"), false);
+
+    const completedRoute = {
+      ...route,
+      plan: {
+        ...route.plan,
+        today: {
+          ...route.plan.today,
+          tasks: route.plan.today.tasks.map((task) => ({ ...task, completion_status: "done" })),
+        },
+      },
+    };
+    await services.database.set("learning-route:account-001:route-companion-001", completedRoute);
+    const completedToday = await jsonRequest(baseUrl, "/api/v1/companion/today", { headers: auth() });
+    assert.equal(completedToday.response.status, 200);
+    assert.equal(completedToday.body.route_available, true);
+    assert.equal(completedToday.body.task.id, "plan-day-2026-09-09");
+    assert.equal(completedToday.body.cycle.status, "completed");
+
+    const otherUser = await jsonRequest(baseUrl, "/api/v1/companion/today", { headers: auth("dev-user-002-token") });
+    assert.equal(otherUser.response.status, 200);
+    assert.equal(otherUser.body.route_available, false);
+    assert.equal(otherUser.body.cycle, null);
   } finally {
     await close(server);
   }
@@ -555,10 +710,13 @@ test("learning routes bind a goal to official sources, validate capacity, and re
   const provider = {
     async complete(request) {
       assert.equal(request.feature, "learning_route_generation");
+      assert.equal(request.input.length <= 12000, true);
       const prompt = JSON.parse(request.input);
       assert.equal(prompt.retrieved_knowledge.evidence.length > 0, true);
       assert.equal(prompt.personal_knowledge.memories.length > 0, true);
-      assert.equal(prompt.grounding_rules.length, 4);
+      assert.equal(prompt.grounding_rules.length, 5);
+      assert.equal(prompt.learner.baseline_assessment.subject, "数学二");
+      assert.match(prompt.learner.baseline_assessment.evidence, /分段函数/);
       return {
         source_type: "ai_assisted",
         text: JSON.stringify({
@@ -566,7 +724,7 @@ test("learning routes bind a goal to official sources, validate capacity, and re
           assumptions: ["每周可稳定投入 10 小时。"],
           facts_to_confirm: ["在中国研究生招生信息网核验目标院校、专业目录和当年报名信息。"],
           milestones: [
-            { title: "范围核验与基础诊断", start_date: "2026-09-07", end_date: "2026-10-12", planned_hours: 24, outcomes: ["完成目标范围清单", "留下基础诊断记录"] },
+            { title: "范围核验与基础诊断", start_date: "2026-09-06", end_date: "2026-10-12", planned_hours: 24, outcomes: ["完成目标范围清单", "留下基础诊断记录"] },
             { title: "核心内容与阶段回望", start_date: "2026-10-13", end_date: "2026-12-15", planned_hours: 40, outcomes: ["完成每周学习证据", "根据错题调整下一周"] },
           ],
         }),
@@ -584,6 +742,13 @@ test("learning routes bind a goal to official sources, validate capacity, and re
       daily_minutes: 90,
       weekly_hours: 10,
     baseline: "foundation",
+    baseline_assessment: {
+      subject: "数学二",
+      study_stage: "reviewed_once",
+      recent_result: "between_40_69",
+      primary_blocker: "concept",
+      evidence: "最近做分段函数极限题时，会套公式，但不确定该先判断哪一段。",
+    },
     region: "江西",
     constraints: ["工作日晚上学习"],
     focus_areas: ["数学", "专业课"],
@@ -634,6 +799,16 @@ test("learning routes bind a goal to official sources, validate capacity, and re
       review: { problem: "专业课范围还没有拆清楚。", reason: "本轮只完成了基础概念复述。", next_action: "先列出专业课范围清单，再安排第一轮诊断。" },
     }, "memory-route-seed-0001");
 
+    const missingAssessment = { ...draftBody, request_id: "11111111-1111-4111-8111-111111111111" };
+    delete missingAssessment.baseline_assessment;
+    const rejectedMissingAssessment = await jsonRequest(baseUrl, "/api/v1/learning-routes", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "route-draft-missing-assessment" },
+      body: JSON.stringify(missingAssessment),
+    });
+    assert.equal(rejectedMissingAssessment.response.status, 422);
+    assert.equal(rejectedMissingAssessment.body.code, "invalid_request");
+
     const draft = await jsonRequest(baseUrl, "/api/v1/learning-routes", {
       method: "POST",
       headers: { ...auth(), "Idempotency-Key": "route-draft-key-00001" },
@@ -651,6 +826,10 @@ test("learning routes bind a goal to official sources, validate capacity, and re
     assert.equal(draft.body.route.plan.current_year.months.length >= 3, true);
     assert.equal(draft.body.route.plan.months[0].days.length > 0, true);
     assert.equal(draft.body.route.plan.today.tasks.length > 0, true);
+    assert.equal(draft.body.route.plan.today.tasks[0].type, "诊断");
+    assert.match(draft.body.route.plan.today.tasks[0].title, /起点校准 · 数学二独立练习/);
+    assert.match(draft.body.route.plan.today.tasks[0].expected_output, /3 道独立作答/);
+    assert.deepEqual(draft.body.route.goal.baseline_assessment, draftBody.baseline_assessment);
     assert.equal(typeof draft.body.route.plan.today.tasks[0].action, "string");
     assert.equal(typeof draft.body.route.plan.today.tasks[0].expected_output, "string");
     assert.equal(draft.body.route.plan.months[0].days[0].title !== draft.body.route.plan.months[0].days[1].title, true);
@@ -717,20 +896,25 @@ test("learning route feasibility is server-owned and exam facts stay conditional
   const provider = {
     async complete(request) {
       const prompt = JSON.parse(request.input);
-      const impossible = prompt.learner.goal_name === "超负荷路线";
+      const scenario = prompt.learner.goal_name;
       return {
         source_type: "ai_assisted",
         text: JSON.stringify({
           summary: "按阶段推进并保留复盘时间。",
           assumptions: ["用户可以按当前输入安排学习。"],
           facts_to_confirm: ["请核对目标公告。"],
-          milestones: impossible
+          milestones: scenario === "超负荷路线"
             ? [
-              { title: "集中突击", start_date: "2026-09-07", end_date: "2026-09-13", planned_hours: 80, outcomes: ["完成一次诊断"] },
+              { title: "集中突击", start_date: "2026-09-06", end_date: "2026-09-13", planned_hours: 80, outcomes: ["完成一次诊断"] },
               { title: "再次复盘", start_date: "2026-09-14", end_date: "2026-09-20", planned_hours: 80, outcomes: ["完成一次复盘"] },
             ]
+            : scenario === "紧凑路线"
+              ? [
+                { title: "压缩基础诊断", start_date: "2026-09-06", end_date: "2026-10-01", planned_hours: 30, outcomes: ["完成一次基础诊断"] },
+                { title: "集中巩固", start_date: "2026-10-02", end_date: "2026-10-31", planned_hours: 30, outcomes: ["完成一次阶段回望"] },
+              ]
             : [
-              { title: "资格核验", start_date: "2026-09-07", end_date: "2026-09-20", planned_hours: 12, outcomes: ["完成公告和职位表核验清单"] },
+              { title: "资格核验", start_date: "2026-09-06", end_date: "2026-09-20", planned_hours: 12, outcomes: ["完成公告和职位表核验清单"] },
               { title: "基础训练", start_date: "2026-09-21", end_date: "2026-10-10", planned_hours: 20, outcomes: ["完成行测和申论基础诊断"] },
             ],
         }),
@@ -760,6 +944,30 @@ test("learning route feasibility is server-owned and exam facts stay conditional
     assert.equal(civil.body.route.sources.some((source) => source.id === "national-civil-service-bureau"), true);
     assert.equal(civil.body.route.knowledge_evidence.some((item) => item.source_id === "regional-civil-service-notices" || item.source_id === "national-civil-service-bureau"), true);
 
+    const tight = await jsonRequest(baseUrl, "/api/v1/learning-routes", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "route-civil-guard-tight" },
+      body: JSON.stringify({
+        request_id: "abababab-abab-4bab-8bab-abababababab",
+        goal_type: "civil_service_exam",
+        goal_name: "紧凑路线",
+        target_date: "2026-10-31",
+        weekly_hours: 10,
+        baseline: "starting",
+        region: "江西",
+      }),
+    });
+    assert.equal(tight.response.status, 200);
+    assert.equal(tight.body.route.feasibility.status, "tight");
+
+    const confirmedTight = await jsonRequest(baseUrl, `/api/v1/learning-routes/${tight.body.route.id}/confirm`, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "route-civil-confirm-tight" },
+      body: JSON.stringify({ request_id: "bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc", expected_version: 1 }),
+    });
+    assert.equal(confirmedTight.response.status, 200);
+    assert.equal(confirmedTight.body.route.status, "confirmed");
+
     const impossible = await jsonRequest(baseUrl, "/api/v1/learning-routes", {
       method: "POST",
       headers: { ...auth(), "Idempotency-Key": "route-civil-guard-0002" },
@@ -775,6 +983,13 @@ test("learning route feasibility is server-owned and exam facts stay conditional
     });
     assert.equal(impossible.body.route.feasibility.status, "needs_adjustment");
     assert.equal(impossible.body.route.feasibility.issues.length > 0, true);
+
+    const rejectedConfirmation = await jsonRequest(baseUrl, `/api/v1/learning-routes/${impossible.body.route.id}/confirm`, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "route-civil-confirm-blocked" },
+      body: JSON.stringify({ request_id: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd", expected_version: 1 }),
+    });
+    assert.equal(rejectedConfirmation.response.status, 422);
   } finally {
     await close(server);
   }

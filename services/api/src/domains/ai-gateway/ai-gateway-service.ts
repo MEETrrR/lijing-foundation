@@ -3,6 +3,7 @@ const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { LEARNING_ROUTE_SYSTEM_PROMPT } = require("../learning-route/learning-route-prompt.ts");
 const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt } = require("../companion/companion-prompts.ts");
+const { normalizeAssistantResponse } = require("./assistant-response.ts");
 
 const AI_FEATURES = Object.freeze([
   "concept_explanation",
@@ -203,6 +204,23 @@ class AiGatewayService {
     this.companion = companion;
     this.memory = memory;
     this.knowledge = knowledge;
+    this.providerAvailability = {
+      status: enabled ? "unknown" : "disabled",
+      reason_code: null,
+      checked_at: null,
+    };
+  }
+
+  getAvailability() {
+    return { ...this.providerAvailability };
+  }
+
+  setAvailability(status, reasonCode = null) {
+    this.providerAvailability = {
+      status,
+      reason_code: reasonCode,
+      checked_at: new Date(this.clock()).toISOString(),
+    };
   }
 
   parseInput(input) {
@@ -376,11 +394,14 @@ class AiGatewayService {
         degradationReason = "provider_output_invalid";
         throw new Error("provider output failed validation");
       }
-      const outputText = result.text.trim();
+      const outputText = request.feature === "concept_explanation"
+        ? normalizeAssistantResponse(result.text)
+        : result.text.trim();
       if (SENSITIVE_OUTPUT_PATTERN.test(outputText)) {
         degradationReason = "provider_output_sensitive";
         throw new Error("provider output contained sensitive material");
       }
+      this.setAvailability("available");
       const response = { request_id: request.request_id, status: "completed", policy_version: this.policy.policy_version, result: { text: outputText, source_type: result.source_type } };
       await this.database.transaction(async (database) => {
         const state = await database.get(requestStorageKey(actorId, request.request_id));
@@ -390,6 +411,7 @@ class AiGatewayService {
       });
       return response;
     } catch (error) {
+      this.setAvailability("unavailable", degradationReason);
       const response = { request_id: request.request_id, status: "degraded", policy_version: this.policy.policy_version, fallback_mode: "template" };
       await this.database.transaction(async (database) => {
         const state = await database.get(requestStorageKey(actorId, request.request_id));

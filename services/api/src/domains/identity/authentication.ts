@@ -98,19 +98,12 @@ function extractToken(headers) {
 }
 
 function publicUser(user) {
-  return { id: user.id, email: user.email, display_name: user.display_name, created_at: user.created_at };
+  return { id: user.id, email: user.email, display_name: user.display_name, created_at: user.created_at, email_verified: user.email_verified === true };
 }
 
 function validateBody(input, allowed) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new PlatformError("VALIDATION_ERROR", "request body must be an object");
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown field: ${key}`);
-}
-
-function matchesSecret(candidate, expected) {
-  if (typeof candidate !== "string" || typeof expected !== "string") return false;
-  const candidateBuffer = Buffer.from(candidate.trim(), "utf8");
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  return candidateBuffer.length === expectedBuffer.length && timingSafeEqual(candidateBuffer, expectedBuffer);
 }
 
 class IdentityService {
@@ -123,22 +116,16 @@ class IdentityService {
       "dev-user-002-token": "account-002",
     });
     this.allowDevTokens = options.allowDevTokens ?? true;
-    this.registrationInviteCode = typeof options.registrationInviteCode === "string" && options.registrationInviteCode.trim().length > 0
-      ? options.registrationInviteCode.trim()
-      : null;
   }
 
   async register(input) {
-    validateBody(input, new Set(["email", "password", "display_name", "invite_code"]));
-    if (this.registrationInviteCode && !matchesSecret(input.invite_code, this.registrationInviteCode)) {
-      throw new PlatformError("FORBIDDEN", "registration invite code is invalid");
-    }
+    validateBody(input, new Set(["email", "password", "display_name"]));
     const email = normalizeEmail(input.email);
     const password = validatePassword(input.password);
     const displayName = normalizeDisplayName(input.display_name, email);
     const passwordHash = await hashPassword(password);
     const now = new Date(this.clock()).toISOString();
-    const user = { id: `user-${randomUUID()}`, email, display_name: displayName, password_hash: passwordHash, status: "active", created_at: now };
+    const user = { id: `user-${randomUUID()}`, email, display_name: displayName, password_hash: passwordHash, status: "active", email_verified: false, created_at: now };
     const created = await this.database.transaction(async (database) => {
       if (typeof database.setIfAbsent !== "function") throw new PlatformError("DEPENDENCY_UNAVAILABLE", "identity persistence does not support unique account creation");
       if (!(await database.setIfAbsent(userEmailKey(email), user.id))) return false;
@@ -156,7 +143,7 @@ class IdentityService {
     const userId = await this.database.get(userEmailKey(email));
     const user = typeof userId === "string" ? await this.database.get(userIdKey(userId)) : undefined;
     const valid = user && user.status === "active" && await verifyPassword(password, user.password_hash);
-    if (!valid) throw new PlatformError("UNAUTHENTICATED", "email or password is invalid");
+    if (!valid) throw new PlatformError("INVALID_CREDENTIALS", "email or password is invalid");
     return this.issueSession(user);
   }
 
@@ -171,7 +158,7 @@ class IdentityService {
     const token = extractToken(headers);
     if (!token) throw new PlatformError("UNAUTHENTICATED", "Bearer token or session cookie is missing");
     const devActorId = this.allowDevTokens ? this.tokens.get(token) : undefined;
-    if (devActorId) return Object.freeze({ actorId: devActorId, subjectType: "learner", sessionToken: token, user: { id: devActorId, email: `${devActorId}@local.invalid`, display_name: devActorId, created_at: null } });
+    if (devActorId) return Object.freeze({ actorId: devActorId, subjectType: "learner", sessionToken: token, user: { id: devActorId, email: `${devActorId}@local.invalid`, display_name: devActorId, created_at: null, email_verified: false } });
     const session = await this.database.get(sessionKey(tokenHash(token)));
     if (!session || session.revoked_at || !Number.isFinite(session.expires_at) || session.expires_at <= this.clock()) {
       throw new PlatformError("UNAUTHENTICATED", "session is missing, expired, or revoked");
@@ -191,7 +178,7 @@ class IdentityService {
 
   async getUser(actorId) {
     const user = await this.database.get(userIdKey(actorId));
-    return user ? publicUser(user) : { id: actorId, email: `${actorId}@local.invalid`, display_name: actorId, created_at: null };
+    return user ? publicUser(user) : { id: actorId, email: `${actorId}@local.invalid`, display_name: actorId, created_at: null, email_verified: false };
   }
 }
 

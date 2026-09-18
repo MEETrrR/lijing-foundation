@@ -267,7 +267,7 @@ test("error catalog maps internal failures to stable safe responses", () => {
   assert.deepEqual(response, {
     request_id: requestId,
     code: "internal_error",
-    message: "Something went wrong.",
+    message: "服务暂时遇到问题，请稍后再试。",
     retryable: true,
   });
   assert.doesNotMatch(JSON.stringify(response), /provider|sk-live|stack|private/i);

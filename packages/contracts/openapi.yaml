@@ -22,6 +22,8 @@ tags:
     description: User-owned profile and recoverable client state operations.
   - name: ai
     description: AI Gateway mediated learning assistance operations.
+  - name: companion
+    description: Server-owned daily learning companion cycle operations.
 paths:
   /api/v1/health:
     get:
@@ -337,6 +339,54 @@ paths:
                 $ref: '#/components/schemas/CompanionProfileResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/companion/today:
+    get:
+      tags: [companion]
+      operationId: getMyCompanionToday
+      summary: Read the authenticated learner's current companion cycle
+      description: Returns the server-selected current task and the latest template intervention without exposing raw evidence.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current companion cycle projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanionTodayResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/companion/check-ins:
+    post:
+      tags: [companion]
+      operationId: submitCompanionCheckIn
+      summary: Submit a start, complete, stuck, or skip learning check-in
+      description: The server selects the active route task, records the learner's intent, and returns a bounded template intervention.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanionCheckInRequest'
+      responses:
+        '200':
+          description: Updated companion cycle projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanionCheckInResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/learning/attempts:
     post:
       tags: [learning]
@@ -721,7 +771,7 @@ components:
     HealthResponse:
       type: object
       additionalProperties: false
-      required: [status, ai_configured, request_id]
+      required: [status, ai_configured, ai_available, ai_status, ai_reason_code, ai_checked_at, persistence, request_id]
       properties:
         status:
           type: string
@@ -731,6 +781,20 @@ components:
           format: uuid
         ai_configured:
           type: boolean
+        ai_available:
+          type: boolean
+        ai_status:
+          type: string
+          enum: [disabled, unknown, available, unavailable]
+        ai_reason_code:
+          type: [string, 'null']
+        ai_checked_at:
+          type: [string, 'null']
+          format: date-time
+        persistence:
+          type: string
+          description: Whether account data survives an API process restart. This exposes no infrastructure details.
+          enum: [durable, ephemeral, unknown]
     RegisterRequest:
       type: object
       additionalProperties: false
@@ -747,11 +811,6 @@ components:
         display_name:
           type: string
           maxLength: 80
-        invite_code:
-          type: string
-          minLength: 1
-          maxLength: 256
-          description: Required when the deployment enables closed-pilot registration.
     LoginRequest:
       type: object
       additionalProperties: false
@@ -768,7 +827,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, display_name, created_at]
+      required: [id, email, display_name, created_at, email_verified]
       properties:
         id:
           type: string
@@ -780,6 +839,8 @@ components:
         created_at:
           type: [string, 'null']
           format: date-time
+        email_verified:
+          type: boolean
     AuthResponse:
       type: object
       additionalProperties: false
@@ -921,6 +982,150 @@ components:
         iteration_count:
           type: integer
           minimum: 0
+    CompanionTask:
+      type: object
+      additionalProperties: false
+      required: [id, title, type, estimated_minutes]
+      properties:
+        id:
+          type: string
+          maxLength: 120
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        type:
+          type: string
+          maxLength: 80
+        estimated_minutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+    CompanionIntervention:
+      type: object
+      additionalProperties: false
+      required: [type, next_action, source]
+      properties:
+        type:
+          type: string
+          enum: [encourage, reduce_scope, reschedule, recover, review]
+        next_action:
+          type: string
+          minLength: 1
+          maxLength: 240
+        source:
+          type: string
+          enum: [template]
+    CompanionCheckIn:
+      type: object
+      additionalProperties: false
+      required: [intent, energy, blocker_type, evidence_level, submitted_at]
+      properties:
+        intent:
+          type: string
+          enum: [start, complete, stuck, skip]
+        energy:
+          type: [string, 'null']
+          enum: [low, normal, high, null]
+        blocker_type:
+          type: [string, 'null']
+          enum: [time, difficulty, emotion, environment, unknown, null]
+        evidence_level:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 4
+        submitted_at:
+          type: string
+          format: date-time
+    CompanionCycle:
+      type: object
+      additionalProperties: false
+      required: [version, date, route_id, task, status, check_in, intervention, created_at, updated_at]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        date:
+          type: string
+          format: date
+        route_id:
+          type: string
+        task:
+          $ref: '#/components/schemas/CompanionTask'
+        status:
+          type: string
+          enum: [planned, started, completed, stuck, skipped]
+        check_in:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionCheckIn'
+            - type: 'null'
+        intervention:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionIntervention'
+            - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CompanionTodayResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, date, route_available, task, cycle, next_action, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        route_available:
+          type: boolean
+        task:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionTask'
+            - type: 'null'
+        cycle:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionCycle'
+            - type: 'null'
+        next_action:
+          type: string
+          minLength: 1
+          maxLength: 240
+        replayed:
+          type: boolean
+    CompanionCheckInRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, intent]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        intent:
+          type: string
+          enum: [start, complete, stuck, skip]
+        task_id:
+          type: string
+          maxLength: 120
+        energy:
+          type: string
+          enum: [low, normal, high]
+        blocker_type:
+          type: string
+          enum: [time, difficulty, emotion, environment, unknown]
+        evidence_level:
+          type: integer
+          minimum: 1
+          maximum: 4
+        evidence:
+          type: string
+          minLength: 1
+          maxLength: 1200
+    CompanionCheckInResponse:
+      $ref: '#/components/schemas/CompanionTodayResponse'
     CompanionProfileResponse:
       type: object
       additionalProperties: false
@@ -1191,6 +1396,41 @@ components:
             - type: 'null'
         review_ready:
           type: boolean
+        initial_diagnostic:
+          oneOf:
+            - $ref: '#/components/schemas/InitialDiagnosticState'
+            - type: 'null'
+    InitialDiagnosticState:
+      type: object
+      additionalProperties: false
+      required: [subject, correct, incorrect, unverified, total_minutes, next_action, completed_at]
+      description: Learner-recorded three-exercise starting diagnostic. It records self-checked outcomes; it is not a platform score or mastery claim.
+      properties:
+        subject:
+          type: string
+          maxLength: 80
+        correct:
+          type: integer
+          minimum: 0
+          maximum: 3
+        incorrect:
+          type: integer
+          minimum: 0
+          maximum: 3
+        unverified:
+          type: integer
+          minimum: 0
+          maximum: 3
+        total_minutes:
+          type: integer
+          minimum: 0
+          maximum: 540
+        next_action:
+          type: string
+          maxLength: 500
+        completed_at:
+          type: string
+          format: date-time
     UserReview:
       type: object
       additionalProperties: false
@@ -1309,13 +1549,16 @@ components:
     MemoryIterationResponse:
       type: object
       additionalProperties: false
-      required: [request_id, iteration_id, replayed, new_memory_count, candidates, memories]
+      required: [request_id, iteration_id, iteration_count, replayed, new_memory_count, candidates, memories]
       properties:
         request_id:
           type: string
           format: uuid
         iteration_id:
           type: string
+        iteration_count:
+          type: integer
+          minimum: 0
         replayed:
           type: boolean
         new_memory_count:
@@ -1358,10 +1601,44 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Memory'
+    BaselineAssessment:
+      type: object
+      additionalProperties: false
+      required: [subject, study_stage, recent_result, primary_blocker, evidence]
+      description: Learner-reported starting evidence for the postgraduate pilot. It is not a verified score or mastery claim.
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 80
+        study_stage:
+          type: string
+          enum: [not_started, reviewed_once, practiced]
+        recent_result:
+          type: string
+          enum: [no_recent_practice, below_40, between_40_69, above_70]
+        primary_blocker:
+          type: string
+          enum: [scope, concept, application, speed, consistency]
+        evidence:
+          type: string
+          minLength: 12
+          maxLength: 360
     LearningRouteDraftRequest:
       type: object
       additionalProperties: false
       required: [request_id, goal_type, goal_name, target_date, weekly_hours, baseline]
+      allOf:
+        - if:
+            properties:
+              goal_type:
+                const: postgraduate_entrance_exam
+            required: [goal_type]
+          then:
+            required: [baseline_assessment]
+            properties:
+              baseline_assessment:
+                $ref: '#/components/schemas/BaselineAssessment'
       properties:
         request_id:
           type: string
@@ -1387,6 +1664,8 @@ components:
         baseline:
           type: string
           enum: [starting, foundation, advanced]
+        baseline_assessment:
+          $ref: '#/components/schemas/BaselineAssessment'
         region:
           type: string
           minLength: 1
@@ -1824,6 +2103,8 @@ components:
             baseline:
               type: string
               enum: [starting, foundation, advanced]
+            baseline_assessment:
+              $ref: '#/components/schemas/BaselineAssessment'
             region:
               oneOf:
                 - type: string

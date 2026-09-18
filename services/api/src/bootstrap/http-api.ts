@@ -16,6 +16,7 @@ const { AiGatewayService, MockAiProvider, OpenAiCompatibleProvider } = require("
 const { LearningRouteService } = require("../domains/learning-route/learning-route-service.ts");
 const { KnowledgeRetrievalService } = require("../domains/knowledge-retrieval/knowledge-retrieval-service.ts");
 const { CompanionService } = require("../domains/companion/companion-service.ts");
+const { CompanionCycleService } = require("../domains/companion-cycle/companion-cycle-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -83,10 +84,10 @@ function createDefaultServices(options = {}) {
   const env = options.env ?? process.env;
   const clock = options.clock ?? (() => Date.now());
   const isProduction = env.APP_ENV === "production" || env.NODE_ENV === "production";
-  const registrationInviteCode = typeof env.PILOT_INVITE_CODE === "string" ? env.PILOT_INVITE_CODE.trim() : "";
   const configuredDatabase = options.database ?? createSupabaseDatabaseFromEnv(env, options.supabaseDatabase);
   if (isProduction && !configuredDatabase) throw new Error("SUPABASE_DATABASE_URL is required in production");
   const database = configuredDatabase ?? new InMemoryDatabase();
+  const persistence = options.persistence ?? (database instanceof InMemoryDatabase ? "ephemeral" : "durable");
   const cache = options.cache ?? new InMemoryCache();
   const queue = options.queue ?? new InMemoryMessageBus();
   const objectStorage = options.objectStorage ?? { async healthCheck() { return { dependency: "object_storage", status: "up", latency_ms: 0, reason_code: "ok" }; } };
@@ -94,7 +95,6 @@ function createDefaultServices(options = {}) {
     database,
     tokens: options.tokens,
     allowDevTokens: options.allowDevTokens ?? !isProduction,
-    registrationInviteCode: options.registrationInviteCode ?? registrationInviteCode,
     clock,
     sessionTtlMs: options.sessionTtlMs,
   });
@@ -118,11 +118,11 @@ function createDefaultServices(options = {}) {
     })
     : new MockAiProvider());
   const aiEnabled = options.aiEnabled ?? (env.AI_ENABLED === "true" && providerConfigured);
-  if (isProduction && !registrationInviteCode) throw new Error("PILOT_INVITE_CODE is required in production");
   const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, clock, companion, memory, knowledge });
   const learningRoutes = options.learningRoutes ?? new LearningRouteService({ database, ai, knowledge, memory, userState, clock });
+  const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, ai, knowledge, learningRoutes, health };
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, companionCycle, ai, knowledge, learningRoutes, health };
 }
 
 function createBackendHandler(services) {
@@ -141,7 +141,19 @@ function createBackendHandler(services) {
       }
       if (url.pathname === "/api/v1/health" && request.method === "GET") {
         const health = await services.health.check();
-        sendJson(response, 200, { status: health.status === "up" ? "ok" : "degraded", ai_configured: services.ai.enabled === true, request_id: context.requestId }, context);
+        const aiAvailability = typeof services.ai.getAvailability === "function"
+          ? services.ai.getAvailability()
+          : { status: services.ai.enabled === true ? "unknown" : "disabled", reason_code: null, checked_at: null };
+        sendJson(response, 200, {
+          status: health.status === "up" ? "ok" : "degraded",
+          ai_configured: services.ai.enabled === true,
+          ai_available: aiAvailability.status === "available",
+          ai_status: aiAvailability.status,
+          ai_reason_code: aiAvailability.reason_code,
+          ai_checked_at: aiAvailability.checked_at,
+          persistence: health.status === "up" ? services.persistence : "unknown",
+          request_id: context.requestId,
+        }, context);
         return;
       }
 
@@ -181,6 +193,18 @@ function createBackendHandler(services) {
 
       if (url.pathname === "/api/v1/me/companion" && request.method === "GET") {
         sendJson(response, 200, await services.companion.getProfile(actor.actorId, actorContext.requestId), actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/companion/today" && request.method === "GET") {
+        sendJson(response, 200, await services.companionCycle.getToday(actor.actorId, actorContext.requestId), actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/companion/check-ins" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.companionCycle.recordCheckIn(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 200, result.response, actorContext);
         return;
       }
 
