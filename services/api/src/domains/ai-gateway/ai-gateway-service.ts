@@ -132,9 +132,21 @@ class MockAiProvider {
   }
 }
 
+function normalizeProviderBaseUrl(value) {
+  const raw = String(value ?? "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (!url.pathname || url.pathname === "/") url.pathname = "/v1";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return raw;
+  }
+}
+
 class OpenAiCompatibleProvider {
   constructor({ baseUrl, apiKey, model, timeoutMs = 30000, maxResponseBytes = 256 * 1024, fetchImpl = fetch }) {
-    this.baseUrl = String(baseUrl ?? "").replace(/\/+$/, "");
+    this.baseUrl = normalizeProviderBaseUrl(baseUrl);
     this.apiKey = apiKey;
     this.model = model;
     this.timeoutMs = timeoutMs;
@@ -442,5 +454,6 @@ module.exports = {
   OpenAiCompatibleProvider,
   aiRejectionResponse,
   estimateTokens,
+  normalizeProviderBaseUrl,
   normalizePolicy,
 };
