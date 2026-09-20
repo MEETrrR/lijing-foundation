@@ -570,6 +570,9 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .material-photo > span { min-width: 0; overflow: hidden; color: var(--ink); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .material-photo__notice, .material-photo__uncertain { margin: -7px 0 0; color: var(--rock); font-size: 9px; line-height: 1.65; }
 .material-photo__uncertain { color: var(--red); }
+.material-submit-label--confirm { display: none; }
+.material-intake__form[data-photo-confirmed="true"] .material-submit-label--default { display: none; }
+.material-intake__form[data-photo-confirmed="true"] .material-submit-label--confirm { display: inline; }
 .material-intake__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px; color: var(--rock); font-size: 9px; line-height: 1.6; }
 .material-library, .material-diagnosis, .material-citations, .material-evidence { margin-top: 27px; padding-top: 24px; border-top: 1px solid var(--line-dark); }
 .material-library__head, .material-citations__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--rock); font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }

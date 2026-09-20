@@ -279,13 +279,14 @@ test("material intake supports a temporary photo-to-text confirmation step", asy
   assert.match(html, /data-material-image/);
   assert.match(html, /capture="environment"/);
   assert.match(html, /图片仅用于本次识别，不会保存/);
+  assert.match(html, /material-submit-label--confirm/);
+  assert.match(html, /确认文字并交给器灵/);
   assert.doesNotMatch(html, /首版只接收文字/);
 
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   assert.match(source, /requestMaterialImageExtraction/);
   assert.match(source, /photoConfirmed/);
-  assert.match(source, /确认文字并交给器灵/);
-  assert.match(source, /form\.dataset\.photoConfirmed === "true"/);
+  assert.match(source, /form\.dataset\.photoConfirmed = "true"/);
 });
 
 test("material study state asks for real material before showing a diagnosis", () => {

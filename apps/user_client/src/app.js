@@ -1520,8 +1520,6 @@ export function createApp(root = document.querySelector("#app")) {
         uncertainty.hidden = true;
         uncertainty.textContent = "";
       }
-      const submit = form.querySelector('button[type="submit"]');
-      if (submit) submit.innerHTML = `交给器灵 ${icon("arrow")}`;
     }));
     root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1563,8 +1561,6 @@ export function createApp(root = document.querySelector("#app")) {
             uncertainty.hidden = !(draft.uncertain_parts?.length);
             uncertainty.textContent = draft.uncertain_parts?.length ? `请核对：${draft.uncertain_parts.join("；")}` : "";
           }
-          const submit = form.querySelector('button[type="submit"]');
-          if (submit) submit.innerHTML = `确认文字并交给器灵 ${icon("arrow")}`;
           toast("已提取可确认文字，请核对后再提交");
           return;
         }
@@ -1972,10 +1968,7 @@ export function createApp(root = document.querySelector("#app")) {
       } finally {
         if (form.isConnected) {
           form.dataset.submitting = "false";
-          form.querySelectorAll("button[type=submit]").forEach((button) => {
-            button.disabled = false;
-            if (form.dataset.demoForm === "learning-artifact" && form.dataset.photoConfirmed === "true") button.innerHTML = `确认文字并交给器灵 ${icon("arrow")}`;
-          });
+          form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = false; });
         }
       }
     }));
