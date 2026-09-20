@@ -11,7 +11,6 @@ const {
   validateKey,
 } = require("../../services/api/src/platform/persistence/supabase-database.ts");
 const { createDefaultServices } = require("../../services/api/src/bootstrap/http-api.ts");
-const { InMemoryDatabase } = require("../../services/api/src/platform/persistence/database.ts");
 
 class FakeClient {
   constructor(state, queries) {
@@ -74,7 +73,7 @@ test("Supabase database adapter validates identifiers, keys, and production TLS"
   assert.throws(() => safeIdentifier("public;drop table", "table"), /lowercase SQL identifier/);
   assert.equal(validateKey("idempotency:account-001:ai.requests:key"), "idempotency:account-001:ai.requests:key");
   assert.throws(() => validateKey(""), /database key/);
-  assert.throws(() => createSupabaseDatabaseFromEnv({ APP_ENV: "production", SUPABASE_DATABASE_URL: "postgres://example", SUPABASE_DB_SSL: "false" }), /not allowed in production/);
+  assert.throws(() => createSupabaseDatabaseFromEnv({ APP_ENV: "production", SUPABASE_DATABASE_URL: "postgres://example", SUPABASE_DB_SSL: "false" }), /not allowed in durable environments/);
 });
 
 test("Supabase database adapter loads a configured PostgreSQL CA", () => {
@@ -118,6 +117,20 @@ test("Supabase database adapter can be selected without exposing credentials in 
   assert.ok(pool.queries.some((query) => query.text === 'SELECT 1 FROM "public"."lijing_runtime_kv" LIMIT 1'));
 });
 
+test("Supabase database failures become persistence errors and pilot environments reject memory persistence", async () => {
+  const failingPool = {
+    async query() { throw new Error("connection refused"); },
+    async connect() { throw new Error("connection refused"); },
+  };
+  const database = new SupabasePostgresDatabase({ pool: failingPool });
+  await assert.rejects(database.get("progress:account-001"), (error) => error?.code === "PERSISTENCE_UNAVAILABLE");
+  await assert.rejects(database.transaction(async () => undefined), (error) => error?.code === "PERSISTENCE_UNAVAILABLE");
+  assert.throws(
+    () => createDefaultServices({ env: { APP_ENV: "pilot", AI_ENABLED: "false" } }),
+    /SUPABASE_DATABASE_URL is required/,
+  );
+});
+
 test("backend selects Supabase persistence only when an explicit connection string is present", async () => {
   const pool = new FakePool(new Map(), []);
   const services = createDefaultServices({
@@ -136,7 +149,7 @@ test("production backend fails closed without durable database or enabled AI pro
     /SUPABASE_DATABASE_URL is required in production/,
   );
   assert.throws(
-    () => createDefaultServices({ env: { APP_ENV: "production", AI_ENABLED: "true" }, database: new InMemoryDatabase() }),
+    () => createDefaultServices({ env: { APP_ENV: "production", AI_ENABLED: "true" }, database: new SupabasePostgresDatabase({ pool: new FakePool(new Map(), []) }), persistence: "durable" }),
     /AI provider configuration is required/,
   );
 });

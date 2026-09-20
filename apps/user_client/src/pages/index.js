@@ -23,6 +23,14 @@ function demoNote(state) {
   return state?.isDemo ? `<span class="demo-state" aria-label="演示数据">演示数据</span>` : "";
 }
 
+function persistenceNotice(state) {
+  const service = state?.service ?? {};
+  const notice = service.persistenceNotice || state?.companionCycle?.syncError;
+  if (service.persistence === "durable" && service.api === "up" && !notice) return "";
+  if (state?.isDemo) return "";
+  return `<div class="persistence-notice" role="status"><strong>数据保存状态需要确认</strong><span>${esc(notice || "数据服务暂时未恢复，新的学习记录不会被当作已保存。请稍后重试。")}</span></div>`;
+}
+
 function progressBar(value, tone = "amber") {
   return `<div class="progress-line progress-line--${tone}" aria-label="完成度 ${value}%"><span style="--value:${value}%"></span></div>`;
 }
@@ -62,6 +70,7 @@ function pageFeatures(state) {
 function pageAuth(state) {
   const mode = state.auth?.mode === "register" ? "register" : "login";
   const registering = mode === "register";
+  const invitationRequired = state.registrationPolicy?.invitationRequired === true;
   const persistence = state.service?.persistence;
   const serviceApi = state.service?.api;
   const accountPromise = persistence === "durable" && serviceApi === "up"
@@ -74,6 +83,12 @@ function pageAuth(state) {
   const emailNotice = registering
     ? "当前试点只校验邮箱格式，不会发送验证邮件；请使用你能长期访问的地址。"
     : "登录后可在设置页查看邮箱状态；当前试点尚未接入邮件验证。";
+  if (registering && invitationRequired) {
+    return `<div class="page page--auth" data-demo-state="false" style="--auth-image: url('${assetUrl("lijing-auth-gate-v1")}')">
+      <div class="auth-backdrop" aria-hidden="true"></div><div class="auth-wrap"><div class="auth-visual"><span class="auth-visual__seal">☷</span><span class="page-intro__kicker">入山 · 身份印记</span><h1>先为自己<br><em>立一座山门</em></h1><p class="auth-visual__value">砺境帮助你制定目标、生成学习计划，并用学习证据生成下一步。</p><div class="auth-visual__line"></div><span>砺境 · 云海登山系统</span></div>
+      <div class="paper-panel auth-panel"><div class="panel-heading"><span class="section-kicker">限量试点登记</span><h2>立下山门</h2><p>本轮为限量邀请码试点。${accountPromise}</p></div><div class="auth-tabs" role="tablist" aria-label="账号操作"><button type="button" data-action="auth-mode" data-auth-mode="login" aria-selected="false">登录</button><button type="button" data-action="auth-mode" data-auth-mode="register" aria-selected="true">注册</button></div>
+      <form class="auth-form" data-demo-form="auth" data-auth-mode="register"><label>邮箱<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label><label>昵称<input name="display_name" type="text" placeholder="例如：林默" autocomplete="nickname" maxlength="80"></label><label>试点邀请码<input name="invite_code" type="text" autocomplete="off" minlength="12" maxlength="128" required></label><label>密码<input name="password" type="password" placeholder="至少 8 个字符" autocomplete="new-password" minlength="8" maxlength="128" required></label><button class="button button--primary" type="submit">创建账号 ${icon("arrow")}</button></form><p class="form-footnote">邀请码只能使用一次。请使用你能长期访问的邮箱；当前试点不会发送验证邮件。</p><button class="auth-recovery-link" type="button" data-action="forgot-password">忘记密码？</button><p class="form-footnote">当前为公开测试版；${accountPromise}</p><nav class="auth-legal-links" aria-label="公开说明"><a href="/privacy" data-route="/privacy">隐私说明</a><a href="/terms" data-route="/terms">用户协议</a><a href="/contact" data-route="/contact">联系方式</a></nav></div></div></div>`;
+  }
   return `<div class="page page--auth" data-demo-state="false" style="--auth-image: url('${assetUrl("lijing-auth-gate-v1")}')"><div class="auth-backdrop" aria-hidden="true"></div><div class="auth-wrap"><div class="auth-visual"><span class="auth-visual__seal">☷</span><span class="page-intro__kicker">入山 · 身份印记</span><h1>先为自己<br><em>立一座山门</em></h1><p class="auth-visual__value">砺境帮助你制定目标、生成学习计划，并用学习证据生成下一步。</p><div class="auth-visual__line"></div><span>砺境 · 云海登山系统</span></div><div class="paper-panel auth-panel"><div class="panel-heading"><span class="section-kicker">${registering ? "新行者登记" : "行者登录"}</span><h2>${registering ? "立下山门" : "欢迎回来"}</h2><p>${registering ? `公开测试版，注册后即可开始；${accountPromise}` : `登录后继续你的目标、学习计划和学习证据。${persistence === "ephemeral" ? " 当前会话在服务重启后不会保留。" : ""}`}</p></div><div class="auth-tabs" role="tablist" aria-label="账号操作"><button type="button" data-action="auth-mode" data-auth-mode="login" aria-selected="${!registering}">登录</button><button type="button" data-action="auth-mode" data-auth-mode="register" aria-selected="${registering}">注册</button></div><form class="auth-form" data-demo-form="auth" data-auth-mode="${mode}"><label>邮箱<input name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label>${registering ? `<label>昵称<input name="display_name" type="text" placeholder="例如：林默" autocomplete="nickname" maxlength="80"></label>` : ""}<label>密码<input name="password" type="password" placeholder="至少 8 个字符" autocomplete="${registering ? "new-password" : "current-password"}" minlength="8" maxlength="128" required></label><button class="button button--primary" type="submit">${registering ? "创建账号" : "登录并继续"} ${icon("arrow")}</button></form><p class="form-footnote">${emailNotice}</p><button class="auth-recovery-link" type="button" data-action="forgot-password">忘记密码？</button><p class="form-footnote">当前为公开测试版；${accountPromise}</p><nav class="auth-legal-links" aria-label="公开说明"><a href="/privacy" data-route="/privacy">隐私说明</a><a href="/terms" data-route="/terms">用户协议</a><a href="/contact" data-route="/contact">联系方式</a></nav></div></div></div>`;
 }
 
@@ -262,11 +277,43 @@ function memoryLoop(state) {
 function companionStatus(status) {
   return {
     planned: "等待开始",
+    active: "正在进行",
     started: "正在进行",
     stuck: "已标记卡住",
     skipped: "今天先缓一缓",
     completed: "已留下证据",
   }[status] ?? "等待开始";
+}
+
+function materialStudyPage(state) {
+  const companion = state.companionCycle ?? {};
+  const currentAction = companion.currentAction ?? null;
+  const artifacts = state.learningArtifacts ?? [];
+  const citations = (companion.retrievedEvidence ?? []).slice(0, 4);
+  const diagnosis = companion.diagnosisSummary ?? null;
+  const evidenceLevels = state.pilot?.evidenceLevels ?? [];
+  const selectedLevel = Number(state.pilot?.selectedEvidenceLevel ?? 2);
+  const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const actionArtifacts = currentAction?.artifact_refs?.map((id) => artifactById.get(id)).filter(Boolean) ?? [];
+
+  if (!currentAction) {
+    return `<div class="page page--study page--study-material" data-demo-state="${state.isDemo}">${intro("/study", state, "材料驱动 · 先把卡住的地方交给器灵")}${persistenceNotice(state)}<div class="study-layout"><section class="study-focus study-focus--material"><div class="study-focus__top"><span class="section-kicker">${companion.screenState === "need_material" ? "等待你的材料" : "材料入口"}</span>${demoNote(state)}<span class="study-focus__timer">文本材料</span></div><div class="study-focus__title"><span class="study-focus__gua">器</span><h2>先把正在卡住的地方交出来</h2><p>可以是一道题、一段笔记、作答草稿或错因说明。器灵只根据你给出的内容判断，不替你编造错因。</p></div><section class="study-action material-intake"><div class="study-action__heading"><span>第一步 · 留下可检索的材料</span><h3>材料 → 诊断 → 一条现在能完成的行动</h3><p>首版只接收文字，保存后会按你的账号隔离，并保留引用位置。</p></div><form class="material-intake__form" data-demo-form="learning-artifact"><div class="material-intake__grid"><label>材料标题<input name="source_title" type="text" maxlength="160" placeholder="例如：极限题 12 · 洛必达条件混淆" required></label><label>科目<select name="subject"><option value="数学" selected>数学</option><option value="408">408</option><option value="数学 / 408">数学 / 408</option></select></label><label>材料类型<select name="kind"><option value="question" selected>题目</option><option value="note">笔记</option><option value="attempt_draft">作答草稿</option><option value="answer_reference">错因说明 / 参考答案</option></select></label></div><label>粘贴材料<textarea name="content_text" rows="10" maxlength="12000" placeholder="把题干、你的思路、写到哪一步、哪里不确定一起贴进来……" required></textarea></label><div class="material-intake__footer"><span>建议包含：题目条件、你的尝试、卡住的位置。</span><button class="button button--ink" type="submit">交给器灵 ${icon("arrow")}</button></div></form>${artifacts.length ? `<div class="material-library"><div class="material-library__head"><span>已保存材料</span><strong>${artifacts.length} 份</strong></div><div class="material-library__list">${artifacts.slice(0, 4).map((artifact) => `<article><span>${esc(artifact.kind)}</span><strong>${esc(artifact.source_title)}</strong><small>${esc(artifact.subject)} · ${esc(artifact.updated_at ? new Date(artifact.updated_at).toLocaleDateString("zh-CN") : "刚刚")}</small></article>`).join("")}</div></div>` : ""}</section><aside class="study-aside"><section class="study-aside__tip"><span class="study-aside__tip-mark">知</span><div class="study-aside__tip-copy"><span>器灵的边界</span><p>没有材料，就没有诊断；没有证据，就不把一次完成写成掌握。</p><a href="/assistant" data-route="/assistant">先问一个问题 ${icon("arrow")}</a></div></section></aside></div></div>`;
+  }
+
+  const terminal = ["completed", "superseded", "skipped"].includes(currentAction.status);
+  const canWrite = !state.isDemo && !terminal;
+  const relatedMaterial = actionArtifacts.length
+    ? actionArtifacts.map((artifact) => `<span class="material-ref">${esc(artifact.source_title)}</span>`).join("")
+    : currentAction.artifact_refs?.map((id) => `<span class="material-ref">材料 ${esc(id)}</span>`).join("") ?? "";
+  const citationBlock = citations.length
+    ? `<div class="material-citations"><div class="material-citations__head"><span>材料引用</span><small>只来自你的私人材料</small></div>${citations.map((citation) => `<article><span>${esc(citation.title)} · ${esc(citation.chunk_id)}</span><p>${esc(citation.excerpt)}</p><small>位置 ${citation.locator?.start ?? 0}-${citation.locator?.end ?? 0}</small></article>`).join("")}</div>`
+    : "";
+  const diagnosisBlock = diagnosis
+    ? `<div class="material-diagnosis"><span>当前判断</span><p>${esc(diagnosis.reason ?? currentAction.reason)}</p>${Array.isArray(diagnosis.unknowns) && diagnosis.unknowns.length ? `<small>仍未知：${esc(diagnosis.unknowns.join("；"))}</small>` : ""}</div>`
+    : "";
+  const controls = canWrite ? `<div class="study-action__controls">${["planned", "stuck"].includes(currentAction.status) ? `<button class="button button--ink" type="button" data-action="companion-check-in" data-companion-intent="start" data-task-id="${esc(currentAction.id)}" data-action-version="${currentAction.version}">${currentAction.status === "planned" ? "开始这一条" : "继续这一条"} ${icon("play")}</button>` : ""}<label>卡住原因<select data-companion-blocker><option value="difficulty">内容太难</option><option value="time">时间不够</option><option value="emotion">状态不稳</option><option value="environment">环境受限</option><option value="unknown">说不清楚</option></select></label><button class="button button--outline" type="button" data-action="companion-check-in" data-companion-intent="stuck" data-task-id="${esc(currentAction.id)}" data-action-version="${currentAction.version}">我卡住了</button><button class="text-link" type="button" data-action="companion-check-in" data-companion-intent="skip" data-task-id="${esc(currentAction.id)}" data-action-version="${currentAction.version}">先缩小这一步</button></div>` : terminal ? `<div class="material-terminal"><span>这条行动已经关闭</span><p>页面不再提供写入控件，刷新后以服务端状态为准。</p></div>` : "";
+  const evidenceForm = canWrite ? `<form class="material-evidence" data-demo-form="material-evidence" data-action-id="${esc(currentAction.id)}" data-action-version="${currentAction.version}"><div class="section-title"><div><span>完成证据</span><h2>你实际留下了什么？</h2></div><span class="evidence-submit__level">选择一档</span></div><p>${esc(currentAction.expected_evidence)}</p><div class="material-evidence__levels">${evidenceLevels.map((item) => `<label class="material-evidence__level"><input type="radio" name="evidence_level" value="${item.level}" ${item.level === selectedLevel ? "checked" : ""}><span><strong>L${item.level} · ${esc(item.title)}</strong><small>${esc(item.detail)}</small></span></label>`).join("")}</div><label class="material-evidence__field">证据内容<textarea name="evidence" rows="6" maxlength="1200" placeholder="写下你做了什么、得到什么、还卡在哪里……" required></textarea></label><button class="button button--ink" type="submit">提交证据并生成下一步 ${icon("arrow")}</button></form>` : "";
+  return `<div class="page page--study page--study-material" data-demo-state="${state.isDemo}">${intro("/study", state, "材料驱动 · 唯一行动卡")}${persistenceNotice(state)}<div class="study-layout"><section class="study-focus study-focus--material"><div class="study-focus__top"><span class="section-kicker">器灵同行 · ${companionStatus(currentAction.status)}</span>${demoNote(state)}<span class="study-focus__timer">${currentAction.estimated_minutes} 分钟</span></div><div class="study-focus__title"><span class="study-focus__gua">器</span><h2>${esc(currentAction.title)}</h2><p>这张行动卡只对应你当前提交的材料，并且带有版本号。做完后留下证据，下一步才会生成。</p></div><section class="study-action"><div class="study-action__heading"><span>为什么现在做</span><h3>${esc(currentAction.reason)}</h3><p>${relatedMaterial}</p></div>${controls}</section>${diagnosisBlock}${citationBlock}${evidenceForm}</section><aside class="study-aside"><section class="study-aside__tip"><span class="study-aside__tip-mark">行</span><div class="study-aside__tip-copy"><span>完成标准</span><p>${esc(currentAction.expected_evidence)}</p><a href="/knowledge" data-route="/knowledge">查看材料来源 ${icon("arrow")}</a></div></section></aside></div></div>`;
 }
 
 function pageStudy(state) {
@@ -291,6 +338,7 @@ function pageStudy(state) {
 }
 
 function pageStudyWithDiagnostic(state) {
+  if (!state.isDemo && (state.companionCycle?.screenState === "need_material" || state.companionCycle?.currentAction)) return materialStudyPage(state);
   const html = pageStudy(state);
   const companionTask = state.companionCycle?.task ?? state.companionCycle?.cycle?.task ?? null;
   const active = companionTask ?? state.today.tasks.find((task) => task.status === "active") ?? state.today.tasks.at(-1);
@@ -435,6 +483,19 @@ function pageKnowledge(state) {
   const workspace = view === "directory" ? knowledgeDirectory(state) : view === "recent" ? knowledgeDirectory(state, true) : knowledgeNetwork(state, active);
   const composer = state.knowledgeComposerOpen ? knowledgeCaptureForm(state) : "";
   return `<div class="page page--knowledge" data-demo-state="true">${intro("/knowledge", state, "个人复利 Agent 知识库")}<section class="knowledge-workbench"><div class="knowledge-workbench__head"><div><span class="section-kicker">PERSONAL COMPOUND · KNOWLEDGE SYSTEM</span><h2>让每一条记录，<br><em>接上下一条。</em></h2><p>知识不是孤立的卡片，而是会被 Agent 识别、关联、复习和再次调用的个人网络。</p></div><div class="knowledge-workbench__stats">${metaLine("核心节点", `${items.length}`)}${metaLine("已知连接", `${knowledgeGraphProjection(items).relationCount}`)}${metaLine("资产层", "05")}</div></div><div class="knowledge-workbench__toolbar"><div class="knowledge-view-tabs" role="tablist" aria-label="知识库视图"><button type="button" data-action="knowledge-view" data-knowledge-view="network" role="tab" aria-selected="${view === "network"}">网络</button><button type="button" data-action="knowledge-view" data-knowledge-view="directory" role="tab" aria-selected="${view === "directory"}">目录</button><button type="button" data-action="knowledge-view" data-knowledge-view="recent" role="tab" aria-selected="${view === "recent"}">最近</button></div><label class="knowledge-search"><span class="sr-only">搜索知识节点</span>${icon("search", "搜索知识节点")}<input data-knowledge-search type="search" placeholder="搜索节点、来源或关键词" autocomplete="off"></label><button class="button button--outline knowledge-add-button" type="button" data-action="open-knowledge-composer">${icon("plus")}新增记录</button></div><div class="knowledge-workbench__body">${knowledgeCatalog(state)}<section class="knowledge-workspace" data-knowledge-view-current="${view}">${workspace}</section>${knowledgeInspector(active, related)}</div>${composer}</section></div>`;
+}
+
+function knowledgeMaterials(state) {
+  const materials = state.learningArtifacts ?? [];
+  const diagnosis = state.companionCycle?.diagnosisSummary ?? null;
+  const observations = Array.isArray(diagnosis?.observations) ? diagnosis.observations : [];
+  return `<section class="knowledge-materials"><div class="knowledge-materials__head"><div><span class="section-kicker">个人材料 RAG · 证据来源</span><h2>器灵引用了什么？</h2><p>这里展示只属于当前账号的题目、笔记和草稿。官方知识不会覆盖你的个人状态。</p></div><span class="knowledge-materials__count">${materials.length} 份材料</span></div>${materials.length ? `<div class="knowledge-materials__list">${materials.slice(0, 8).map((material) => `<article><div><span>${esc(material.kind)} · ${esc(material.subject)}</span><h3>${esc(material.source_title)}</h3></div><p>${esc(String(material.content_text ?? "").slice(0, 180))}${String(material.content_text ?? "").length > 180 ? "…" : ""}</p><small>保存于 ${esc(material.updated_at ? new Date(material.updated_at).toLocaleDateString("zh-CN") : "最近")}</small></article>`).join("")}</div>` : `<div class="knowledge-materials__empty"><strong>还没有个人材料</strong><span>回到“学习”，粘贴一道题、笔记或作答草稿，器灵才会开始引用你的真实状态。</span></div>`}${observations.length ? `<div class="knowledge-materials__citations"><span>最近一次诊断引用</span>${observations.map((observation) => `<article><strong>${esc(observation.claim)}</strong><p>“${esc(observation.evidence_excerpt)}”</p><small>${esc(observation.artifact_id)} · ${esc(observation.chunk_id)} · 置信度 ${Math.round(Number(observation.confidence ?? 0) * 100)}%</small></article>`).join("")}</div>` : ""}</section>`;
+}
+
+function pageKnowledgeWithMaterials(state) {
+  const html = pageKnowledge(state);
+  const close = html.lastIndexOf("</div>");
+  return close === -1 ? html : `${html.slice(0, close)}${knowledgeMaterials(state)}${html.slice(close)}`;
 }
 
 function pageKnowledgeLegacyCurrent(state) {
@@ -634,7 +695,7 @@ export const PAGE_RENDERERS = {
   "/plan": pagePlan,
   "/study": pageStudyWithDiagnostic,
   "/review": pageReview,
-  "/knowledge": pageKnowledge,
+  "/knowledge": pageKnowledgeWithMaterials,
   "/assistant": pageAssistant,
   "/growth": pageGrowth,
   "/map": pageMap,

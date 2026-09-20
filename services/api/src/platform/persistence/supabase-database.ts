@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const net = require("node:net");
 const { Pool } = require("pg");
 const tls = require("node:tls");
+const { PlatformError } = require("../errors/error-catalog.ts");
 
 const IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;
 const KEY_MAX_LENGTH = 512;
@@ -40,6 +41,11 @@ function dependencyHealth(status, latencyMs, reasonCode) {
     latency_ms: Math.max(0, Math.round(latencyMs)),
     reason_code: reasonCode,
   };
+}
+
+function persistenceError(operation, error) {
+  if (error instanceof PlatformError) return error;
+  return new PlatformError("PERSISTENCE_UNAVAILABLE", `database ${operation} failed`, { cause: error });
 }
 
 function createSslOptions(env, connectionString) {
@@ -89,33 +95,45 @@ class SupabasePostgresDatabase {
     });
   }
 
+  async query(sql, values, operation) {
+    try {
+      return await this.executor.query(sql, values);
+    } catch (error) {
+      throw persistenceError(operation, error);
+    }
+  }
+
   async get(key) {
-    const result = await this.executor.query(
+    const result = await this.query(
       `SELECT "value" FROM ${this.qualifiedTable} WHERE "key" = $1 LIMIT 1`,
       [validateKey(key)],
+      "read",
     );
     return result.rows[0]?.value;
   }
 
   async set(key, value) {
-    await this.executor.query(
+    await this.query(
       `INSERT INTO ${this.qualifiedTable} ("key", "value", "updated_at") VALUES ($1, $2::jsonb, timezone('utc', now())) ON CONFLICT ("key") DO UPDATE SET "value" = EXCLUDED."value", "updated_at" = timezone('utc', now())`,
       [validateKey(key), serializeValue(value)],
+      "write",
     );
   }
 
   async setIfAbsent(key, value) {
-    const result = await this.executor.query(
+    const result = await this.query(
       `INSERT INTO ${this.qualifiedTable} ("key", "value", "updated_at") VALUES ($1, $2::jsonb, timezone('utc', now())) ON CONFLICT ("key") DO NOTHING RETURNING "key"`,
       [validateKey(key), serializeValue(value)],
+      "write_if_absent",
     );
     return result.rowCount > 0;
   }
 
   async delete(key) {
-    const result = await this.executor.query(
+    const result = await this.query(
       `DELETE FROM ${this.qualifiedTable} WHERE "key" = $1 RETURNING "key"`,
       [validateKey(key)],
+      "delete",
     );
     return result.rowCount > 0;
   }
@@ -123,11 +141,24 @@ class SupabasePostgresDatabase {
   async transaction(work) {
     if (typeof work !== "function") throw new TypeError("transaction callback is required");
     if (this.inTransaction) throw new Error("nested database transactions are not supported");
-    const client = await this.pool.connect();
+    let client;
     try {
-      await client.query("BEGIN");
+      client = await this.pool.connect();
+    } catch (error) {
+      throw persistenceError("connect", error);
+    }
+    try {
+      try {
+        await client.query("BEGIN");
+      } catch (error) {
+        throw persistenceError("begin_transaction", error);
+      }
       const result = await work(this.scoped(client));
-      await client.query("COMMIT");
+      try {
+        await client.query("COMMIT");
+      } catch (error) {
+        throw persistenceError("commit_transaction", error);
+      }
       return result;
     } catch (error) {
       try {
@@ -160,7 +191,7 @@ function createSupabaseDatabaseFromEnv(env = process.env, options = {}) {
   const connectionString = env.SUPABASE_DATABASE_URL;
   if (typeof connectionString !== "string" || connectionString.trim().length === 0) return undefined;
   const sslDisabled = env.SUPABASE_DB_SSL === "false";
-  if (env.APP_ENV === "production" && sslDisabled) throw new Error("SUPABASE_DB_SSL=false is not allowed in production");
+  if (["production", "staging", "pilot"].includes(String(env.APP_ENV ?? "").toLowerCase()) && sslDisabled) throw new Error("SUPABASE_DB_SSL=false is not allowed in durable environments");
   return new SupabasePostgresDatabase({
     ...options,
     connectionString: connectionString.trim(),

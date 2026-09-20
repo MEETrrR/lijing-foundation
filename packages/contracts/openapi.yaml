@@ -63,6 +63,23 @@ paths:
           $ref: '#/components/responses/IdempotencyConflict'
         '422':
           $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/auth/registration-policy:
+    get:
+      tags: [identity]
+      operationId: getRegistrationPolicy
+      summary: Read the public pilot registration policy
+      security: []
+      responses:
+        '200':
+          description: Public registration requirements without invitation secrets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationPolicyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/auth/login:
     post:
       tags: [identity]
@@ -339,6 +356,23 @@ paths:
                 $ref: '#/components/schemas/CompanionProfileResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/me/ai/usage:
+    get:
+      tags: [ai]
+      operationId: getMyAiUsage
+      summary: Read the authenticated learner's AI usage summary
+      description: Returns aggregate model-run counts, degradation rate, token estimates, and estimated cost without exposing prompts or model responses.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account-scoped AI usage summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiUsageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/companion/today:
     get:
       tags: [companion]
@@ -379,6 +413,179 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CompanionCheckInResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/learning-artifacts:
+    get:
+      tags: [learning]
+      operationId: listLearningArtifacts
+      summary: List my private learning materials
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Private material metadata owned by the authenticated learner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningArtifactsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [learning]
+      operationId: createLearningArtifact
+      summary: Store a private text learning material
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningArtifactCreateRequest'
+      responses:
+        '201':
+          description: Private material created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningArtifactResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/learning-artifacts/{artifact_id}:
+    get:
+      tags: [learning]
+      operationId: getLearningArtifact
+      summary: Read one private learning material
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: artifact_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        '200':
+          description: Private material owned by the authenticated learner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningArtifactDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/learning-attempts:
+    post:
+      tags: [learning]
+      operationId: recordMaterialLearningAttempt
+      summary: Record evidence against private learning material
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningAttemptCreateRequest'
+      responses:
+        '201':
+          description: Material attempt recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialLearningAttemptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/companion/diagnoses:
+    post:
+      tags: [companion]
+      operationId: createMaterialDiagnosis
+      summary: Diagnose a learning block from private material
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanionDiagnosisRequest'
+      responses:
+        '200':
+          description: Material-grounded diagnosis and one current action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanionDiagnosisResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/companion/actions/{action_id}/evidence:
+    post:
+      tags: [companion]
+      operationId: completeCompanionActionWithEvidence
+      summary: Complete the current action with user evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanionActionEvidenceRequest'
+      responses:
+        '200':
+          description: Completed action and next action projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanionActionEvidenceResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -811,6 +1018,10 @@ components:
         display_name:
           type: string
           maxLength: 80
+        invite_code:
+          type: string
+          minLength: 12
+          maxLength: 128
     LoginRequest:
       type: object
       additionalProperties: false
@@ -851,6 +1062,18 @@ components:
         request_id:
           type: string
           format: uuid
+    RegistrationPolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, invitation_required, registration_open]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        invitation_required:
+          type: boolean
+        registration_open:
+          type: boolean
     ProgressResponse:
       type: object
       additionalProperties: false
@@ -1001,6 +1224,58 @@ components:
           type: integer
           minimum: 5
           maximum: 1440
+        action_version:
+          type: integer
+          minimum: 1
+    CompanionAction:
+      type: object
+      additionalProperties: false
+      required: [id, version, cycle_id, route_id, origin, status, title, reason, diagnosis_ref, artifact_refs, estimated_minutes, expected_evidence, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        cycle_id:
+          type: string
+        route_id:
+          type: [string, 'null']
+        origin:
+          type: string
+          enum: [route, artifact_diagnosis, recovery_template, weekly_review]
+        status:
+          type: string
+          enum: [planned, active, stuck, completed, superseded, skipped]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 300
+        diagnosis_ref:
+          type: [string, 'null']
+        artifact_refs:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+        estimated_minutes:
+          type: integer
+          minimum: 5
+          maximum: 30
+        expected_evidence:
+          type: string
+          minLength: 1
+          maxLength: 300
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     CompanionIntervention:
       type: object
       additionalProperties: false
@@ -1072,7 +1347,7 @@ components:
     CompanionTodayResponse:
       type: object
       additionalProperties: false
-      required: [request_id, date, route_available, task, cycle, next_action, replayed]
+      required: [request_id, date, route_available, task, current_action, diagnosis_summary, evidence_requirements, screen_state, cycle, next_action, replayed]
       properties:
         request_id:
           type: string
@@ -1086,6 +1361,47 @@ components:
           oneOf:
             - $ref: '#/components/schemas/CompanionTask'
             - type: 'null'
+        current_action:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionAction'
+            - type: 'null'
+        diagnosis_summary:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [reason, diagnosis_ref, artifact_refs]
+              properties:
+                id:
+                  type: [string, 'null']
+                status:
+                  type: string
+                  enum: [ready, degraded]
+                reason:
+                  type: string
+                diagnosis_ref:
+                  type: [string, 'null']
+                artifact_refs:
+                  type: array
+                  items:
+                    type: string
+                observations:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DiagnosisObservation'
+                unknowns:
+                  type: array
+                  items:
+                    type: string
+                error_tags:
+                  type: array
+                  items:
+                    type: string
+            - type: 'null'
+        evidence_requirements:
+          type: [string, 'null']
+        screen_state:
+          type: string
+          enum: [action_active, need_material, cycle_completed, next_action_ready]
         cycle:
           oneOf:
             - $ref: '#/components/schemas/CompanionCycle'
@@ -1110,6 +1426,9 @@ components:
         task_id:
           type: string
           maxLength: 120
+        action_version:
+          type: integer
+          minimum: 1
         energy:
           type: string
           enum: [low, normal, high]
@@ -1126,6 +1445,347 @@ components:
           maxLength: 1200
     CompanionCheckInResponse:
       $ref: '#/components/schemas/CompanionTodayResponse'
+    LearningArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, kind, subject, source_title, content_text, processing_status, summary, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [question, note, attempt_draft, answer_reference, plan_outline]
+        subject:
+          type: string
+        source_title:
+          type: string
+        content_text:
+          type: string
+        processing_status:
+          type: string
+          enum: [pending, ready, rejected, failed]
+        summary:
+          type: object
+          additionalProperties: false
+          required: [topic_labels, extracted_text_version, confidence]
+          properties:
+            topic_labels:
+              type: array
+              items:
+                type: string
+            extracted_text_version:
+              type: string
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LearningArtifactCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, kind, subject, source_title, content_text]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          maxLength: 120
+        kind:
+          type: string
+          enum: [question, note, attempt_draft, answer_reference, plan_outline]
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 80
+        source_title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        content_text:
+          type: string
+          minLength: 12
+          maxLength: 12000
+    LearningArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, artifact, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        artifact:
+          $ref: '#/components/schemas/LearningArtifact'
+        replayed:
+          type: boolean
+    LearningArtifactDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, artifact]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        artifact:
+          $ref: '#/components/schemas/LearningArtifact'
+    LearningArtifactsResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, artifacts]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningArtifact'
+    LearningAttempt:
+      type: object
+      additionalProperties: false
+      required: [id, artifact_ids, action_id, action_version, kind, content, self_report, elapsed_minutes, created_at]
+      properties:
+        id:
+          type: string
+        artifact_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        action_id:
+          type: [string, 'null']
+        action_version:
+          type: [integer, 'null']
+          minimum: 1
+        kind:
+          type: string
+          enum: [work_log, answer, retry, reflection]
+        content:
+          type: string
+        self_report:
+          type: string
+          enum: [completed, stuck, needs_check]
+        elapsed_minutes:
+          type: [integer, 'null']
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+    LearningAttemptCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, artifact_ids, kind, content]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+        artifact_ids:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            type: string
+        action_id:
+          type: [string, 'null']
+        action_version:
+          type: [integer, 'null']
+          minimum: 1
+        kind:
+          type: string
+          enum: [work_log, answer, retry, reflection]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 6000
+        self_report:
+          type: string
+          enum: [completed, stuck, needs_check]
+        elapsed_minutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+    MaterialLearningAttemptResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, attempt, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        attempt:
+          $ref: '#/components/schemas/LearningAttempt'
+        replayed:
+          type: boolean
+    DiagnosisObservation:
+      type: object
+      additionalProperties: false
+      required: [claim, artifact_id, chunk_id, evidence_excerpt, confidence]
+      properties:
+        claim:
+          type: string
+        artifact_id:
+          type: string
+        chunk_id:
+          type: string
+        evidence_excerpt:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    CompanionDiagnosis:
+      type: object
+      additionalProperties: false
+      required: [id, status, artifact_refs, attempt_id, observations, unknowns, error_tags, action_id, generated_at, policy_version]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [ready, degraded, needs_material, needs_user_check]
+        artifact_refs:
+          type: array
+          items:
+            type: string
+        attempt_id:
+          type: [string, 'null']
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosisObservation'
+        unknowns:
+          type: array
+          items:
+            type: string
+        error_tags:
+          type: array
+          items:
+            type: string
+        action_id:
+          type: [string, 'null']
+        generated_at:
+          type: string
+          format: date-time
+        policy_version:
+          type: string
+    CompanionDiagnosisRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        artifact_ids:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+        attempt_id:
+          type: string
+        focus:
+          type: string
+          maxLength: 800
+        subject:
+          type: string
+          maxLength: 80
+    CompanionDiagnosisResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, diagnosis, action, retrieved_evidence, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ready, degraded, need_material]
+        diagnosis:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionDiagnosis'
+            - type: 'null'
+        action:
+          oneOf:
+            - $ref: '#/components/schemas/CompanionAction'
+            - type: 'null'
+        retrieved_evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidence_type, artifact_id, chunk_id, title, subject, excerpt, locator, score]
+            properties:
+              evidence_type:
+                type: string
+                enum: [private_material]
+              artifact_id:
+                type: string
+              chunk_id:
+                type: string
+              title:
+                type: string
+              subject:
+                type: string
+              excerpt:
+                type: string
+              locator:
+                type: object
+                additionalProperties: false
+                required: [start, end]
+                properties:
+                  start:
+                    type: integer
+                  end:
+                    type: integer
+              score:
+                type: number
+        replayed:
+          type: boolean
+    CompanionActionEvidenceRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, action_version, evidence, evidence_level]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        action_version:
+          type: integer
+          minimum: 1
+        attempt_id:
+          type: string
+        evidence:
+          type: string
+          minLength: 1
+          maxLength: 1200
+        evidence_level:
+          type: integer
+          minimum: 1
+          maximum: 4
+    CompanionActionEvidenceResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, action, next_action, screen_state, replayed]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/CompanionAction'
+        next_action:
+          $ref: '#/components/schemas/CompanionAction'
+        screen_state:
+          type: string
+          enum: [next_action_ready]
+        replayed:
+          type: boolean
     CompanionProfileResponse:
       type: object
       additionalProperties: false
@@ -1158,6 +1818,44 @@ components:
           type: array
           items:
             type: string
+    AiUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, usage]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        usage:
+          type: object
+          additionalProperties: false
+          required: [total_runs, completed_runs, degraded_runs, degraded_rate, input_tokens, output_tokens, estimated_cost_usd, last_run_at]
+          properties:
+            total_runs:
+              type: integer
+              minimum: 0
+            completed_runs:
+              type: integer
+              minimum: 0
+            degraded_runs:
+              type: integer
+              minimum: 0
+            degraded_rate:
+              type: number
+              minimum: 0
+              maximum: 1
+            input_tokens:
+              type: integer
+              minimum: 0
+            output_tokens:
+              type: integer
+              minimum: 0
+            estimated_cost_usd:
+              type: number
+              minimum: 0
+            last_run_at:
+              type: [string, 'null']
+              format: date-time
     UserStateRequest:
       type: object
       additionalProperties: false

@@ -44,6 +44,12 @@ test("auth chapter exposes real login and registration forms", () => {
   assert.match(html, /公开测试版/);
   assert.match(html, /创建账号/);
 
+  state.registrationPolicy = { invitationRequired: true, registrationOpen: true, loaded: true };
+  const inviteHtml = renderPage("/auth", state);
+  assert.match(inviteHtml, /限量邀请码试点/);
+  assert.match(inviteHtml, /name="invite_code"/);
+  assert.match(inviteHtml, /邀请码只能使用一次/);
+
   state.auth.mode = "login";
   const loginHtml = renderPage("/auth", state);
   assert.match(loginHtml, /登录并继续/);
@@ -260,6 +266,63 @@ test("study chapter uses the server-selected companion cycle instead of a fixed 
   assert.doesNotMatch(html, /函数在某点连续/);
 });
 
+test("material study state asks for real material before showing a diagnosis", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.companionCycle = { screenState: "need_material", currentAction: null, task: null };
+  state.learningArtifacts = [];
+  const html = renderPage("/study", state);
+  assert.match(html, /data-demo-form="learning-artifact"/);
+  assert.match(html, /name="source_title"/);
+  assert.match(html, /name="content_text"/);
+  assert.match(html, /交给器灵/);
+  assert.doesNotMatch(html, /data-demo-form="material-evidence"/);
+  assert.doesNotMatch(html, /data-action="companion-check-in"/);
+});
+
+test("material action cards expose citations and remove write controls for terminal actions", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.learningArtifacts = [{ id: "artifact-1", kind: "question", subject: "数学", source_title: "连续题草稿", content_text: "函数在 x=0 处连续。" }];
+  state.companionCycle = {
+    screenState: "action_active",
+    currentAction: {
+      id: "action-1",
+      version: 2,
+      status: "active",
+      title: "拆出连续条件",
+      reason: "材料中出现了连续判断，但还没有拆出验证条件。",
+      expected_evidence: "提交左右极限、函数值和结论。",
+      estimated_minutes: 10,
+      artifact_refs: ["artifact-1"],
+    },
+    diagnosisSummary: { reason: "先核对三个条件。", unknowns: ["还没有标准答案"] },
+    retrievedEvidence: [{ title: "连续题草稿", chunk_id: "chunk-1", excerpt: "函数在 x=0 处连续。", locator: { start: 0, end: 12 } }],
+  };
+  const activeHtml = renderPage("/study", state);
+  assert.match(activeHtml, /拆出连续条件/);
+  assert.match(activeHtml, /chunk-1/);
+  assert.match(activeHtml, /data-action-version="2"/);
+  assert.match(activeHtml, /data-demo-form="material-evidence"/);
+
+  state.companionCycle.currentAction.status = "completed";
+  state.companionCycle.screenState = "cycle_completed";
+  const terminalHtml = renderPage("/study", state);
+  assert.match(terminalHtml, /这条行动已经关闭/);
+  assert.doesNotMatch(terminalHtml, /data-demo-form="material-evidence"/);
+  assert.doesNotMatch(terminalHtml, /data-action="companion-check-in"/);
+});
+
+test("material study warns when durable persistence is not confirmed", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.isDemo = false;
+  state.service = { ...state.service, api: "degraded", persistence: "unknown", persistenceNotice: "数据服务暂时不可用，本次操作没有保存，请稍后重试。" };
+  state.companionCycle = { screenState: "need_material", currentAction: null, task: null };
+  const html = renderPage("/study", state);
+  assert.match(html, /数据保存状态需要确认/);
+  assert.match(html, /本次操作没有保存/);
+});
+
 test("initial postgraduate diagnostic requires three real exercises instead of a fabricated platform score", () => {
   const state = structuredClone(DEMO_STATE);
   state.isDemo = false;
@@ -315,6 +378,17 @@ test("knowledge can be captured from study and added through a composer", () => 
   assert.match(knowledgeHtml, /data-demo-form="knowledge-capture"/);
   assert.match(knowledgeHtml, /name="relatedId"/);
   assert.match(knowledgeHtml, /收录进知识库/);
+});
+
+test("knowledge chapter distinguishes private material and grounded citations", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.learningArtifacts = [{ id: "artifact-1", kind: "note", subject: "408", source_title: "链表错因", content_text: "删除节点前要先找到前驱节点。" }];
+  state.companionCycle = { diagnosisSummary: { observations: [{ claim: "缺少前驱节点判断", artifact_id: "artifact-1", chunk_id: "chunk-1", evidence_excerpt: "删除节点前要先找到前驱节点。", confidence: 0.9 }] } };
+  const html = renderPage("/knowledge", state);
+  assert.match(html, /个人材料 RAG · 证据来源/);
+  assert.match(html, /链表错因/);
+  assert.match(html, /最近一次诊断引用/);
+  assert.match(html, /chunk-1/);
 });
 
 test("functional chapters keep their approved full-screen scene backgrounds", () => {

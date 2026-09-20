@@ -191,6 +191,47 @@ test("public registration creates an account and login remains available", async
   }
 });
 
+test("pilot invitation codes gate public registration and can only be claimed once", async () => {
+  const inviteCode = "pilot_2026_09_20_alpha";
+  const { server } = createBackendServer({ allowDevTokens: false, pilotInviteCodes: inviteCode });
+  const baseUrl = await listen(server);
+  try {
+    const policy = await jsonRequest(baseUrl, "/api/v1/auth/registration-policy");
+    assert.equal(policy.response.status, 200);
+    assert.equal(policy.body.invitation_required, true);
+    assert.equal(policy.body.registration_open, true);
+
+    const missing = await jsonRequest(baseUrl, "/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email: "missing-invite@example.com", password: "correct horse battery" }),
+    });
+    assert.equal(missing.response.status, 403);
+    assert.equal(missing.body.code, "invite_required");
+
+    const invalid = await jsonRequest(baseUrl, "/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email: "invalid-invite@example.com", password: "correct horse battery", invite_code: "pilot_2026_09_20_wrong" }),
+    });
+    assert.equal(invalid.response.status, 403);
+    assert.equal(invalid.body.code, "invite_invalid");
+
+    const registered = await jsonRequest(baseUrl, "/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email: "invited@example.com", password: "correct horse battery", invite_code: inviteCode }),
+    });
+    assert.equal(registered.response.status, 201);
+
+    const replayedCode = await jsonRequest(baseUrl, "/api/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email: "replayed-invite@example.com", password: "correct horse battery", invite_code: inviteCode }),
+    });
+    assert.equal(replayedCode.response.status, 403);
+    assert.equal(replayedCode.body.code, "invite_invalid");
+  } finally {
+    await close(server);
+  }
+});
+
 test("user state persists by authenticated user and cannot be read across accounts", async () => {
   const { server, services } = createBackendServer({ aiEnabled: false });
   const baseUrl = await listen(server);
@@ -565,6 +606,12 @@ test("AI gateway authenticates, validates provider output, scopes requests, and 
     assert.equal(policy.response.status, 422);
     assert.equal(policy.body.rejection_class, "policy");
     assert.equal(policy.body.reason_code, "input_too_long");
+
+    const characterPolicy = await jsonRequest(baseUrl, "/api/v1/ai/requests", { method: "POST", headers: { ...auth(), "Idempotency-Key": "ai-key-character-0001" }, body: JSON.stringify({ request_id: "15151515-1515-4151-8151-151515151515", feature: "concept_explanation", input: "x".repeat(12100) }) });
+    assert.equal(characterPolicy.response.status, 422);
+    assert.equal(characterPolicy.body.rejection_class, "policy");
+    assert.equal(characterPolicy.body.reason_code, "input_too_long");
+    assert.equal(providerCalls.length, 1);
   } finally {
     await close(server);
   }

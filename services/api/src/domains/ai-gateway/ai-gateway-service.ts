@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { LEARNING_ROUTE_SYSTEM_PROMPT } = require("../learning-route/learning-route-prompt.ts");
-const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt } = require("../companion/companion-prompts.ts");
+const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt, MATERIAL_DIAGNOSIS_SYSTEM_PROMPT } = require("../companion/companion-prompts.ts");
 const { normalizeAssistantResponse } = require("./assistant-response.ts");
 
 const AI_FEATURES = Object.freeze([
@@ -12,17 +12,18 @@ const AI_FEATURES = Object.freeze([
   "learning_route_generation",
   "progress_query",
   "emotional_support",
+  "material_diagnosis",
 ]);
 const RESULT_SOURCE_TYPES = new Set(["system_course", "reviewed_content", "ai_assisted", "user_upload", "mixed"]);
 const DEFAULT_POLICY = Object.freeze({
-  policy_version: "2026-09-06.2",
+  policy_version: "2026-09-20.1",
   maxRequestsPerDay: 20,
   maxBurstRequests: 3,
   burstWindowMs: 10 * 60 * 1000,
   maxConcurrentPerUser: 1,
   maxInputTokens: 4000,
   maxOutputTokens: 1000,
-  maxInputCharacters: 16000,
+  maxInputCharacters: 12000,
   maxOutputCharacters: 6000,
   maxProviderResponseBytes: 256 * 1024,
   maxImages: 2,
@@ -33,6 +34,7 @@ const DEFAULT_POLICY = Object.freeze({
     learning_route_generation: 3,
     progress_query: 20,
     emotional_support: 10,
+    material_diagnosis: 10,
   }),
 });
 
@@ -55,9 +57,25 @@ function featureUsageKey(actorId, feature) { return `ai:usage:feature:${actorId}
 function burstUsageKey(actorId) { return `ai:usage:burst:${actorId}`; }
 function concurrencyKey(actorId) { return `ai:active:${actorId}`; }
 function auditKey(actorId) { return `ai:audit:${actorId}`; }
+function usageRunsKey(actorId) { return `ai:usage:runs:${actorId}`; }
 
 function estimateTokens(value) {
   return Math.max(1, Math.ceil(String(value ?? "").length / 4));
+}
+
+function normalizePricing(pricing = {}) {
+  const inputPer1kUsd = Number(pricing.inputPer1kUsd ?? 0);
+  const outputPer1kUsd = Number(pricing.outputPer1kUsd ?? 0);
+  if (![inputPer1kUsd, outputPer1kUsd].every((value) => Number.isFinite(value) && value >= 0 && value <= 1000)) {
+    throw new RangeError("AI token pricing must be finite non-negative numbers up to 1000 USD per 1K tokens");
+  }
+  return Object.freeze({ inputPer1kUsd, outputPer1kUsd });
+}
+
+function estimatedCostUsd(inputTokens, outputTokens, pricing) {
+  const amount = (Math.max(0, Number(inputTokens) || 0) / 1000) * pricing.inputPer1kUsd
+    + (Math.max(0, Number(outputTokens) || 0) / 1000) * pricing.outputPer1kUsd;
+  return Number(amount.toFixed(8));
 }
 
 function isRetryableProviderError(error) {
@@ -114,10 +132,11 @@ function inputValidation(input, policy) {
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown field: ${key}`);
   if (!isValidRequestId(input.request_id)) throw new PlatformError("VALIDATION_ERROR", "request_id must be a UUID");
   if (!AI_FEATURES.includes(input.feature)) throw new PlatformError("VALIDATION_ERROR", "feature is not supported");
-  if (typeof input.input !== "string" || input.input.trim().length === 0 || input.input.length > policy.maxInputCharacters) {
-    throw new PlatformError("VALIDATION_ERROR", `input must contain 1-${policy.maxInputCharacters} characters`);
-  }
+  if (typeof input.input !== "string" || input.input.trim().length === 0) throw new PlatformError("VALIDATION_ERROR", "input must not be empty");
   const normalizedInput = input.input.trim();
+  if (normalizedInput.length > policy.maxInputCharacters) {
+    throw new PlatformError("POLICY_REJECTED", "input exceeds the configured character limit", { metadata: { aiResponse: aiRejectionResponse(input.request_id, policy.policy_version, "input_too_long") } });
+  }
   const imageObjectIds = input.image_object_ids ?? [];
   if (!Array.isArray(imageObjectIds) || imageObjectIds.length > policy.maxImages || imageObjectIds.some((value) => typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(value))) {
     throw new PlatformError("VALIDATION_ERROR", "image_object_ids is invalid");
@@ -203,10 +222,11 @@ class OpenAiCompatibleProvider {
 }
 
 class AiGatewayService {
-  constructor({ database, provider = new MockAiProvider(), policy = DEFAULT_POLICY, enabled = true, clock = () => Date.now(), companion = null, memory = null, knowledge = null }) {
+  constructor({ database, provider = new MockAiProvider(), policy = DEFAULT_POLICY, pricing = {}, enabled = true, clock = () => Date.now(), companion = null, memory = null, knowledge = null }) {
     this.database = database;
     this.provider = provider;
     this.policy = normalizePolicy(policy);
+    this.pricing = normalizePricing(pricing);
     this.enabled = enabled;
     this.clock = clock;
     this.companion = companion;
@@ -299,7 +319,9 @@ class AiGatewayService {
     });
     return {
       input: providerInput,
-      systemPrompt: buildCompanionSystemPrompt({ companionId, companionProfile, memoryProfile, retrieval }),
+      systemPrompt: request.feature === "material_diagnosis"
+        ? MATERIAL_DIAGNOSIS_SYSTEM_PROMPT
+        : buildCompanionSystemPrompt({ companionId, companionProfile, memoryProfile, retrieval }),
     };
   }
 
@@ -320,8 +342,26 @@ class AiGatewayService {
 
   async appendAudit(database, actorId, record) {
     const entries = await database.get(auditKey(actorId)) ?? [];
-    entries.push({ ...record, at: new Date(this.clock()).toISOString() });
+    const entry = { ...record, at: new Date(this.clock()).toISOString() };
+    entries.push(entry);
     await database.set(auditKey(actorId), entries.slice(-100));
+    if (entry.run_id && ["completed", "degraded"].includes(entry.status) && entry.reason_code !== "accepted") {
+      const runs = await database.get(usageRunsKey(actorId)) ?? [];
+      runs.push({
+        run_id: entry.run_id,
+        action_id: entry.action_id ?? null,
+        feature: entry.feature,
+        provider_status: entry.status,
+        reason_code: entry.reason_code,
+        model: entry.model ?? "unknown",
+        latency_ms: Number.isFinite(entry.latency_ms) ? Math.max(0, Math.round(entry.latency_ms)) : 0,
+        input_tokens: Number.isFinite(entry.input_tokens) ? Math.max(0, Math.round(entry.input_tokens)) : 0,
+        output_tokens: Number.isFinite(entry.output_tokens) ? Math.max(0, Math.round(entry.output_tokens)) : 0,
+        estimated_cost_usd: Number.isFinite(entry.estimated_cost_usd) ? Number(entry.estimated_cost_usd) : 0,
+        recorded_at: entry.at,
+      });
+      await database.set(usageRunsKey(actorId), runs.slice(-500));
+    }
   }
 
   async reserve(actorId, request, idempotencyKey) {
@@ -381,7 +421,21 @@ class AiGatewayService {
       await database.set(requestStorageKey(actorId, request.request_id), { fingerprint: requestFingerprint, response, feature: request.feature, input_sha256: sha256(request.input), created_at: now });
       await database.set(requestIndexKey(request.request_id), actorId);
       await database.set(idemStorageKey(actorId, idempotencyKey), { fingerprint: requestFingerprint, response });
-      await this.appendAudit(database, actorId, { feature: request.feature, input_sha256: sha256(request.input), input_tokens: request.estimated_input_tokens, status: response.status, reason_code: "accepted" });
+      await this.appendAudit(database, actorId, { run_id: request.request_id, feature: request.feature, input_sha256: sha256(request.input), input_tokens: request.estimated_input_tokens, status: response.status, reason_code: "accepted" });
+      if (!this.enabled) {
+        await this.appendAudit(database, actorId, {
+          run_id: request.request_id,
+          feature: request.feature,
+          model: typeof this.provider.model === "string" && this.provider.model.trim() ? this.provider.model.trim() : "unknown",
+          input_sha256: sha256(request.input),
+          input_tokens: request.estimated_input_tokens,
+          output_tokens: 0,
+          latency_ms: 0,
+          estimated_cost_usd: estimatedCostUsd(request.estimated_input_tokens, 0, this.pricing),
+          status: "degraded",
+          reason_code: "provider_disabled",
+        });
+      }
       return { response, replayed: false, shouldCallProvider: this.enabled };
     });
   }
@@ -395,6 +449,8 @@ class AiGatewayService {
 
   async completeReserved(actorId, request, rawIdempotencyKey) {
     let degradationReason = "provider_unavailable";
+    const startedAt = this.clock();
+    const model = typeof this.provider.model === "string" && this.provider.model.trim() ? this.provider.model.trim() : "unknown";
     try {
       const providerContext = await this.buildProviderContext(actorId, request);
       let result;
@@ -420,21 +476,47 @@ class AiGatewayService {
       }
       this.setAvailability("available");
       const response = { request_id: request.request_id, status: "completed", policy_version: this.policy.policy_version, result: { text: outputText, source_type: result.source_type } };
+      const outputTokens = estimateTokens(outputText);
       await this.database.transaction(async (database) => {
         const state = await database.get(requestStorageKey(actorId, request.request_id));
         await database.set(requestStorageKey(actorId, request.request_id), { ...state, response, completed_at: this.clock() });
         await database.set(idemStorageKey(actorId, rawIdempotencyKey), { fingerprint: sha256(stableStringify(request)), response });
-        await this.appendAudit(database, actorId, { feature: request.feature, input_sha256: sha256(request.input), input_tokens: request.estimated_input_tokens, output_tokens: estimateTokens(outputText), status: "completed", reason_code: "provider_completed" });
+        await this.appendAudit(database, actorId, {
+          run_id: request.request_id,
+          feature: request.feature,
+          model,
+          input_sha256: sha256(request.input),
+          input_tokens: request.estimated_input_tokens,
+          output_tokens: outputTokens,
+          latency_ms: this.clock() - startedAt,
+          estimated_cost_usd: estimatedCostUsd(request.estimated_input_tokens, outputTokens, this.pricing),
+          status: "completed",
+          reason_code: "provider_completed",
+        });
       });
       return response;
     } catch (error) {
+      if (error instanceof PlatformError && error.code === "PERSISTENCE_UNAVAILABLE") throw error;
+      if (error instanceof PlatformError && error.code === "TIMEOUT") degradationReason = "provider_timeout";
+      if (error instanceof PlatformError && error.code === "DEPENDENCY_UNAVAILABLE") degradationReason = "provider_unavailable";
       this.setAvailability("unavailable", degradationReason);
       const response = { request_id: request.request_id, status: "degraded", policy_version: this.policy.policy_version, fallback_mode: "template" };
       await this.database.transaction(async (database) => {
         const state = await database.get(requestStorageKey(actorId, request.request_id));
         await database.set(requestStorageKey(actorId, request.request_id), { ...state, response, completed_at: this.clock() });
         await database.set(idemStorageKey(actorId, rawIdempotencyKey), { fingerprint: sha256(stableStringify(request)), response });
-        await this.appendAudit(database, actorId, { feature: request.feature, input_sha256: sha256(request.input), input_tokens: request.estimated_input_tokens, status: "degraded", reason_code: degradationReason });
+        await this.appendAudit(database, actorId, {
+          run_id: request.request_id,
+          feature: request.feature,
+          model,
+          input_sha256: sha256(request.input),
+          input_tokens: request.estimated_input_tokens,
+          output_tokens: 0,
+          latency_ms: this.clock() - startedAt,
+          estimated_cost_usd: estimatedCostUsd(request.estimated_input_tokens, 0, this.pricing),
+          status: "degraded",
+          reason_code: degradationReason,
+        });
       });
       return response;
     } finally {
@@ -483,6 +565,45 @@ class AiGatewayService {
   }
 
   async getAudit(actorId) { return (await this.database.get(auditKey(actorId)) ?? []).map((entry) => ({ ...entry })); }
+
+  async linkActionToRun(actorId, runId, actionId, database = this.database) {
+    const audit = await database.get(auditKey(actorId)) ?? [];
+    const nextAudit = audit.map((entry) => entry.run_id === runId ? { ...entry, action_id: actionId } : entry);
+    if (nextAudit.some((entry, index) => entry !== audit[index])) await database.set(auditKey(actorId), nextAudit);
+    const runs = await database.get(usageRunsKey(actorId)) ?? [];
+    const nextRuns = runs.map((run) => run.run_id === runId ? { ...run, action_id: actionId } : run);
+    if (nextRuns.some((run, index) => run !== runs[index])) await database.set(usageRunsKey(actorId), nextRuns);
+  }
+
+  async markRunDegraded(actorId, runId, reasonCode, database = this.database) {
+    const audit = await database.get(auditKey(actorId)) ?? [];
+    const nextAudit = audit.map((entry) => entry.run_id === runId && entry.status === "completed"
+      ? { ...entry, status: "degraded", reason_code: reasonCode }
+      : entry);
+    if (nextAudit.some((entry, index) => entry !== audit[index])) await database.set(auditKey(actorId), nextAudit);
+    const runs = await database.get(usageRunsKey(actorId)) ?? [];
+    const nextRuns = runs.map((run) => run.run_id === runId && run.provider_status === "completed"
+      ? { ...run, provider_status: "degraded", reason_code: reasonCode }
+      : run);
+    if (nextRuns.some((run, index) => run !== runs[index])) await database.set(usageRunsKey(actorId), nextRuns);
+  }
+
+  async getUsage(actorId) {
+    const runs = await this.database.get(usageRunsKey(actorId)) ?? [];
+    const completed = runs.filter((run) => run.provider_status === "completed").length;
+    const degraded = runs.filter((run) => run.provider_status === "degraded").length;
+    const total = completed + degraded;
+    return {
+      total_runs: total,
+      completed_runs: completed,
+      degraded_runs: degraded,
+      degraded_rate: total === 0 ? 0 : Number((degraded / total).toFixed(4)),
+      input_tokens: runs.reduce((sum, run) => sum + (Number(run.input_tokens) || 0), 0),
+      output_tokens: runs.reduce((sum, run) => sum + (Number(run.output_tokens) || 0), 0),
+      estimated_cost_usd: Number(runs.reduce((sum, run) => sum + (Number(run.estimated_cost_usd) || 0), 0).toFixed(8)),
+      last_run_at: runs.at(-1)?.recorded_at ?? null,
+    };
+  }
 }
 
 module.exports = {
@@ -493,6 +614,8 @@ module.exports = {
   OpenAiCompatibleProvider,
   aiRejectionResponse,
   estimateTokens,
+  estimatedCostUsd,
+  normalizePricing,
   normalizeProviderBaseUrl,
   normalizePolicy,
 };

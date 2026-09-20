@@ -1,5 +1,6 @@
 export const DEMO_STATE = {
   isDemo: true,
+  registrationPolicy: { invitationRequired: false, registrationOpen: true, loaded: false },
   pilot: {
     vertical: "考研数学二",
     subject: "高等数学 · 极限与连续",

@@ -8,6 +8,7 @@ const { InMemoryDatabase } = require("../../platform/persistence/database.ts");
 const TOKEN_PATTERN = /^[A-Za-z0-9._~:+-]{16,256}$/;
 const ACTOR_PATTERN = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVITE_CODE_PATTERN = /^[A-Za-z0-9_-]{12,128}$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -55,6 +56,18 @@ function userEmailKey(email) { return `identity:user:email:${email}`; }
 function userIdKey(userId) { return `identity:user:${userId}`; }
 function sessionKey(tokenHash) { return `identity:session:${tokenHash}`; }
 function tokenHash(token) { return crypto.createHash("sha256").update(token, "utf8").digest("hex"); }
+function inviteClaimKey(inviteHash) { return `identity:pilot:invite:${inviteHash}`; }
+
+function normalizeInviteCode(value) {
+  if (typeof value !== "string") return "";
+  const code = value.trim();
+  return INVITE_CODE_PATTERN.test(code) ? code : "";
+}
+
+function normalizeInviteCodeHashes(value) {
+  const codes = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return new Set(codes.map(normalizeInviteCode).filter(Boolean).map(tokenHash));
+}
 
 async function hashPassword(password) {
   const salt = randomBytes(16).toString("base64url");
@@ -116,24 +129,36 @@ class IdentityService {
       "dev-user-002-token": "account-002",
     });
     this.allowDevTokens = options.allowDevTokens ?? true;
+    this.inviteCodeHashes = normalizeInviteCodeHashes(options.pilotInviteCodes);
   }
 
   async register(input) {
-    validateBody(input, new Set(["email", "password", "display_name"]));
+    validateBody(input, new Set(["email", "password", "display_name", "invite_code"]));
     const email = normalizeEmail(input.email);
     const password = validatePassword(input.password);
     const displayName = normalizeDisplayName(input.display_name, email);
+    const inviteHash = this.inviteCodeHashes.size > 0 ? tokenHash(normalizeInviteCode(input.invite_code)) : null;
+    if (this.inviteCodeHashes.size > 0 && !this.inviteCodeHashes.has(inviteHash)) {
+      throw new PlatformError(input.invite_code ? "INVITE_INVALID" : "INVITE_REQUIRED", "pilot invitation is required");
+    }
     const passwordHash = await hashPassword(password);
     const now = new Date(this.clock()).toISOString();
     const user = { id: `user-${randomUUID()}`, email, display_name: displayName, password_hash: passwordHash, status: "active", email_verified: false, created_at: now };
     const created = await this.database.transaction(async (database) => {
       if (typeof database.setIfAbsent !== "function") throw new PlatformError("DEPENDENCY_UNAVAILABLE", "identity persistence does not support unique account creation");
+      if (inviteHash && !(await database.setIfAbsent(inviteClaimKey(inviteHash), user.id))) {
+        throw new PlatformError("INVITE_INVALID", "pilot invitation is invalid or already claimed");
+      }
       if (!(await database.setIfAbsent(userEmailKey(email), user.id))) return false;
       await database.set(userIdKey(user.id), user);
       return true;
     });
     if (!created) throw new PlatformError("CONFLICT", "an account with this email already exists");
     return this.issueSession(user);
+  }
+
+  async getRegistrationPolicy() {
+    return Object.freeze({ invitation_required: this.inviteCodeHashes.size > 0, registration_open: true });
   }
 
   async login(input) {
@@ -195,6 +220,7 @@ module.exports = {
   extractToken,
   hashPassword,
   normalizeEmail,
+  normalizeInviteCode,
   parseCookieHeader,
   publicUser,
   verifyPassword,

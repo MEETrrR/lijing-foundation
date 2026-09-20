@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
+const { publicAction } = require("./companion-action-service.ts");
 
 const INTENTS = new Set(["start", "complete", "stuck", "skip"]);
 const ENERGIES = new Set(["low", "normal", "high"]);
@@ -81,12 +82,14 @@ function taskProjection(task) {
 
 function validateCheckIn(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new PlatformError("VALIDATION_ERROR", "companion check-in must be an object");
-  const allowed = new Set(["request_id", "intent", "task_id", "energy", "blocker_type", "evidence_level", "evidence"]);
+  const allowed = new Set(["request_id", "intent", "task_id", "action_version", "energy", "blocker_type", "evidence_level", "evidence"]);
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new PlatformError("VALIDATION_ERROR", `unknown companion check-in field: ${key}`);
   if (!isValidRequestId(input.request_id)) throw new PlatformError("VALIDATION_ERROR", "request_id must be a UUID");
   if (!INTENTS.has(input.intent)) throw new PlatformError("VALIDATION_ERROR", "intent is invalid");
   const taskId = normalizeOptional(input.task_id, "task_id", 120);
   if (taskId && !SAFE_TASK_ID.test(taskId)) throw new PlatformError("VALIDATION_ERROR", "task_id is invalid");
+  const actionVersion = input.action_version === undefined || input.action_version === null ? null : input.action_version;
+  if (actionVersion !== null && (!Number.isInteger(actionVersion) || actionVersion < 1)) throw new PlatformError("VALIDATION_ERROR", "action_version is invalid");
   const energy = normalizeOptional(input.energy, "energy", 20);
   if (energy && !ENERGIES.has(energy)) throw new PlatformError("VALIDATION_ERROR", "energy is invalid");
   const blockerType = normalizeOptional(input.blocker_type, "blocker_type", 20);
@@ -100,7 +103,7 @@ function validateCheckIn(input) {
     throw new PlatformError("VALIDATION_ERROR", "complete check-ins require evidence and evidence_level");
   }
   if (input.intent === "stuck" && !blockerType) throw new PlatformError("VALIDATION_ERROR", "stuck check-ins require blocker_type");
-  return { request_id: input.request_id, intent: input.intent, task_id: taskId, energy, blocker_type: blockerType, evidence_level: evidenceLevel, evidence };
+  return { request_id: input.request_id, intent: input.intent, task_id: taskId, action_version: actionVersion, energy, blocker_type: blockerType, evidence_level: evidenceLevel, evidence };
 }
 
 function interventionFor(intent, task, blockerType) {
@@ -177,10 +180,12 @@ function publicCycle(cycle) {
 }
 
 class CompanionCycleService {
-  constructor({ database, learningRoutes, userState, clock = () => Date.now() }) {
+  constructor({ database, learningRoutes, userState, actions = null, diagnosis = null, clock = () => Date.now() }) {
     this.database = database;
     this.learningRoutes = learningRoutes;
     this.userState = userState;
+    this.actions = actions;
+    this.diagnosis = diagnosis;
     this.clock = clock;
   }
 
@@ -189,20 +194,63 @@ class CompanionCycleService {
     const date = localDate(this.clock, state?.profile?.timezone);
     const latest = this.learningRoutes ? await this.learningRoutes.getLatest(actorId) : { route: null };
     const route = latest.route?.status === "confirmed" ? latest.route : null;
+    const action = this.actions ? await this.actions.getCurrent(actorId, date) : null;
+    let diagnosis = null;
+    if (action?.diagnosis_ref && this.diagnosis) {
+      try {
+        diagnosis = await this.diagnosis.getDiagnosis(actorId, action.diagnosis_ref);
+      } catch {
+        diagnosis = null;
+      }
+    }
+    if (action) {
+      return {
+        date,
+        route,
+        action,
+        diagnosis,
+        task: {
+          id: action.id,
+          title: action.title,
+          type: "材料诊断",
+          estimated_minutes: action.estimated_minutes,
+          action_version: action.version,
+        },
+      };
+    }
     const task = taskProjection(activeRouteTask(route, date));
-    return { date, route, task };
+    return { date, route, action: null, task };
   }
 
   response(requestId, context, cycle, replayed = false) {
     const visibleTask = context.task ?? cycle?.task ?? null;
     const hasRoute = Boolean(context.route);
-    const nextAction = cycle?.intervention?.next_action
-      ?? (visibleTask ? `今天先完成“${visibleTask.title}”。` : "先确认一条学习路线，器灵才能为你安排今天的行动。");
+    const nextAction = context.action?.reason
+      ?? cycle?.intervention?.next_action
+      ?? (visibleTask ? `今天先完成“${visibleTask.title}”。` : "把正在卡住的题、笔记或草稿交给器灵，先生成一条可验证行动。");
+    const screenState = context.action
+      ? context.action.status === "planned" ? "next_action_ready" : "action_active"
+      : cycle?.status === "completed" ? "cycle_completed" : visibleTask ? "action_active" : "need_material";
     return {
       request_id: requestId,
       date: context.date,
       route_available: hasRoute,
       task: visibleTask ? { ...visibleTask } : null,
+      current_action: context.action ? { ...context.action } : null,
+      diagnosis_summary: context.diagnosis
+        ? {
+          id: context.diagnosis.id,
+          status: context.diagnosis.status,
+          diagnosis_ref: context.diagnosis.id,
+          artifact_refs: [...context.diagnosis.artifact_refs],
+          observations: context.diagnosis.observations.map((observation) => ({ ...observation })),
+          unknowns: [...context.diagnosis.unknowns],
+          error_tags: [...context.diagnosis.error_tags],
+          reason: context.action?.reason ?? "根据你的材料生成当前行动。",
+        }
+        : context.action ? { reason: context.action.reason, diagnosis_ref: context.action.diagnosis_ref, artifact_refs: [...context.action.artifact_refs] } : null,
+      evidence_requirements: context.action?.expected_evidence ?? null,
+      screen_state: screenState,
       cycle: publicCycle(cycle),
       next_action: nextAction,
       replayed,
@@ -220,6 +268,28 @@ class CompanionCycleService {
     const request = validateCheckIn(body);
     const normalizedIdempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     const context = await this.currentContext(actorId, request.request_id);
+    if (context.action) {
+      if (request.task_id && request.task_id !== context.action.id) throw new PlatformError("VALIDATION_ERROR", "task_id does not match the current learning action");
+      if (!request.action_version) throw new PlatformError("VALIDATION_ERROR", "action_version is required for a material action");
+      if (request.intent === "complete") {
+        const result = await this.actions.completeEvidence(actorId, context.date, {
+          request_id: request.request_id,
+          action_id: context.action.id,
+          action_version: request.action_version,
+          evidence: request.evidence,
+          evidence_level: request.evidence_level,
+        }, normalizedIdempotencyKey);
+        return { response: { ...this.response(request.request_id, { ...context, action: result.response.next_action, task: { id: result.response.next_action.id, title: result.response.next_action.title, type: "材料诊断", estimated_minutes: result.response.next_action.estimated_minutes, action_version: result.response.next_action.version } }, null), ...result.response, replayed: result.replayed }, replayed: result.replayed };
+      }
+      const result = await this.actions.transition(actorId, context.date, {
+        request_id: request.request_id,
+        action_id: context.action.id,
+        action_version: request.action_version,
+        intent: request.intent,
+        blocker_type: request.blocker_type,
+      }, normalizedIdempotencyKey);
+      return { response: { ...this.response(request.request_id, { ...context, action: result.response.action, task: { id: result.response.action.id, title: result.response.action.title, type: "材料诊断", estimated_minutes: result.response.action.estimated_minutes, action_version: result.response.action.version } }, null), ...result.response, replayed: result.replayed }, replayed: result.replayed };
+    }
     if (!context.route || !context.task) throw new PlatformError("CONFLICT", "a confirmed learning route with an active task is required");
     if (request.task_id && request.task_id !== context.task.id) throw new PlatformError("VALIDATION_ERROR", "task_id does not match the current server task");
     const requestFingerprint = fingerprint(request);

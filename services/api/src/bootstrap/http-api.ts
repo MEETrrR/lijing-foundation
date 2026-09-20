@@ -17,6 +17,9 @@ const { LearningRouteService } = require("../domains/learning-route/learning-rou
 const { KnowledgeRetrievalService } = require("../domains/knowledge-retrieval/knowledge-retrieval-service.ts");
 const { CompanionService } = require("../domains/companion/companion-service.ts");
 const { CompanionCycleService } = require("../domains/companion-cycle/companion-cycle-service.ts");
+const { CompanionActionService } = require("../domains/companion-cycle/companion-action-service.ts");
+const { CompanionDiagnosisService } = require("../domains/companion-cycle/companion-diagnosis-service.ts");
+const { LearningArtifactService } = require("../domains/learning-artifact/learning-artifact-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -83,11 +86,13 @@ function clearSessionCookie(env) {
 function createDefaultServices(options = {}) {
   const env = options.env ?? process.env;
   const clock = options.clock ?? (() => Date.now());
-  const isProduction = env.APP_ENV === "production" || env.NODE_ENV === "production";
+  const appEnvironment = String(env.APP_ENV ?? "").toLowerCase();
+  const isProduction = appEnvironment === "production" || env.NODE_ENV === "production";
+  const durableEnvironment = isProduction || ["staging", "pilot"].includes(appEnvironment) || env.REQUIRE_DURABLE_PERSISTENCE === "true";
   const configuredDatabase = options.database ?? createSupabaseDatabaseFromEnv(env, options.supabaseDatabase);
-  if (isProduction && !configuredDatabase) throw new Error("SUPABASE_DATABASE_URL is required in production");
   const database = configuredDatabase ?? new InMemoryDatabase();
   const persistence = options.persistence ?? (database instanceof InMemoryDatabase ? "ephemeral" : "durable");
+  if (durableEnvironment && (database instanceof InMemoryDatabase || persistence !== "durable")) throw new Error("SUPABASE_DATABASE_URL is required in production or other durable environments");
   const cache = options.cache ?? new InMemoryCache();
   const queue = options.queue ?? new InMemoryMessageBus();
   const objectStorage = options.objectStorage ?? { async healthCheck() { return { dependency: "object_storage", status: "up", latency_ms: 0, reason_code: "ok" }; } };
@@ -97,6 +102,7 @@ function createDefaultServices(options = {}) {
     allowDevTokens: options.allowDevTokens ?? !isProduction,
     clock,
     sessionTtlMs: options.sessionTtlMs,
+    pilotInviteCodes: options.pilotInviteCodes ?? env.PILOT_INVITE_CODES,
   });
   const learning = options.learning ?? new LearningService({ database, questions: options.questions, clock });
   const memory = options.memory ?? new MemoryService({ database, clock });
@@ -104,8 +110,10 @@ function createDefaultServices(options = {}) {
   const feedback = options.feedback ?? new FeedbackService({ database, clock });
   const companion = options.companion ?? new CompanionService({ database, clock });
   const knowledge = options.knowledge ?? new KnowledgeRetrievalService({ database, clock });
+  const artifacts = options.artifacts ?? new LearningArtifactService({ database, clock });
+  const actions = options.actions ?? new CompanionActionService({ database, artifacts, clock });
   const providerConfigured = Boolean(env.AI_PROVIDER_BASE_URL && env.AI_PROVIDER_API_KEY && env.AI_MODEL);
-  if (isProduction && env.AI_ENABLED === "true" && !providerConfigured) throw new Error("AI provider configuration is required when AI_ENABLED=true in production");
+  if ((isProduction || ["staging", "pilot"].includes(appEnvironment)) && env.AI_ENABLED === "true" && !providerConfigured) throw new Error("AI provider configuration is required when AI_ENABLED=true in a durable environment");
   const configuredTimeout = Number(env.AI_REQUEST_TIMEOUT_MS ?? 75000);
   const providerTimeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout >= 1000 && configuredTimeout <= 120000 ? configuredTimeout : 75000;
   const configuredProvider = options.provider ?? (providerConfigured
@@ -118,11 +126,16 @@ function createDefaultServices(options = {}) {
     })
     : new MockAiProvider());
   const aiEnabled = options.aiEnabled ?? (env.AI_ENABLED === "true" && providerConfigured);
-  const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, clock, companion, memory, knowledge });
+  const aiPricing = options.pricing ?? {
+    inputPer1kUsd: env.AI_INPUT_COST_PER_1K_USD ?? 0,
+    outputPer1kUsd: env.AI_OUTPUT_COST_PER_1K_USD ?? 0,
+  };
+  const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, pricing: aiPricing, clock, companion, memory, knowledge });
   const learningRoutes = options.learningRoutes ?? new LearningRouteService({ database, ai, knowledge, memory, userState, clock });
-  const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, clock });
+  const diagnosis = options.diagnosis ?? new CompanionDiagnosisService({ database, artifacts, actions, ai, userState, clock });
+  const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, companionCycle, ai, knowledge, learningRoutes, health };
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, ai, knowledge, learningRoutes, health };
 }
 
 function createBackendHandler(services) {
@@ -154,6 +167,11 @@ function createBackendHandler(services) {
           persistence: health.status === "up" ? services.persistence : "unknown",
           request_id: context.requestId,
         }, context);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/auth/registration-policy" && request.method === "GET") {
+        sendJson(response, 200, { request_id: context.requestId, ...await services.identity.getRegistrationPolicy() }, context);
         return;
       }
 
@@ -201,10 +219,57 @@ function createBackendHandler(services) {
         return;
       }
 
+      if (url.pathname === "/api/v1/me/ai/usage" && request.method === "GET") {
+        sendJson(response, 200, { request_id: actorContext.requestId, usage: await services.ai.getUsage(actor.actorId) }, actorContext);
+        return;
+      }
+
       if (url.pathname === "/api/v1/companion/check-ins" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
         const result = await services.companionCycle.recordCheckIn(actor.actorId, await readJson(request), idempotencyKey(request));
         sendJson(response, 200, result.response, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-artifacts" && request.method === "GET") {
+        sendJson(response, 200, { request_id: actorContext.requestId, artifacts: await services.artifacts.listArtifacts(actor.actorId, Number(url.searchParams.get("limit") ?? 20)) }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-artifacts" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.artifacts.createArtifact(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 201, { ...result.response, replayed: result.replayed }, actorContext);
+        return;
+      }
+
+      const artifactMatch = /^\/api\/v1\/learning-artifacts\/([^/]+)$/.exec(url.pathname);
+      if (artifactMatch && request.method === "GET") {
+        sendJson(response, 200, { request_id: actorContext.requestId, artifact: await services.artifacts.getArtifact(actor.actorId, decodeURIComponent(artifactMatch[1])) }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-attempts" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.artifacts.recordAttempt(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 201, { ...result.response, replayed: result.replayed }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/companion/diagnoses" && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const result = await services.diagnosis.createDiagnosis(actor.actorId, await readJson(request), idempotencyKey(request));
+        sendJson(response, 200, { ...result.response, replayed: result.replayed }, actorContext);
+        return;
+      }
+
+      const actionEvidenceMatch = /^\/api\/v1\/companion\/actions\/([^/]+)\/evidence$/.exec(url.pathname);
+      if (actionEvidenceMatch && request.method === "POST") {
+        if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
+        const contextForAction = await services.companionCycle.currentContext(actor.actorId, actorContext.requestId);
+        const body = await readJson(request);
+        const result = await services.actions.completeEvidence(actor.actorId, contextForAction.date, { ...body, action_id: decodeURIComponent(actionEvidenceMatch[1]) }, idempotencyKey(request));
+        sendJson(response, 200, { ...result.response, replayed: result.replayed }, actorContext);
         return;
       }
 

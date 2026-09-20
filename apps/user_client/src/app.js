@@ -14,9 +14,20 @@ function notifySessionExpired() {
 function apiError(response, body, fallback) {
   if (response.status === 401) {
     notifySessionExpired();
-    return new Error("登录状态已过期，请重新登录");
+    const error = new Error("登录状态已过期，请重新登录");
+    error.status = response.status;
+    error.code = body.code ?? "unauthenticated";
+    return error;
   }
-  return new Error(body.message || fallback);
+  const error = new Error(body.message || fallback);
+  error.status = response.status;
+  error.code = body.code ?? null;
+  error.retryable = body.retryable === true;
+  return error;
+}
+
+function isPersistenceFailure(error) {
+  return error?.code === "persistence_unavailable";
 }
 
 function isTransientAiFailure(response, body = {}) {
@@ -218,8 +229,87 @@ async function requestCompanionCheckIn(payload) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) throw apiError(response, body, "今日行动暂时没有保存");
-    if (response.status === 409) throw new Error(body.message || "这段行动状态已经变化，请刷新后继续");
+    if (response.status === 409) {
+      const error = new Error(body.message || "这段行动状态已经变化，请刷新后继续");
+      error.status = response.status;
+      error.code = body.code ?? "conflict";
+      throw error;
+    }
     throw new Error(body.message || "今日行动暂时没有保存");
+  }
+  return body;
+}
+
+async function requestRegistrationPolicy() {
+  const response = await fetch("/api/v1/auth/registration-policy", { credentials: "same-origin", cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "试点资格暂时无法获取");
+  return body;
+}
+
+async function requestLearningArtifact(payload) {
+  const requestId = newRequestId();
+  const response = await fetch("/api/v1/learning-artifacts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+    body: JSON.stringify({ request_id: requestId, ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "这份材料暂时没有保存成功");
+  return body;
+}
+
+async function requestLearningArtifacts() {
+  const response = await fetch("/api/v1/learning-artifacts", { credentials: "same-origin", cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "个人材料暂时无法同步");
+  return body;
+}
+
+async function requestMaterialDiagnosis(payload) {
+  const requestId = newRequestId();
+  const response = await fetch("/api/v1/companion/diagnoses", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+    body: JSON.stringify({ request_id: requestId, ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "器灵暂时无法读取这份材料");
+  return body;
+}
+
+async function requestMaterialAttempt(payload) {
+  const requestId = newRequestId();
+  const response = await fetch("/api/v1/learning-attempts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+    body: JSON.stringify({ request_id: requestId, ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "这次学习证据暂时没有保存成功");
+  return body;
+}
+
+async function requestMaterialEvidence(actionId, payload) {
+  const requestId = newRequestId();
+  const response = await fetch(`/api/v1/companion/actions/${encodeURIComponent(actionId)}/evidence`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+    body: JSON.stringify({ request_id: requestId, ...payload }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 409) {
+      const error = new Error(body.message || "这条行动已经更新，请刷新后继续");
+      error.status = response.status;
+      error.code = body.code ?? "action_version_conflict";
+      throw error;
+    }
+    throw apiError(response, body, "这次学习证据暂时没有保存成功");
   }
   return body;
 }
@@ -554,8 +644,9 @@ export function createApp(root = document.querySelector("#app")) {
     state.tour = { active: false, step: 0 };
     state.memory = { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
     state.companionCycle = null;
+    state.learningArtifacts = [];
     state.preferences = { notifications: "important", motion: true };
-    state.service = { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown" };
+    state.service = { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", persistenceNotice: "" };
     state.pilot = {
       ...state.pilot,
       selectedEvidenceLevel: 1,
@@ -600,11 +691,14 @@ export function createApp(root = document.querySelector("#app")) {
   let revealObserver;
   if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
   DEMO_STATE.auth ??= { user: null, mode: "login" };
+  DEMO_STATE.registrationPolicy ??= { invitationRequired: false, registrationOpen: true, loaded: false };
   DEMO_STATE.memory ??= { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
   DEMO_STATE.companion ??= { interactionCount: 0, promptVersion: "", firstSeenAt: null, lastSeenAt: null, companionId: DEMO_STATE.guide.selectedAssetId };
   DEMO_STATE.companionCycle ??= null;
+  DEMO_STATE.learningArtifacts ??= [];
   DEMO_STATE.preferences ??= { notifications: window.localStorage?.getItem("lijing-notifications") ?? "important", motion: motionEnabled };
   DEMO_STATE.service ??= { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", syncStatus: "unknown" };
+  DEMO_STATE.service.persistenceNotice ??= "";
   DEMO_STATE.learningRoute ??= { draft: null, clarification: null, error: "" };
   DEMO_STATE.learningRoute.form ??= null;
 
@@ -616,12 +710,30 @@ export function createApp(root = document.querySelector("#app")) {
   };
 
   const applyCompanionCycle = (body) => {
+    const previous = DEMO_STATE.companionCycle ?? {};
+    const hasCurrentAction = Object.hasOwn(body, "current_action");
+    const currentAction = hasCurrentAction ? body.current_action : body.next_action ?? body.action ?? null;
+    const currentTask = Object.hasOwn(body, "task")
+      ? body.task
+      : currentAction
+        ? { id: currentAction.id, type: "材料诊断", title: currentAction.title, estimated_minutes: currentAction.estimated_minutes, action_version: currentAction.version }
+        : null;
+    const diagnosisSummary = body.diagnosis_summary
+      ?? (body.diagnosis ? {
+        ...body.diagnosis,
+        reason: currentAction?.reason ?? "根据你提交的材料生成当前行动。",
+      } : previous.diagnosisSummary ?? null);
     DEMO_STATE.companionCycle = {
-      date: body.date ?? null,
+      date: body.date ?? previous.date ?? null,
       routeAvailable: Boolean(body.route_available),
-      task: body.task ?? null,
+      task: currentTask,
       cycle: body.cycle ?? null,
-      nextAction: body.next_action ?? "",
+      currentAction,
+      screenState: body.screen_state ?? (currentAction ? (currentAction.status === "planned" ? "next_action_ready" : "action_active") : "need_material"),
+      diagnosisSummary,
+      evidenceRequirements: body.evidence_requirements ?? currentAction?.expected_evidence ?? null,
+      retrievedEvidence: Object.hasOwn(body, "retrieved_evidence") ? (body.retrieved_evidence ?? []) : (previous.retrievedEvidence ?? []),
+      nextAction: body.next_action ?? currentAction?.reason ?? "",
       replayed: Boolean(body.replayed),
     };
   };
@@ -654,9 +766,22 @@ export function createApp(root = document.querySelector("#app")) {
   const syncAuthenticatedAccount = async () => {
     await syncServiceHealth();
     await syncUserState();
-    await Promise.all([syncMemories(), syncCompanion(), syncCompanionCycle()]);
+    await Promise.all([syncMemories(), syncCompanion(), syncCompanionCycle(), syncLearningArtifacts()]);
     await syncLearningRoute();
     await syncReminders();
+  };
+
+  const syncRegistrationPolicy = async () => {
+    try {
+      const policy = await requestRegistrationPolicy();
+      DEMO_STATE.registrationPolicy = {
+        invitationRequired: policy.invitation_required === true,
+        registrationOpen: policy.registration_open !== false,
+        loaded: true,
+      };
+    } catch {
+      DEMO_STATE.registrationPolicy = { ...DEMO_STATE.registrationPolicy, loaded: false };
+    }
   };
 
   const replaceState = (nextState) => {
@@ -707,8 +832,24 @@ export function createApp(root = document.querySelector("#app")) {
     if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
     try {
       applyCompanionCycle(await requestCompanionToday());
-    } catch {
-      DEMO_STATE.companionCycle = { ...DEMO_STATE.companionCycle, syncStatus: "offline" };
+    } catch (error) {
+      if (isPersistenceFailure(error)) {
+        DEMO_STATE.service = { ...DEMO_STATE.service, api: "degraded", persistence: "unknown", syncStatus: "degraded", persistenceNotice: error.message };
+      }
+      DEMO_STATE.companionCycle = { ...DEMO_STATE.companionCycle, syncStatus: "offline", syncError: error.message };
+    }
+  };
+
+  const syncLearningArtifacts = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    try {
+      const body = await requestLearningArtifacts();
+      DEMO_STATE.learningArtifacts = Array.isArray(body.artifacts) ? body.artifacts : [];
+    } catch (error) {
+      if (isPersistenceFailure(error)) {
+        DEMO_STATE.service = { ...DEMO_STATE.service, api: "degraded", persistence: "unknown", syncStatus: "degraded", persistenceNotice: error.message };
+      }
+      DEMO_STATE.learningArtifacts = DEMO_STATE.learningArtifacts ?? [];
     }
   };
 
@@ -742,10 +883,11 @@ export function createApp(root = document.querySelector("#app")) {
         aiStatus: body.ai_status ?? (body.ai_configured === true ? "unknown" : "disabled"),
         aiReasonCode: body.ai_reason_code ?? "",
         persistence: body.status === "ok" && (body.persistence === "durable" || body.persistence === "ephemeral") ? body.persistence : "unknown",
+        persistenceNotice: body.status === "ok" && body.persistence === "durable" ? "" : DEMO_STATE.service?.persistenceNotice ?? "数据服务暂时未恢复，新的学习记录不会被当作已保存。",
         syncStatus: DEMO_STATE.service?.syncStatus ?? "unknown",
       };
     } catch {
-      DEMO_STATE.service = { api: "down", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", syncStatus: "degraded" };
+      DEMO_STATE.service = { api: "down", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", persistenceNotice: "数据服务暂时无法确认，新的学习记录不会被当作已保存。", syncStatus: "degraded" };
     }
   };
 
@@ -1073,11 +1215,18 @@ export function createApp(root = document.querySelector("#app")) {
       element.disabled = true;
       try {
         const payload = { intent, task_id: taskId };
+        if (element.dataset.actionVersion) payload.action_version = Number(element.dataset.actionVersion);
         if (intent === "stuck") payload.blocker_type = root.querySelector("[data-companion-blocker]")?.value || "unknown";
         applyCompanionCycle(await requestCompanionCheckIn(payload));
         render(window.location.pathname);
         toast(intent === "start" ? "已开始这一段，完成后回来留下证据" : intent === "stuck" ? "已记下卡住的位置，先按器灵给出的最小一步继续" : "今天先缓一缓，下一次会从更小的一步开始");
       } catch (error) {
+        if (error.code === "action_version_conflict" || error.status === 409) {
+          await syncCompanionCycle();
+          render(window.location.pathname);
+          toast("这条行动已经更新，页面已刷新，请按最新版本继续");
+          return;
+        }
         toast(error.message);
       } finally {
         element.disabled = false;
@@ -1344,6 +1493,87 @@ export function createApp(root = document.querySelector("#app")) {
       form.dataset.submitting = "true";
       form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = true; });
       try {
+      if (form.dataset.demoForm === "learning-artifact") {
+        if (DEMO_STATE.isDemo) {
+          toast("请先登录真实账号，再把材料交给器灵");
+          return;
+        }
+        const values = new FormData(form);
+        const sourceTitle = String(values.get("source_title") ?? "").trim();
+        const subject = String(values.get("subject") ?? "数学").trim() || "数学";
+        const kind = String(values.get("kind") ?? "question").trim() || "question";
+        const contentText = String(values.get("content_text") ?? "").trim();
+        if (!sourceTitle || contentText.length < 12) {
+          toast("请至少填写材料标题，并粘贴 12 个字以上的内容");
+          return;
+        }
+        const artifactResult = await requestLearningArtifact({ kind, subject, source_title: sourceTitle, content_text: contentText });
+        if (artifactResult.artifact) DEMO_STATE.learningArtifacts = [artifactResult.artifact, ...(DEMO_STATE.learningArtifacts ?? []).filter((item) => item.id !== artifactResult.artifact.id)];
+        const diagnosisResult = await requestMaterialDiagnosis({ artifact_ids: [artifactResult.artifact.id], subject, focus: contentText.slice(0, 800) });
+        applyCompanionCycle(diagnosisResult);
+        if (diagnosisResult.status === "degraded") {
+          DEMO_STATE.service.aiStatus = "unavailable";
+          DEMO_STATE.service.aiAvailable = false;
+          toast("器灵暂时没有完成模型诊断，已根据材料给你一条可执行动作");
+        } else {
+          DEMO_STATE.service.aiStatus = "available";
+          DEMO_STATE.service.aiAvailable = true;
+          toast("材料已读完，第一条行动已经准备好");
+        }
+        render("/study");
+        return;
+      }
+      if (form.dataset.demoForm === "material-evidence") {
+        if (DEMO_STATE.isDemo) {
+          toast("请先登录真实账号，再提交学习证据");
+          return;
+        }
+        const actionId = form.dataset.actionId;
+        const actionVersion = Number(form.dataset.actionVersion);
+        const values = new FormData(form);
+        const evidence = String(values.get("evidence") ?? "").trim();
+        const evidenceLevel = Number(values.get("evidence_level"));
+        const actionState = DEMO_STATE.companionCycle?.currentAction;
+        if (!actionId || !Number.isInteger(actionVersion) || !evidence || !Number.isInteger(evidenceLevel)) {
+          toast("请先留下证据，再提交这一条行动");
+          return;
+        }
+        if (!actionState || actionState.id !== actionId) {
+          toast("这条行动已经更新，请刷新后继续");
+          return;
+        }
+        DEMO_STATE.pilot.selectedEvidenceLevel = evidenceLevel;
+        try {
+          const attemptResult = await requestMaterialAttempt({
+            artifact_ids: actionState.artifact_refs ?? [],
+            action_id: actionId,
+            action_version: actionVersion,
+            kind: "reflection",
+            content: evidence,
+            self_report: "completed",
+            elapsed_minutes: actionState.estimated_minutes,
+          });
+          const evidenceResult = await requestMaterialEvidence(actionId, {
+            action_version: actionVersion,
+            attempt_id: attemptResult.attempt.id,
+            evidence,
+            evidence_level: evidenceLevel,
+          });
+          applyCompanionCycle(evidenceResult);
+          await syncCompanionCycle();
+          render("/study");
+          toast("证据已保存，下一条行动已经生成");
+        } catch (error) {
+          if (error.code === "action_version_conflict" || error.status === 409) {
+            await syncCompanionCycle();
+            render("/study");
+            toast("这条行动已经更新，页面已刷新，请按最新版本继续");
+            return;
+          }
+          throw error;
+        }
+        return;
+      }
       if (form.dataset.demoForm === "knowledge-capture") {
         const values = new FormData(form);
         const title = String(values.get("title") ?? "").trim();
@@ -1631,6 +1861,8 @@ export function createApp(root = document.querySelector("#app")) {
         if (mode === "register") {
           payload.display_name = String(values.get("display_name") ?? "").trim();
           if (!payload.display_name) delete payload.display_name;
+          const inviteCode = String(values.get("invite_code") ?? "").trim();
+          if (inviteCode) payload.invite_code = inviteCode;
         }
         const submit = form.querySelector("button[type=submit]");
         if (submit) submit.disabled = true;
@@ -1638,7 +1870,11 @@ export function createApp(root = document.querySelector("#app")) {
           const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            const message = response.status === 401 && mode === "login"
+            const message = body.code === "invite_required"
+              ? "本轮试点需要邀请码，请联系邀请你的人获取"
+              : body.code === "invite_invalid"
+                ? "邀请码无效或已被使用，请联系邀请你的人"
+                : response.status === 401 && mode === "login"
               ? "账号或密码不正确"
               : response.status === 409
                   ? "这个邮箱已经注册过了"
@@ -1658,6 +1894,12 @@ export function createApp(root = document.querySelector("#app")) {
         }
         return;
       }
+      } catch (error) {
+        if (isPersistenceFailure(error)) {
+          DEMO_STATE.service = { ...DEMO_STATE.service, api: "degraded", persistence: "unknown", syncStatus: "degraded", persistenceNotice: error.message };
+          render(window.location.pathname);
+        }
+        toast(error.message || "这次操作没有完成，请稍后重试");
       } finally {
         if (form.isConnected) {
           form.dataset.submitting = "false";
@@ -1707,6 +1949,7 @@ export function createApp(root = document.querySelector("#app")) {
 
   window.addEventListener("popstate", () => render());
   render();
+  void syncRegistrationPolicy().then(() => render());
   void syncSession().then(syncServiceHealth).then(() => render());
   window.setInterval(() => { void syncReminders(); }, 60000);
   return { navigate, render, state: DEMO_STATE };
