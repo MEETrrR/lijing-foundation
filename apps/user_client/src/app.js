@@ -1972,7 +1972,10 @@ export function createApp(root = document.querySelector("#app")) {
       } finally {
         if (form.isConnected) {
           form.dataset.submitting = "false";
-          form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = false; });
+          form.querySelectorAll("button[type=submit]").forEach((button) => {
+            button.disabled = false;
+            if (form.dataset.demoForm === "learning-artifact" && form.dataset.photoConfirmed === "true") button.innerHTML = `确认文字并交给器灵 ${icon("arrow")}`;
+          });
         }
       }
     }));
