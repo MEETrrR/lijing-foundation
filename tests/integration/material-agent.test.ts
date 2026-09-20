@@ -35,6 +35,9 @@ test("material Agent creates grounded actions, isolates artifacts, and rejects s
       assert.equal(feature, "material_diagnosis");
       const request = JSON.parse(input);
       const material = request.materials[0];
+      assert.equal(request.output_contract.response, "json_object_only");
+      assert.equal(request.output_contract.action.expected_evidence_max_characters, 300);
+      assert.equal(request.output_contract.observation.evidence_excerpt, "copy_exactly_from_the_same_material_excerpt");
       return {
         source_type: "ai_assisted",
         text: JSON.stringify({
