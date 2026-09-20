@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createBackendServer } = require("../../services/api/src/bootstrap/http-api.ts");
+const { validateProviderDiagnosis } = require("../../services/api/src/domains/companion-cycle/companion-diagnosis-service.ts");
+const { InMemoryDatabase } = require("../../services/api/src/platform/persistence/database.ts");
 
 const ids = {
   artifact: "artifact-material-flow-001",
@@ -372,5 +374,186 @@ test("material diagnosis degrades when provider output is invalid or cites unava
     assert.equal(referenceUsage.body.usage.degraded_runs, 1);
   } finally {
     await close(badServer);
+  }
+});
+
+test("cross-subject guidance, confirmed-memory snapshots, and action budgets stay server-grounded", async () => {
+  const providerContexts = [];
+  const provider = {
+    async complete({ input }) {
+      const context = JSON.parse(input);
+      providerContexts.push(context);
+      const material = context.materials[0];
+      return {
+        source_type: "ai_assisted",
+        text: JSON.stringify({
+          observations: [{
+            claim: "作答没有写出原文定位句",
+            artifact_id: material.artifact_id,
+            chunk_id: material.chunk_id,
+            evidence_excerpt: "原文定位句",
+            confidence: 0.8,
+          }],
+          unknowns: ["未提供其他选项，不能判断所有干扰项。"],
+          error_tags: ["evidence-location"],
+          action: {
+            title: "标出题干关键词和原文定位句",
+            reason: "先用题干关键词回到原文，避免只凭印象选择。",
+            estimated_minutes: 10,
+            expected_evidence: "提交题干关键词、原文定位句和一个选项判断理由。",
+          },
+        }),
+      };
+    },
+  };
+  const { server, services } = createBackendServer({ aiEnabled: true, provider });
+  const baseUrl = await listen(server);
+  try {
+    const actor = (await services.identity.authenticate({ authorization: auth().Authorization })).actorId;
+    await services.database.set(`user:state:${actor}`, { profile: { daily_minutes: "10", timezone: "Asia/Shanghai" }, goal_id: "goal-exam" });
+    const candidate = await services.memory.recordIteration(actor, {
+      request_id: "16161616-1616-4161-8161-161616161616",
+      iteration_id: "iteration-snapshot-001",
+      goal_scope: "goal-exam",
+      goal_title: "计算机考研",
+      task_id: "task-snapshot-001",
+      evidence_level: 2,
+      evidence: "我先把阅读题的题干关键词和定位句写下来。",
+      review: { problem: "总是凭印象选阅读题。", reason: "没有回到原文定位。", next_action: "先圈题干关键词和定位句。" },
+    }, "memory-snapshot-candidate-01");
+    assert.equal(candidate.response.candidates.every((memory) => memory.status === "candidate"), true);
+
+    for (const subject of ["数学一", "数学二", "数学三", "408", "计算机自命题", "英语一", "英语二", "政治"]) {
+      const guidance = await jsonRequest(baseUrl, `/api/v1/knowledge/learning-guidance?subject=${encodeURIComponent(subject)}&q=${encodeURIComponent("错题 复盘")}`, { headers: auth() });
+      assert.equal(guidance.response.status, 200);
+      assert.ok(guidance.body.results.length > 0, subject);
+      assert.equal(guidance.body.results[0].provenance.evidence_boundary, "not_for_admission_facts");
+    }
+
+    const artifact = await jsonRequest(baseUrl, "/api/v1/learning-artifacts", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "cross-subject-artifact-01" },
+      body: JSON.stringify({
+        request_id: "17171717-1717-4171-8171-171717171717",
+        kind: "attempt_draft",
+        subject: "英语一",
+        source_title: "英语阅读定位草稿",
+        content_text: "这道阅读题我只凭感觉选择，没有写出题干关键词和原文定位句，也没有说明选项差异。",
+      }),
+    });
+    const first = await jsonRequest(baseUrl, "/api/v1/companion/diagnoses", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "cross-subject-diagnosis-01" },
+      body: JSON.stringify({ request_id: "18181818-1818-4181-8181-181818181818", artifact_ids: [artifact.body.artifact.id], subject: "英语一", focus: "阅读定位" }),
+    });
+    assert.equal(first.response.status, 200);
+    assert.equal(first.body.status, "ready");
+    assert.equal(first.body.action.estimated_minutes, 10);
+    assert.ok(first.body.action.knowledge_node_refs.includes("english.reading-evidence"));
+    assert.ok(first.body.guidance_evidence.some((item) => item.id === "english.reading-evidence"));
+    assert.equal(first.body.learner_snapshot.confirmed_memories.length, 0);
+    assert.equal(providerContexts[0].context.learner_snapshot.action_budget_minutes, 10);
+    assert.equal(providerContexts[0].context.learner_snapshot.confirmed_memories.length, 0);
+    assert.match(providerContexts[0].output_contract.action.estimated_minutes, /10/);
+
+    const confirmed = await services.memory.updateMemory(actor, candidate.response.candidates[0].id, {
+      request_id: "19191919-1919-4191-8191-191919191919",
+      action: "confirm",
+    }, "memory-snapshot-confirm-01");
+    assert.equal(confirmed.response.memory.status, "active");
+    const snapshot = await jsonRequest(baseUrl, "/api/v1/me/learning-snapshot", { headers: auth() });
+    assert.equal(snapshot.response.status, 200);
+    assert.equal(snapshot.body.snapshot.current_action.id, first.body.action.id);
+    assert.ok(snapshot.body.snapshot.confirmed_memories.some((memory) => memory.id === candidate.response.candidates[0].id));
+
+    const second = await jsonRequest(baseUrl, "/api/v1/companion/diagnoses", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "cross-subject-diagnosis-02" },
+      body: JSON.stringify({ request_id: "20202020-2020-4202-8202-202020202020", artifact_ids: [artifact.body.artifact.id], subject: "英语一", focus: "阅读定位" }),
+    });
+    assert.equal(second.response.status, 200);
+    assert.ok(providerContexts[1].context.learner_snapshot.confirmed_memories.some((memory) => memory.id === candidate.response.candidates[0].id));
+
+    assert.throws(() => validateProviderDiagnosis({
+      observations: [{ claim: "定位不足", artifact_id: "artifact-1", chunk_id: "chunk-1", evidence_excerpt: "原文定位句", confidence: 0.8 }],
+      unknowns: [],
+      error_tags: [],
+      action: { title: "超出预算", reason: "不应通过", estimated_minutes: 15, expected_evidence: "不应通过" },
+    }, [{ artifact_id: "artifact-1", chunk_id: "chunk-1", excerpt: "原文定位句" }], 10), /duration/);
+  } finally {
+    await close(server);
+  }
+});
+
+test("a fresh API process rebuilds the current action and learning evidence from persisted facts", async () => {
+  const database = new InMemoryDatabase();
+  const clock = () => Date.UTC(2026, 8, 20, 12, 0, 0);
+  const provider = {
+    async complete({ input }) {
+      const material = JSON.parse(input).materials[0];
+      return {
+        source_type: "ai_assisted",
+        text: JSON.stringify({
+          observations: [{
+            claim: "作答还没有逐项辨析选项",
+            artifact_id: material.artifact_id,
+            chunk_id: material.chunk_id,
+            evidence_excerpt: "没有逐项写出选项的限定词",
+            confidence: 0.78,
+          }],
+          unknowns: ["没有提供完整选项，不能判断其他选项。"],
+          error_tags: ["option-discernment"],
+          action: {
+            title: "写出一个错误项的限定词和排除理由",
+            reason: "先把选项拆成概念与限定词，避免只记答案。",
+            estimated_minutes: 10,
+            expected_evidence: "提交一个错误项的限定词和排除理由。",
+          },
+        }),
+      };
+    },
+  };
+  const first = createBackendServer({ database, clock, aiEnabled: true, provider });
+  const firstUrl = await listen(first.server);
+  try {
+    const artifact = await jsonRequest(firstUrl, "/api/v1/learning-artifacts", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "restart-artifact-01" },
+      body: JSON.stringify({
+        request_id: "21212121-2121-4212-8212-212121212121",
+        kind: "attempt_draft",
+        subject: "政治",
+        source_title: "政治选择题草稿",
+        content_text: "我选了答案，但没有逐项写出选项的限定词，也没有说明为什么要排除错误项。",
+      }),
+    });
+    const diagnosis = await jsonRequest(firstUrl, "/api/v1/companion/diagnoses", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "restart-diagnosis-01" },
+      body: JSON.stringify({ request_id: "22222222-2121-4212-8212-212121212121", artifact_ids: [artifact.body.artifact.id], subject: "政治", focus: "选择题限定词" }),
+    });
+    assert.equal(diagnosis.body.status, "ready");
+    assert.ok(diagnosis.body.action.knowledge_node_refs.includes("politics.choice-discernment"));
+  } finally {
+    await close(first.server);
+  }
+
+  const restarted = createBackendServer({ database, clock, aiEnabled: false });
+  const restartedUrl = await listen(restarted.server);
+  try {
+    const today = await jsonRequest(restartedUrl, "/api/v1/companion/today", { headers: auth() });
+    assert.equal(today.response.status, 200);
+    assert.equal(today.body.current_action.title, "写出一个错误项的限定词和排除理由");
+    assert.ok(today.body.retrieved_evidence.some((item) => item.artifact_id === "artifact-material-flow-001") === false);
+    assert.ok(today.body.retrieved_evidence.some((item) => item.title === "政治选择题草稿"));
+    assert.ok(today.body.guidance_evidence.some((item) => item.id === "politics.choice-discernment"));
+
+    const snapshot = await jsonRequest(restartedUrl, "/api/v1/me/learning-snapshot", { headers: auth() });
+    assert.equal(snapshot.response.status, 200);
+    assert.equal(snapshot.body.snapshot.current_action.id, today.body.current_action.id);
+    assert.ok(snapshot.body.snapshot.recent_materials.some((item) => item.source_title === "政治选择题草稿"));
+    assert.doesNotMatch(JSON.stringify(snapshot.body.snapshot), /没有逐项写出选项/);
+  } finally {
+    await close(restarted.server);
   }
 });

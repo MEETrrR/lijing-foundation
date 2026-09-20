@@ -749,6 +749,7 @@ export function createApp(root = document.querySelector("#app")) {
       diagnosisSummary,
       evidenceRequirements: body.evidence_requirements ?? currentAction?.expected_evidence ?? null,
       retrievedEvidence: Object.hasOwn(body, "retrieved_evidence") ? (body.retrieved_evidence ?? []) : (previous.retrievedEvidence ?? []),
+      guidanceEvidence: Object.hasOwn(body, "guidance_evidence") ? (body.guidance_evidence ?? []) : (previous.guidanceEvidence ?? []),
       nextAction: body.next_action ?? currentAction?.reason ?? "",
       replayed: Boolean(body.replayed),
     };

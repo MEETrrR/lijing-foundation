@@ -244,6 +244,63 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
+  /api/v1/knowledge/learning-guidance:
+    get:
+      tags: [knowledge]
+      operationId: searchLearningGuidance
+      summary: Search curated cross-subject learning guidance nodes
+      description: Returns action-oriented learning guidance. It is not a source for admission rules, dates, or school-specific examination facts.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 80
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 1200
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 6
+            default: 3
+      responses:
+        '200':
+          description: Curated learning guidance nodes with a non-policy evidence boundary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningGuidanceSearchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/me/learning-snapshot:
+    get:
+      tags: [learning]
+      operationId: getMyLearningSnapshot
+      summary: Read the recoverable fact-based learner snapshot
+      description: Rebuilds the current learning context from account-scoped materials, actions, diagnoses, and confirmed memories. It does not expose unconfirmed memory candidates as Agent context.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account-scoped learner snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningSnapshotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/me/state:
     get:
       tags: [profile]
@@ -1276,7 +1333,7 @@ components:
     CompanionAction:
       type: object
       additionalProperties: false
-      required: [id, version, cycle_id, route_id, origin, status, title, reason, diagnosis_ref, artifact_refs, estimated_minutes, expected_evidence, created_at, updated_at]
+      required: [id, version, cycle_id, route_id, origin, status, title, reason, diagnosis_ref, artifact_refs, knowledge_node_refs, estimated_minutes, expected_evidence, created_at, updated_at]
       properties:
         id:
           type: string
@@ -1306,6 +1363,11 @@ components:
         artifact_refs:
           type: array
           maxItems: 8
+          items:
+            type: string
+        knowledge_node_refs:
+          type: array
+          maxItems: 4
           items:
             type: string
         estimated_minutes:
@@ -1393,7 +1455,7 @@ components:
     CompanionTodayResponse:
       type: object
       additionalProperties: false
-      required: [request_id, date, route_available, task, current_action, diagnosis_summary, evidence_requirements, screen_state, cycle, next_action, replayed]
+      required: [request_id, date, route_available, task, current_action, diagnosis_summary, evidence_requirements, retrieved_evidence, guidance_evidence, screen_state, cycle, next_action, replayed]
       properties:
         request_id:
           type: string
@@ -1445,6 +1507,14 @@ components:
             - type: 'null'
         evidence_requirements:
           type: [string, 'null']
+        retrieved_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrivateMaterialEvidence'
+        guidance_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningGuidanceEvidence'
         screen_state:
           type: string
           enum: [action_active, need_material, cycle_completed, next_action_ready]
@@ -1727,6 +1797,229 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    PrivateMaterialEvidence:
+      type: object
+      additionalProperties: false
+      required: [evidence_type, artifact_id, chunk_id, title, subject, excerpt, locator, score]
+      properties:
+        evidence_type:
+          type: string
+          enum: [private_material]
+        artifact_id:
+          type: string
+        chunk_id:
+          type: string
+        title:
+          type: string
+        subject:
+          type: string
+        excerpt:
+          type: string
+        locator:
+          type: object
+          additionalProperties: false
+          required: [start, end]
+          properties:
+            start:
+              type: integer
+            end:
+              type: integer
+        score:
+          type: number
+    LearningGuidanceEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, track_ids, title, summary, common_mistakes, action_pattern, evidence_pattern, score, provenance]
+      properties:
+        id:
+          type: string
+        track_ids:
+          type: array
+          items:
+            type: string
+        title:
+          type: string
+        summary:
+          type: string
+        common_mistakes:
+          type: array
+          items:
+            type: string
+        action_pattern:
+          type: string
+        evidence_pattern:
+          type: string
+        score:
+          type: number
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [source_type, index_version, review_status, evidence_boundary]
+          properties:
+            source_type:
+              type: string
+              const: curated_learning_guidance
+            index_version:
+              type: string
+            review_status:
+              type: string
+              const: curated
+            evidence_boundary:
+              type: string
+              const: not_for_admission_facts
+    LearningGuidanceSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, subject, track, query, learning_knowledge_index_version, retrieved_at, results]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        subject:
+          type: [string, 'null']
+        track:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [id, label]
+              properties:
+                id:
+                  type: string
+                label:
+                  type: string
+            - type: 'null'
+        query:
+          type: string
+        learning_knowledge_index_version:
+          type: string
+        retrieved_at:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningGuidanceEvidence'
+    LearnerSnapshotAction:
+      type: object
+      additionalProperties: false
+      required: [id, version, status, title, artifact_refs, knowledge_node_refs]
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [planned, active, stuck, completed, superseded, skipped]
+        title:
+          type: string
+        artifact_refs:
+          type: array
+          items:
+            type: string
+        knowledge_node_refs:
+          type: array
+          items:
+            type: string
+    LearnerSnapshot:
+      type: object
+      additionalProperties: false
+      required: [snapshot_version, generated_at, date, goal_scope, action_budget_minutes, current_action, unresolved, confirmed_memories, recent_materials]
+      properties:
+        snapshot_version:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date
+        goal_scope:
+          type: string
+          enum: [global, goal-exam, goal-skill, goal-life]
+        action_budget_minutes:
+          type: integer
+          minimum: 5
+          maximum: 30
+        current_action:
+          oneOf:
+            - $ref: '#/components/schemas/LearnerSnapshotAction'
+            - type: 'null'
+        unresolved:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [diagnosis_id, status, unknowns, error_tags]
+              properties:
+                diagnosis_id:
+                  type: string
+                status:
+                  type: string
+                  enum: [ready, degraded]
+                unknowns:
+                  type: array
+                  items:
+                    type: string
+                error_tags:
+                  type: array
+                  items:
+                    type: string
+            - type: 'null'
+        confirmed_memories:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, kind, scope, content, confirmed_at, updated_at]
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+                enum: [friction, strategy]
+              scope:
+                type: string
+                enum: [global, goal-exam, goal-skill, goal-life]
+              content:
+                type: string
+              confirmed_at:
+                type: [string, 'null']
+                format: date-time
+              updated_at:
+                type: string
+                format: date-time
+        recent_materials:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, subject, kind, source_title, updated_at]
+            properties:
+              id:
+                type: string
+              subject:
+                type: string
+              kind:
+                type: string
+                enum: [question, note, attempt_draft, answer_reference, plan_outline]
+              source_title:
+                type: string
+              updated_at:
+                type: string
+                format: date-time
+    LearningSnapshotResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, snapshot]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        snapshot:
+          $ref: '#/components/schemas/LearnerSnapshot'
     CompanionDiagnosis:
       type: object
       additionalProperties: false
@@ -1786,7 +2079,7 @@ components:
     CompanionDiagnosisResponse:
       type: object
       additionalProperties: false
-      required: [request_id, status, diagnosis, action, retrieved_evidence, replayed]
+      required: [request_id, status, diagnosis, action, retrieved_evidence, guidance_evidence, learner_snapshot, replayed]
       properties:
         request_id:
           type: string
@@ -1805,34 +2098,13 @@ components:
         retrieved_evidence:
           type: array
           items:
-            type: object
-            additionalProperties: false
-            required: [evidence_type, artifact_id, chunk_id, title, subject, excerpt, locator, score]
-            properties:
-              evidence_type:
-                type: string
-                enum: [private_material]
-              artifact_id:
-                type: string
-              chunk_id:
-                type: string
-              title:
-                type: string
-              subject:
-                type: string
-              excerpt:
-                type: string
-              locator:
-                type: object
-                additionalProperties: false
-                required: [start, end]
-                properties:
-                  start:
-                    type: integer
-                  end:
-                    type: integer
-              score:
-                type: number
+            $ref: '#/components/schemas/PrivateMaterialEvidence'
+        guidance_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningGuidanceEvidence'
+        learner_snapshot:
+          $ref: '#/components/schemas/LearnerSnapshot'
         replayed:
           type: boolean
     CompanionActionEvidenceRequest:

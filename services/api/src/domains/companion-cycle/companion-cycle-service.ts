@@ -180,12 +180,14 @@ function publicCycle(cycle) {
 }
 
 class CompanionCycleService {
-  constructor({ database, learningRoutes, userState, actions = null, diagnosis = null, clock = () => Date.now() }) {
+  constructor({ database, learningRoutes, userState, actions = null, diagnosis = null, artifacts = null, examKnowledge = null, clock = () => Date.now() }) {
     this.database = database;
     this.learningRoutes = learningRoutes;
     this.userState = userState;
     this.actions = actions;
     this.diagnosis = diagnosis;
+    this.artifacts = artifacts;
+    this.examKnowledge = examKnowledge;
     this.clock = clock;
   }
 
@@ -250,6 +252,8 @@ class CompanionCycleService {
         }
         : context.action ? { reason: context.action.reason, diagnosis_ref: context.action.diagnosis_ref, artifact_refs: [...context.action.artifact_refs] } : null,
       evidence_requirements: context.action?.expected_evidence ?? null,
+      retrieved_evidence: [],
+      guidance_evidence: [],
       screen_state: screenState,
       cycle: publicCycle(cycle),
       next_action: nextAction,
@@ -259,9 +263,31 @@ class CompanionCycleService {
 
   async getToday(actorId, requestId) {
     const context = await this.currentContext(actorId, requestId);
-    if (!context.route) return this.response(requestId, context, null);
-    const cycle = await this.database.get(cycleKey(actorId, context.date));
-    return this.response(requestId, context, cycle ?? null);
+    const cycle = context.route ? await this.database.get(cycleKey(actorId, context.date)) : null;
+    const response = this.response(requestId, context, cycle ?? null);
+    if (context.diagnosis && this.artifacts) {
+      const evidence = [];
+      for (const observation of context.diagnosis.observations) {
+        const artifact = await this.artifacts.getStoredArtifact(actorId, observation.artifact_id);
+        const chunk = (artifact.chunks ?? []).find((item) => item.id === observation.chunk_id);
+        if (!chunk || !chunk.text.includes(observation.evidence_excerpt)) continue;
+        evidence.push({
+          evidence_type: "private_material",
+          artifact_id: artifact.id,
+          chunk_id: chunk.id,
+          title: artifact.source_title,
+          subject: artifact.subject,
+          excerpt: chunk.text,
+          locator: { start: chunk.start, end: chunk.end },
+          score: observation.confidence,
+        });
+      }
+      response.retrieved_evidence = evidence;
+    }
+    if (context.action?.knowledge_node_refs?.length && this.examKnowledge) {
+      response.guidance_evidence = this.examKnowledge.getByIds(context.action.knowledge_node_refs);
+    }
+    return response;
   }
 
   async recordCheckIn(actorId, body, rawIdempotencyKey) {

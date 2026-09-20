@@ -16,10 +16,12 @@ const { FeedbackService } = require("../domains/feedback/feedback-service.ts");
 const { AiGatewayService, MockAiProvider, OpenAiCompatibleProvider } = require("../domains/ai-gateway/ai-gateway-service.ts");
 const { LearningRouteService } = require("../domains/learning-route/learning-route-service.ts");
 const { KnowledgeRetrievalService } = require("../domains/knowledge-retrieval/knowledge-retrieval-service.ts");
+const { ExamKnowledgeService } = require("../domains/knowledge-retrieval/exam-knowledge-service.ts");
 const { CompanionService } = require("../domains/companion/companion-service.ts");
 const { CompanionCycleService } = require("../domains/companion-cycle/companion-cycle-service.ts");
 const { CompanionActionService } = require("../domains/companion-cycle/companion-action-service.ts");
 const { CompanionDiagnosisService } = require("../domains/companion-cycle/companion-diagnosis-service.ts");
+const { LearnerSnapshotService } = require("../domains/companion-cycle/learner-snapshot-service.ts");
 const { LearningArtifactService } = require("../domains/learning-artifact/learning-artifact-service.ts");
 const { VisionMaterialService, MAX_IMAGE_BYTES } = require("../domains/learning-artifact/vision-material-service.ts");
 
@@ -124,6 +126,7 @@ function createDefaultServices(options = {}) {
   const feedback = options.feedback ?? new FeedbackService({ database, clock });
   const companion = options.companion ?? new CompanionService({ database, clock });
   const knowledge = options.knowledge ?? new KnowledgeRetrievalService({ database, clock });
+  const examKnowledge = options.examKnowledge ?? new ExamKnowledgeService({ clock });
   const artifacts = options.artifacts ?? new LearningArtifactService({ database, clock });
   const actions = options.actions ?? new CompanionActionService({ database, artifacts, clock });
   const providerConfigured = Boolean(env.AI_PROVIDER_BASE_URL && env.AI_PROVIDER_API_KEY && env.AI_MODEL);
@@ -147,10 +150,12 @@ function createDefaultServices(options = {}) {
   const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, pricing: aiPricing, clock, companion, memory, knowledge });
   const visionMaterials = options.visionMaterials ?? new VisionMaterialService({ ai });
   const learningRoutes = options.learningRoutes ?? new LearningRouteService({ database, ai, knowledge, memory, userState, clock });
-  const diagnosis = options.diagnosis ?? new CompanionDiagnosisService({ database, artifacts, actions, ai, userState, clock });
-  const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, clock });
+  const snapshots = options.snapshots ?? new LearnerSnapshotService({ actions, artifacts, diagnosis: null, memory, userState, clock });
+  const diagnosis = options.diagnosis ?? new CompanionDiagnosisService({ database, artifacts, actions, ai, userState, examKnowledge, snapshots, clock });
+  if (!options.snapshots) snapshots.diagnosis = diagnosis;
+  const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, artifacts, examKnowledge, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, ai, visionMaterials, knowledge, learningRoutes, health };
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, snapshots, ai, visionMaterials, knowledge, examKnowledge, learningRoutes, health };
 }
 
 function createBackendHandler(services) {
@@ -226,6 +231,11 @@ function createBackendHandler(services) {
 
       if (url.pathname === "/api/v1/me/companion" && request.method === "GET") {
         sendJson(response, 200, await services.companion.getProfile(actor.actorId, actorContext.requestId), actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/me/learning-snapshot" && request.method === "GET") {
+        sendJson(response, 200, { request_id: actorContext.requestId, snapshot: await services.snapshots.getSnapshot(actor.actorId, actorContext.requestId) }, actorContext);
         return;
       }
 
@@ -313,6 +323,18 @@ function createBackendHandler(services) {
           region: url.searchParams.get("region") ?? "",
           limit: Number(url.searchParams.get("limit") ?? 6),
         })) }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/knowledge/learning-guidance" && request.method === "GET") {
+        sendJson(response, 200, {
+          request_id: actorContext.requestId,
+          ...services.examKnowledge.search({
+            subject: url.searchParams.get("subject") ?? "",
+            query: url.searchParams.get("q") ?? "",
+            limit: Number(url.searchParams.get("limit") ?? 3),
+          }),
+        }, actorContext);
         return;
       }
 

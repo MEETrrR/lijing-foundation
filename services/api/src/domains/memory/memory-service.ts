@@ -183,6 +183,23 @@ class MemoryService {
     return publicProfile(profile, requestId, scope);
   }
 
+  async getConfirmedContext(actorId, scope) {
+    if (scope !== undefined && !MEMORY_SCOPES.has(scope)) throw new PlatformError("VALIDATION_ERROR", "scope is invalid");
+    const profile = await this.database.get(profileKey(actorId)) ?? initialProfile();
+    return profile.memories
+      .filter((memory) => memory.status === "active" && (!scope || memory.scope === scope || memory.scope === "global"))
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+      .slice(0, 8)
+      .map((memory) => ({
+        id: memory.id,
+        kind: memory.kind,
+        content: memory.content,
+        scope: memory.scope,
+        confirmed_at: memory.confirmed_at ?? null,
+        updated_at: memory.updated_at,
+      }));
+  }
+
   async recordIteration(actorId, input, rawIdempotencyKey) {
     const request = validateIteration(input);
     const normalizedIdempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);

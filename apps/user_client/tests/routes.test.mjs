@@ -280,6 +280,7 @@ test("material intake supports a temporary photo-to-text confirmation step", asy
   assert.match(html, /拍照 \/ 上传图片/);
   assert.match(html, /选择图片、上传文件或直接拍摄/);
   assert.match(html, /accept="image\/jpeg,image\/png,image\/gif"/);
+  for (const subject of ["数学一", "数学二", "数学三", "408", "计算机自命题", "英语一", "英语二", "政治"]) assert.match(html, new RegExp(subject));
   assert.match(html, /capture="environment"/);
   assert.match(html, /图片仅用于本次识别，不会保存/);
   assert.match(html, /material-submit-label--confirm/);
@@ -325,10 +326,14 @@ test("material action cards expose citations and remove write controls for termi
     },
     diagnosisSummary: { reason: "先核对三个条件。", unknowns: ["还没有标准答案"] },
     retrievedEvidence: [{ title: "连续题草稿", chunk_id: "chunk-1", excerpt: "函数在 x=0 处连续。", locator: { start: 0, end: 12 } }],
+    guidanceEvidence: [{ title: "极限与连续", summary: "把左右极限、函数值和定义条件拆开书写。", action_pattern: "分别写已知条件、左右极限和函数值。" }],
   };
   const activeHtml = renderPage("/study", state);
   assert.match(activeHtml, /拆出连续条件/);
   assert.match(activeHtml, /chunk-1/);
+  assert.match(activeHtml, /学习依据/);
+  assert.match(activeHtml, /极限与连续/);
+  assert.match(activeHtml, /不用于招生或日期事实/);
   assert.match(activeHtml, /data-action-version="2"/);
   assert.match(activeHtml, /data-demo-form="material-evidence"/);
 

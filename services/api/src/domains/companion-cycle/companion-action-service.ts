@@ -49,6 +49,7 @@ function publicAction(action) {
     reason: action.reason,
     diagnosis_ref: action.diagnosis_ref,
     artifact_refs: [...action.artifact_refs],
+    knowledge_node_refs: [...(action.knowledge_node_refs ?? [])],
     estimated_minutes: action.estimated_minutes,
     expected_evidence: action.expected_evidence,
     created_at: action.created_at,
@@ -65,6 +66,9 @@ function validateActionPayload(payload) {
   if (!title || title.length > 160 || !reason || reason.length > 300 || !expectedEvidence || expectedEvidence.length > 300) throw new PlatformError("VALIDATION_ERROR", "action text is invalid");
   if (!Number.isInteger(payload.estimated_minutes) || payload.estimated_minutes < 5 || payload.estimated_minutes > 30) throw new PlatformError("VALIDATION_ERROR", "estimated_minutes must be an integer from 5 to 30");
   if (!Array.isArray(payload.artifact_refs) || payload.artifact_refs.length > 8 || payload.artifact_refs.some((value) => typeof value !== "string" || !SAFE_ID.test(value))) throw new PlatformError("VALIDATION_ERROR", "artifact_refs is invalid");
+  const knowledgeNodeRefs = payload.knowledge_node_refs ?? [];
+  if (!Array.isArray(knowledgeNodeRefs) || knowledgeNodeRefs.length > 4 || knowledgeNodeRefs.some((value) => typeof value !== "string" || !SAFE_ID.test(value))) throw new PlatformError("VALIDATION_ERROR", "knowledge_node_refs is invalid");
+  if (payload.origin === "artifact_diagnosis" && (!payload.diagnosis_ref || payload.artifact_refs.length < 1)) throw new PlatformError("VALIDATION_ERROR", "artifact diagnosis actions require diagnosis and material references");
   return {
     route_id: payload.route_id ?? null,
     origin: payload.origin,
@@ -72,6 +76,7 @@ function validateActionPayload(payload) {
     reason,
     diagnosis_ref: payload.diagnosis_ref ?? null,
     artifact_refs: [...new Set(payload.artifact_refs)],
+    knowledge_node_refs: [...new Set(knowledgeNodeRefs)],
     estimated_minutes: payload.estimated_minutes,
     expected_evidence: expectedEvidence,
   };

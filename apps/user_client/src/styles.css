@@ -591,6 +591,10 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .material-citations article { padding: 12px 13px; background: rgba(217, 211, 198, .32); border-left: 2px solid rgba(189, 141, 67, .7); }
 .material-citations article > span, .material-citations article small { color: var(--rock); font-size: 9px; }
 .material-citations article p { margin: 8px 0; color: var(--ink); font-size: 11px; line-height: 1.75; }
+.material-guidance { display: grid; gap: 10px; margin-top: 27px; padding-top: 24px; border-top: 1px solid var(--line-dark); }
+.material-guidance article { display: grid; gap: 5px; padding: 12px 13px; background: rgba(217, 211, 198, .24); border-left: 2px solid rgba(169, 75, 64, .62); }
+.material-guidance article strong { color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 13px; font-weight: 500; }
+.material-guidance article p, .material-guidance article small { margin: 0; color: var(--rock); font-size: 10px; line-height: 1.65; }
 .material-ref { display: inline-flex; margin: 6px 8px 0 0; padding: 4px 7px; color: var(--rock); background: rgba(217, 211, 198, .42); border: 1px solid rgba(13, 23, 26, .14); font-size: 9px; }
 .material-evidence { gap: 13px; }
 .material-evidence > p { margin: 0; color: var(--rock); font-size: 10px; line-height: 1.75; }
