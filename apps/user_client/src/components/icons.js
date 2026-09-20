@@ -11,6 +11,7 @@ const PATHS = {
   bell: '<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0 1 4"/><path d="M20 5v6h-6"/>',
   play: '<path d="m9 6 9 6-9 6V6Z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   settings: '<path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/>',

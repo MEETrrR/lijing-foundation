@@ -103,7 +103,7 @@ function pageGoals(state) {
 function defaultRouteTargetDate() {
   const date = new Date();
   date.setMonth(date.getMonth() + 6);
-  return date.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 const ROUTE_ASSESSMENT_LABELS = {
@@ -155,7 +155,7 @@ function learningRouteResult(draft, clarification, error) {
   if (!draft && clarification) {
     return `<section class="route-empty route-empty--clarification"><span class="section-kicker">还需要一点上下文</span><h2>先把目标说具体，<br><em>再让 AI 排路线。</em></h2><p>${esc(clarification.message || "当前信息不足，继续生成会让系统替你猜。")}</p><ul>${(clarification.questions ?? []).map((question) => `<li>${esc(question)}</li>`).join("")}</ul><small>补充后再次提交，原有表单内容会保留。</small></section>`;
   }
-  if (!draft) return `<section class="route-empty">${error ? `<div class="route-error" role="alert">${esc(error)}</div>` : ""}<span class="section-kicker">尚未生成路线</span><h2>先留下你的真实条件。</h2><p>系统只会在服务端 AI 返回通过结构校验的草案后展示路线，不会拿示例计划冒充你的结果。</p></section>`;
+  if (!draft) return `<section class="route-empty">${error ? `<div class="route-error" role="alert"><strong>${esc(error)}</strong><small>你刚才填写的目标和时间已经保留，不需要重新填写。</small><button class="button button--outline" type="button" data-action="retry-learning-route">重新生成路线 ${icon("refresh")}</button></div>` : ""}<span class="section-kicker">尚未生成路线</span><h2>先留下你的真实条件。</h2><p>系统只会在服务端 AI 返回通过结构校验的草案后展示路线，不会拿示例计划冒充你的结果。</p></section>`;
   const feasibilityText = { feasible: "可确认", tight: "时间过紧", needs_adjustment: "需要调整" }[draft.feasibility.status] ?? "待核算";
   const canConfirm = draft.status === "draft" && ["feasible", "tight"].includes(draft.feasibility.status);
   const evidence = draft.knowledge_evidence ?? [];
@@ -170,11 +170,22 @@ function learningRouteResult(draft, clarification, error) {
 
 function pageLearningRoute(state) {
   const draft = state.learningRoute?.draft ?? null;
-  const formGoal = draft?.goal ?? {};
+  const savedForm = state.learningRoute?.form ?? {};
+  const formGoal = draft?.goal ?? {
+    type: savedForm.goal_type,
+    name: savedForm.goal_name,
+    target_date: savedForm.target_date,
+    weekly_hours: savedForm.weekly_hours,
+    daily_minutes: savedForm.daily_minutes,
+    region: savedForm.region,
+    focus_areas: savedForm.focus_areas,
+    constraints: savedForm.constraints,
+    baseline_assessment: savedForm.baseline_assessment,
+  };
   const assessment = formGoal.baseline_assessment ?? { subject: formGoal.focus_areas?.[0] ?? "", study_stage: "not_started", recent_result: "no_recent_practice", primary_blocker: "concept", evidence: "" };
   const goalType = formGoal.type ?? "postgraduate_entrance_exam";
   const targetDate = formGoal.target_date ?? defaultRouteTargetDate();
-  const currentDate = new Date().toISOString().slice(0, 10);
+  const currentDate = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const firstRoute = !draft && !state.onboarding?.completed;
   const selectedGoal = state.goals.find((goal) => goal.selected);
   return `<div class="page page--route" data-demo-state="${state.isDemo}">${intro("/route", state)}<div class="route-layout"><section class="route-intake"><div class="section-title"><div><span>${firstRoute ? "考研试点信息已带入" : "真实条件"}</span><h2>${firstRoute ? "先校准起点，<br><em>再生成今天这一步。</em>" : "给路线一张<br><em>可以落地的底图。</em>"}</h2></div><span class="route-intake__stamp">${state.isDemo ? "登录后可生成" : "SERVER AI"}</span></div>${firstRoute ? `<div class="route-context"><strong>${esc(selectedGoal?.title || state.user?.target || "考研备考")}</strong><span>${esc(state.user?.name || "行者")} · 每日 ${esc(state.user?.dailyMinutes || "25")} 分钟</span><small>首期只做考研伴学：先留下真实起点，再核算时间和路线。</small></div>` : ""}<form class="route-form" data-demo-form="learning-route"><input name="goal_type" type="hidden" value="${esc(goalType)}"><label>当前试点方向<input value="考研备考" readonly aria-readonly="true"><small>考公、就业与泛学习方向开发中，暂不开放建路。</small></label><label>目标名称<input name="goal_name" type="text" maxlength="120" value="${esc(formGoal.name ?? "")}" placeholder="例如：2027 计算机专业硕士复习" required></label><input name="daily_minutes" type="hidden" value="${esc(formGoal.daily_minutes ?? state.user.dailyMinutes ?? 25)}"><div class="route-form__grid"><label>目标日期<input name="target_date" type="date" min="${currentDate}" value="${esc(targetDate)}" required></label><label>每周可投入小时<input name="weekly_hours" type="number" min="1" max="60" step="1" value="${esc(formGoal.weekly_hours ?? state.user.weeklyHours ?? 8)}" required></label><label>报考地区 <small>可选</small><input name="region" type="text" maxlength="120" value="${esc(formGoal.region ?? state.user.region ?? "")}" placeholder="例如：江西"></label><label>重点科目 <small>可选，多个用中文逗号隔开</small><input name="focus_areas" type="text" maxlength="500" value="${esc((formGoal.focus_areas ?? []).join("，"))}" placeholder="例如：数学，英语，专业课，政治"></label></div>${routeAssessmentForm(assessment)}<label>现实约束 <small>每行一条，可选</small><textarea name="constraints" rows="4" maxlength="1600" placeholder="例如：工作日只能晚上学习&#10;周末可安排整块时间">${esc((formGoal.constraints ?? []).join("\n"))}</textarea></label><button class="button button--ink" type="submit">先生成独立诊断，再建立路线 ${icon("arrow")}</button></form></section>${learningRouteResult(draft, state.learningRoute?.clarification, state.learningRoute?.error)}</div></div>`;
@@ -232,8 +243,14 @@ function evidenceReview(state) {
     nextAction: "检查服务配置后重新提交，不自动推断学习结果。",
   };
   const evidence = state.pilot.submittedEvidence ? `用户提交：${esc(state.pilot.submittedEvidence)}` : review.evidenceUsed;
-  const status = state.pilot.reviewError && state.pilot.review ? "规则复盘" : state.pilot.reviewReady ? "AI 复盘" : state.isDemo ? "演示样例" : "待提交";
+  const status = reviewStatusFor(state);
   return `<section class="evidence-review"><div class="section-title"><div><span>行动型 AI 复盘</span><h2>下一步不是一句鼓励，<br><em>而是一件明天能做的事。</em></h2></div><span class="evidence-review__status">${status}</span></div><div class="evidence-review__grid"><div class="evidence-review__cell evidence-review__cell--evidence"><span>用了什么证据</span><strong>${evidence}</strong></div><div class="evidence-review__cell evidence-review__cell--problem"><span>发现了什么问题</span><strong>${esc(review.problem)}</strong></div><div class="evidence-review__cell evidence-review__cell--reason"><span>为什么这样判断</span><strong>${esc(review.reason)}</strong></div><div class="evidence-review__cell evidence-review__next"><span>明日行动</span><strong>${esc(review.nextAction)}</strong></div></div></section>`;
+}
+
+function reviewStatusFor(state) {
+  if (state.pilot?.reviewReady && state.pilot?.review) return "AI 复盘";
+  if (state.pilot?.review && (state.pilot?.reviewError || state.pilot?.initialDiagnostic)) return "规则复盘";
+  return state.isDemo ? "演示样例" : "待提交";
 }
 
 function memoryLoop(state) {
@@ -267,9 +284,10 @@ function pageStudy(state) {
   const routeTask = state.learningRoute?.draft?.plan?.today?.tasks?.find((task) => task.id === active.id);
   const status = cycleAppliesToTask ? cycle.status : "planned";
   const canCheckIn = !state.isDemo && Boolean(cycleTask) && status !== "completed";
+  const startLabel = status === "planned" ? "开始这一段" : "继续这一段";
   const actionText = routeTask?.action || `先完成“${active.title}”中最小、可留下痕迹的一步。`;
   const intervention = (cycleAppliesToTask && (companion.nextAction || cycle?.intervention?.next_action)) || `先开始“${active.title}”中最小、可留下痕迹的一步。`;
-  return `<div class="page page--study" data-demo-state="${state.isDemo}">${intro("/study", state)}<div class="study-layout"><section class="study-focus"><div class="study-focus__top"><span class="section-kicker">当前山段 · ${esc(active.type)}</span>${demoNote(state)}<span class="study-focus__timer">${active.estimated_minutes ?? routeTask?.planned_minutes ?? 25} 分钟</span></div><div class="study-focus__title"><span class="study-focus__gua">${active.gua}</span><h2>${esc(active.title)}</h2><p>完成时留下你能提供的最高等级证据。砺境不会把一次自报完成变成“已掌握”。</p></div><section class="study-action" aria-label="今日行动"><div class="study-action__heading"><span>器灵同行 · ${companionStatus(status)}</span><h3>${esc(actionText)}</h3><p>${esc(intervention)}</p></div>${canCheckIn ? `<div class="study-action__controls"><button class="button button--ink" type="button" data-action="companion-check-in" data-companion-intent="start" data-task-id="${esc(active.id)}">开始这一段 ${icon("play")}</button><label>卡住原因<select data-companion-blocker><option value="difficulty">内容太难</option><option value="time">时间不够</option><option value="emotion">状态不稳</option><option value="environment">环境受限</option><option value="unknown">说不清楚</option></select></label><button class="button button--outline" type="button" data-action="companion-check-in" data-companion-intent="stuck" data-task-id="${esc(active.id)}">我卡住了</button><button class="text-link" type="button" data-action="companion-check-in" data-companion-intent="skip" data-task-id="${esc(active.id)}">今天先缓一缓</button></div>` : ""}</section><div class="evidence-submit"><div class="section-title"><div><span>完成证据</span><h2>你这次留下了什么？</h2></div><span class="evidence-submit__level">当前 L${state.pilot.selectedEvidenceLevel}</span></div><p>选择最高证据等级，并用一句话记录内容。完成证据会先写入今日行动，再进入复盘。</p><div class="evidence-levels">${state.pilot.evidenceLevels.map((item) => evidenceLevelItem(item, item.level === state.pilot.selectedEvidenceLevel)).join("")}</div><label class="evidence-submit__field">证据摘要<textarea data-evidence-input rows="4" placeholder="例如：写下一个反例，并说明它为什么能支持当前结论。">${esc(state.pilot.submittedEvidence)}</textarea></label><button class="button button--ink" type="button" data-action="submit-evidence" data-task-id="${esc(active.id)}" ${status === "completed" ? "disabled" : ""}>提交证据并生成复盘 ${icon("arrow")}</button><div class="study-knowledge-capture"><div class="study-knowledge-capture__copy"><span>可选 · 留下脉络</span><strong>把这次理解接入知识库</strong><small>以后复习时，从这条记录继续。</small></div><button class="knowledge-capture-link" type="button" data-action="capture-knowledge" data-knowledge-title="${esc(active.title)}" data-knowledge-source="攀登 · 当前山段">记入知识库 ${icon("arrow")}</button></div></div></section><aside class="study-aside"><div class="study-aside__route"><span class="section-kicker">试点记录</span><div class="mini-mountain"><span class="mini-mountain__path"></span><i class="mini-mountain__dot mini-mountain__dot--one"></i><i class="mini-mountain__dot mini-mountain__dot--two"></i><i class="mini-mountain__dot mini-mountain__dot--three"></i></div><div class="study-aside__legend"><span><i class="dot dot--gold"></i>今日任务</span><span><i class="dot dot--gray"></i>证据解锁下一步</span></div></div><div class="study-aside__tip"><span class="study-aside__tip-mark">灯</span><div class="study-aside__tip-copy"><span>卡住时的下一步</span><p>${esc(intervention)}</p><a href="/review" data-route="/review">查看复盘记录 ${icon("arrow")}</a></div></div></aside></div></div>`;
+  return `<div class="page page--study" data-demo-state="${state.isDemo}">${intro("/study", state)}<div class="study-layout"><section class="study-focus"><div class="study-focus__top"><span class="section-kicker">当前山段 · ${esc(active.type)}</span>${demoNote(state)}<span class="study-focus__timer">${active.estimated_minutes ?? routeTask?.planned_minutes ?? 25} 分钟</span></div><div class="study-focus__title"><span class="study-focus__gua">${active.gua}</span><h2>${esc(active.title)}</h2><p>完成时留下你能提供的最高等级证据。砺境不会把一次自报完成变成“已掌握”。</p></div><section class="study-action" aria-label="今日行动"><div class="study-action__heading"><span>器灵同行 · ${companionStatus(status)}</span><h3>${esc(actionText)}</h3><p>${esc(intervention)}</p></div>${canCheckIn ? `<div class="study-action__controls">${status === "started" ? "" : `<button class="button button--ink" type="button" data-action="companion-check-in" data-companion-intent="start" data-task-id="${esc(active.id)}">${startLabel} ${icon("play")}</button>`}<label>卡住原因<select data-companion-blocker><option value="difficulty">内容太难</option><option value="time">时间不够</option><option value="emotion">状态不稳</option><option value="environment">环境受限</option><option value="unknown">说不清楚</option></select></label><button class="button button--outline" type="button" data-action="companion-check-in" data-companion-intent="stuck" data-task-id="${esc(active.id)}">我卡住了</button><button class="text-link" type="button" data-action="companion-check-in" data-companion-intent="skip" data-task-id="${esc(active.id)}">今天先缓一缓</button></div>` : ""}</section><div class="evidence-submit"><div class="section-title"><div><span>完成证据</span><h2>你这次留下了什么？</h2></div><span class="evidence-submit__level">当前 L${state.pilot.selectedEvidenceLevel}</span></div><p>选择最高证据等级，并用一句话记录内容。完成证据会先写入今日行动，再进入复盘。</p><div class="evidence-levels">${state.pilot.evidenceLevels.map((item) => evidenceLevelItem(item, item.level === state.pilot.selectedEvidenceLevel)).join("")}</div><label class="evidence-submit__field">证据摘要<textarea data-evidence-input rows="4" placeholder="例如：写下一个反例，并说明它为什么能支持当前结论。">${esc(state.pilot.submittedEvidence)}</textarea></label><button class="button button--ink" type="button" data-action="submit-evidence" data-task-id="${esc(active.id)}" ${status === "completed" ? "disabled" : ""}>提交证据并生成复盘 ${icon("arrow")}</button><div class="study-knowledge-capture"><div class="study-knowledge-capture__copy"><span>可选 · 留下脉络</span><strong>把这次理解接入知识库</strong><small>以后复习时，从这条记录继续。</small></div><button class="knowledge-capture-link" type="button" data-action="capture-knowledge" data-knowledge-title="${esc(active.title)}" data-knowledge-source="攀登 · 当前山段">记入知识库 ${icon("arrow")}</button></div></div></section><aside class="study-aside"><div class="study-aside__route"><span class="section-kicker">试点记录</span><div class="mini-mountain"><span class="mini-mountain__path"></span><i class="mini-mountain__dot mini-mountain__dot--one"></i><i class="mini-mountain__dot mini-mountain__dot--two"></i><i class="mini-mountain__dot mini-mountain__dot--three"></i></div><div class="study-aside__legend"><span><i class="dot dot--gold"></i>今日任务</span><span><i class="dot dot--gray"></i>证据解锁下一步</span></div></div><div class="study-aside__tip"><span class="study-aside__tip-mark">灯</span><div class="study-aside__tip-copy"><span>卡住时的下一步</span><p>${esc(intervention)}</p><a href="/review" data-route="/review">查看复盘记录 ${icon("arrow")}</a></div></div></aside></div></div>`;
 }
 
 function pageStudyWithDiagnostic(state) {
@@ -293,7 +311,7 @@ function pageStudyWithDiagnostic(state) {
 }
 
 function pageReview(state) {
-  const reviewStatus = state.pilot.reviewError && state.pilot.review ? "规则复盘" : state.pilot.reviewReady ? "AI 复盘" : "待提交";
+  const reviewStatus = reviewStatusFor(state);
   return `<div class="page page--review" data-demo-state="true">${intro("/review", state)}<div class="review-top"><div class="review-top__bagua">${renderBaguaField({ active: "坎", label: "今日回望 · 坎位" })}</div><div class="review-top__copy"><span class="section-kicker">今日回望 · 坎位</span><h2>让走过的路<br><em>变成下一步行动。</em></h2><p>复盘只根据你提交的证据，不把自报完成包装成掌握结论。</p>${action("继续提交证据", "/study", "button button--ink")}</div><div class="review-top__stats">${metaLine("本次证据", `L${state.pilot.selectedEvidenceLevel}`)}${metaLine("复盘状态", reviewStatus)}${metaLine("记忆迭代", `${state.memory?.iterationCount ?? 0} 次`)}</div></div>${evidenceReview(state)}${memoryLoop(state)}<section class="review-list">${sectionTitle("需要你回望的山脊", "证据覆盖情况", action("查看档案", "/knowledge", "text-link", "arrow"))}<div class="knowledge-rows">${state.knowledge.slice(0, 3).map((item) => `<article class="knowledge-row"><span class="knowledge-row__gua">${item.gua}</span><div><span>${item.domain}</span><h3>${item.title}</h3></div><div class="knowledge-row__mastery">${progressBar(item.mastery, item.color === "cinnabar" ? "red" : "amber")}<strong>L${item.evidenceLevel ?? 2} · ${item.mastery}%</strong></div><a href="/study" data-route="/study" aria-label="复习 ${item.title}">${icon("arrow", "复习")}</a></article>`).join("")}</div></section></div>`;
 }
 

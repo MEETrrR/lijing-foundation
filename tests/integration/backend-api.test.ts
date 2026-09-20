@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createBackendServer } = require("../../services/api/src/bootstrap/http-api.ts");
 const { OpenAiCompatibleProvider } = require("../../services/api/src/domains/ai-gateway/ai-gateway-service.ts");
+const { PlatformError } = require("../../services/api/src/platform/errors/error-catalog.ts");
 
 const ids = {
   request1: "11111111-1111-4111-8111-111111111111",
@@ -16,6 +17,7 @@ const ids = {
   request10: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   request11: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   request12: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  request13: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
 };
 
 async function listen(server) {
@@ -703,6 +705,28 @@ test("AI gateway enforces feature quotas and rejects unsafe provider output", as
     assert.equal((await unsafe.services.ai.getAudit("account-001")).at(-1).reason_code, "provider_output_sensitive");
   } finally {
     await close(unsafe.server);
+  }
+});
+
+test("AI gateway retries one transient provider failure within the same request", async () => {
+  let providerCalls = 0;
+  const provider = {
+    async complete() {
+      providerCalls += 1;
+      if (providerCalls === 1) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "temporary provider failure");
+      return { text: "先写出一个最小例子，再用反例检查你的判断。", source_type: "ai_assisted" };
+    },
+  };
+  const { server } = createBackendServer({ provider, aiEnabled: true, policy: { maxBurstRequests: 20 } });
+  const baseUrl = await listen(server);
+  try {
+    const accepted = await jsonRequest(baseUrl, "/api/v1/ai/requests", { method: "POST", headers: { ...auth(), "Idempotency-Key": "ai-provider-retry-0001" }, body: JSON.stringify({ request_id: ids.request13, feature: "wrong_answer_hint", input: "我总是把条件遗漏，下一步怎么练？" }) });
+    assert.equal(accepted.response.status, 202);
+    const completed = await waitForAi(baseUrl, ids.request13);
+    assert.equal(completed.body.status, "completed");
+    assert.equal(providerCalls, 2);
+  } finally {
+    await close(server);
   }
 });
 

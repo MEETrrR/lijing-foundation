@@ -60,6 +60,14 @@ function estimateTokens(value) {
   return Math.max(1, Math.ceil(String(value ?? "").length / 4));
 }
 
+function isRetryableProviderError(error) {
+  return error instanceof PlatformError && ["DEPENDENCY_UNAVAILABLE", "TIMEOUT"].includes(error.code);
+}
+
+function waitForProviderRetry(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function boundedInteger(value, fallback, minimum, maximum, label) {
   const normalized = value === undefined ? fallback : value;
   if (!Number.isInteger(normalized) || normalized < minimum || normalized > maximum) {
@@ -389,7 +397,16 @@ class AiGatewayService {
     let degradationReason = "provider_unavailable";
     try {
       const providerContext = await this.buildProviderContext(actorId, request);
-      const result = await this.provider.complete({ feature: request.feature, input: providerContext.input, systemPrompt: providerContext.systemPrompt, imageObjectIds: request.image_object_ids, maxOutputTokens: this.policy.maxOutputTokens });
+      let result;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          result = await this.provider.complete({ feature: request.feature, input: providerContext.input, systemPrompt: providerContext.systemPrompt, imageObjectIds: request.image_object_ids, maxOutputTokens: this.policy.maxOutputTokens });
+          break;
+        } catch (error) {
+          if (!isRetryableProviderError(error) || attempt === 1) throw error;
+          await waitForProviderRetry(250);
+        }
+      }
       if (!result || typeof result.text !== "string" || !result.text.trim() || result.text.length > this.policy.maxOutputCharacters || estimateTokens(result.text) > this.policy.maxOutputTokens || !RESULT_SOURCE_TYPES.has(result.source_type)) {
         degradationReason = "provider_output_invalid";
         throw new Error("provider output failed validation");

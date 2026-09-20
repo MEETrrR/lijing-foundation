@@ -64,7 +64,15 @@ function dateValue(value) {
   return Date.parse(`${value}T00:00:00.000Z`);
 }
 
-function currentDate(clock) {
+function currentDate(clock, timezone = "Asia/Shanghai") {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date(clock()))
+      .reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+    if (parts.year && parts.month && parts.day) return `${parts.year}-${parts.month}-${parts.day}`;
+  } catch {
+    // Fall back to UTC if a legacy account contains an invalid timezone.
+  }
   return new Date(clock()).toISOString().slice(0, 10);
 }
 
@@ -174,9 +182,16 @@ function validateRouteRequest(input, clock) {
   };
 }
 
+function normalizeGoalText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[，。！？、,.!?：:；;“”"'‘’（）()【】[\]{}]/g, "");
+}
+
 function clarificationFor(input) {
-  const goalText = input.goal_name.toLowerCase();
-  const contextText = [input.goal_name, ...input.focus_areas, ...input.constraints].join(" ").toLowerCase();
+  const goalText = normalizeGoalText(input.goal_name);
+  const contextText = normalizeGoalText([input.goal_name, ...input.focus_areas, ...input.constraints].join(" "));
   const genericGoal = [
     "我要变强",
     "我想变强",
@@ -193,12 +208,13 @@ function clarificationFor(input) {
     "提高计算机基础",
     "我想准备考研",
     "准备考研",
-  ].some((value) => goalText === value);
+  ].some((value) => goalText === normalizeGoalText(value))
+    || /^(?:我要|我想|想要|希望)?(?:学会|学习|掌握)(?:ai|人工智能|python|编程|计算机基础)$/.test(goalText);
   const postgraduateScopeMissing = input.goal_type === "postgraduate_entrance_exam"
     && /考研|研究生|硕士/.test(goalText)
     && input.focus_areas.length <= 1
     && input.region === ""
-    && input.goal_name.length < 14;
+    && goalText.length < 14;
   const multiGoal = /(同时|还想|并且|以及|考研.*实习|实习.*考研|参加比赛|比赛.*实习|实习.*比赛)/.test(contextText);
   if (!genericGoal && !postgraduateScopeMissing && !multiGoal) return null;
   const missingFields = [];
@@ -478,7 +494,7 @@ class LearningRouteService {
       return response;
     }
     const sourcePack = sourcePackFor(input.goal_type);
-    const today = currentDate(this.clock);
+    const today = currentDate(this.clock, savedProfile.timezone || "Asia/Shanghai");
     const retrieval = this.knowledge
       ? await this.knowledge.search({
         goal_type: input.goal_type,

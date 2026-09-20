@@ -19,6 +19,15 @@ function apiError(response, body, fallback) {
   return new Error(body.message || fallback);
 }
 
+function isTransientAiFailure(response, body = {}) {
+  const code = body.code ?? body.reason_code;
+  return [502, 503, 504].includes(response?.status) || ["dependency_unavailable", "timeout"].includes(code);
+}
+
+function waitForRetry(milliseconds) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
 function baselineForRouteAssessment(assessment) {
   if (assessment.study_stage === "not_started") return "starting";
   if (assessment.study_stage === "practiced" && assessment.recent_result === "above_70") return "advanced";
@@ -87,20 +96,35 @@ async function requestAi(path, payload) {
   const input = path.endsWith("/review")
     ? JSON.stringify({ task: payload.task, answer: payload.answer, evidence_level: payload.evidence_level, evidence: payload.evidence })
     : JSON.stringify({ companion_id: payload.companion_id, prompt: payload.prompt, context: payload.context });
-  const requestId = newRequestId();
-  const response = await fetch("/api/v1/ai/requests", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
-    body: JSON.stringify({ request_id: requestId, feature, input }),
-  });
-  const body = await response.json().catch(() => ({}));
+  let response;
+  let body = {};
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const requestId = newRequestId();
+    try {
+      response = await fetch("/api/v1/ai/requests", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+        body: JSON.stringify({ request_id: requestId, feature, input }),
+      });
+      body = await response.json().catch(() => ({}));
+    } catch {
+      if (attempt === 0) {
+        await waitForRetry(700);
+        continue;
+      }
+      throw new Error("网络暂时不稳定，AI 没有收到这次请求，请稍后重新提交");
+    }
+    if (response.ok || !isTransientAiFailure(response, body) || attempt === 1) break;
+    await waitForRetry(700);
+  }
   if (!response.ok) {
     if (response.status === 401) throw apiError(response, body, "请先登录后再使用 AI");
-    if (body.reason_code === "daily_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
-    if (body.reason_code === "feature_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
-    if (body.reason_code === "burst_limit_exhausted") throw new Error("AI 请求过于频繁，请稍等一分钟再试");
-    if (body.reason_code === "concurrency_limit_exhausted") throw new Error("上一条 AI 请求还在处理中，请稍等再试");
+    const reasonCode = body.reason_code ?? body.code;
+    if (reasonCode === "daily_quota_exhausted" || reasonCode === "feature_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
+    if (reasonCode === "burst_limit_exhausted") throw new Error("AI 请求过于频繁，请稍等一分钟再试");
+    if (reasonCode === "concurrency_limit_exhausted") throw new Error("上一条 AI 请求还在处理中，请稍等再试");
+    if (isTransientAiFailure(response, body)) throw new Error("AI 暂时没有响应，系统已自动重试一次，请稍后重新提交");
     throw new Error(body.message || body.error || `AI 服务暂时不可用（${response.status}）`);
   }
   if (body.status === "rejected") throw new Error(body.reason_code === "input_too_long" ? "这段内容太长，请缩短后再试" : "这条 AI 请求未通过服务策略");
@@ -237,22 +261,42 @@ async function requestFeedback(payload) {
 }
 
 async function requestLearningRoute(payload) {
-  const response = await fetch("/api/v1/learning-routes", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
-    body: JSON.stringify({ request_id: newRequestId(), ...payload }),
-  });
-  const body = await response.json().catch(() => ({}));
+  let response;
+  let body = {};
+  let retriedTransient = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const requestId = newRequestId();
+    try {
+      response = await fetch("/api/v1/learning-routes", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+        body: JSON.stringify({ request_id: requestId, ...payload }),
+      });
+      body = await response.json().catch(() => ({}));
+    } catch {
+      if (attempt === 0) {
+        retriedTransient = true;
+        await waitForRetry(900);
+        continue;
+      }
+      throw new Error("网络暂时不稳定，路线没有生成成功，请检查网络后重新生成");
+    }
+    const shouldRetry = isTransientAiFailure(response, body);
+    if (!shouldRetry || attempt === 1) break;
+    retriedTransient = true;
+    await waitForRetry(900);
+  }
   if (!response.ok) {
     if (response.status === 401) throw apiError(response, body, "学习路线暂时没有生成成功");
-    if (body.reason_code === "daily_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
-    if (body.reason_code === "feature_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
-    if (body.reason_code === "burst_limit_exhausted") throw new Error("请求过于频繁，请稍等一分钟再试");
-    if (body.reason_code === "concurrency_limit_exhausted") throw new Error("上一条路线还在处理中，请稍等再试");
+    const reasonCode = body.reason_code ?? body.code;
+    if (reasonCode === "daily_quota_exhausted" || reasonCode === "feature_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
+    if (reasonCode === "burst_limit_exhausted") throw new Error("请求过于频繁，请稍等一分钟再试");
+    if (reasonCode === "concurrency_limit_exhausted") throw new Error("上一条路线还在处理中，请稍等再试");
+    if (isTransientAiFailure(response, body)) throw new Error("AI 暂时没有返回可校验路线，系统已自动重试一次，请点击“重新生成”再试");
     throw new Error(body.message || "学习路线暂时没有生成成功");
   }
-  if (body.status === "degraded") throw new Error("AI 服务暂时无法生成可校验草案，请稍后再试");
+  if (body.status === "degraded") throw new Error(retriedTransient ? "AI 暂时没有返回可校验路线，系统已自动重试一次，请点击“重新生成”再试" : "AI 服务暂时无法生成可校验草案，请点击“重新生成”再试");
   if (body.status === "clarification_required") return body;
   if (body.status !== "draft" || !body.route) throw new Error("学习路线返回格式不完整，请稍后再试");
   return body.route;
@@ -562,6 +606,7 @@ export function createApp(root = document.querySelector("#app")) {
   DEMO_STATE.preferences ??= { notifications: window.localStorage?.getItem("lijing-notifications") ?? "important", motion: motionEnabled };
   DEMO_STATE.service ??= { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", syncStatus: "unknown" };
   DEMO_STATE.learningRoute ??= { draft: null, clarification: null, error: "" };
+  DEMO_STATE.learningRoute.form ??= null;
 
   const applyMemoryResponse = (body) => {
     DEMO_STATE.memory.iterationCount = Number(body.iteration_count ?? DEMO_STATE.memory.iterationCount ?? 0);
@@ -582,7 +627,7 @@ export function createApp(root = document.querySelector("#app")) {
   };
 
   const applyLearningRoute = (route) => {
-    DEMO_STATE.learningRoute = { draft: route ?? null, clarification: null, error: "" };
+    DEMO_STATE.learningRoute = { draft: route ?? null, clarification: null, error: "", form: null };
     const tasks = routeTasksForToday(route);
     const firstTask = route?.plan?.today?.tasks?.[0] ?? null;
     const firstMilestone = route?.milestones?.[0] ?? null;
@@ -1142,10 +1187,17 @@ export function createApp(root = document.querySelector("#app")) {
         }
       }
       if (activeTask) {
+        const wasCompleted = activeTask.status === "done";
         activeTask.status = "done";
         const nextTask = DEMO_STATE.today.tasks.find((task) => task.status === "locked");
         if (nextTask) nextTask.status = "active";
-        DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+        if (!wasCompleted) {
+          DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
+          const diagnosticMinutes = Number(diagnostic?.summary?.totalMinutes ?? 0);
+          if (Number.isFinite(diagnosticMinutes) && diagnosticMinutes > 0) {
+            DEMO_STATE.today.minutes = Math.max(0, Number(DEMO_STATE.today.minutes) || 0) + diagnosticMinutes;
+          }
+        }
         const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
         if (knowledge) {
           knowledge.evidenceLevel = evidenceLevel;
@@ -1254,6 +1306,10 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.knowledgeComposerOpen = false;
       DEMO_STATE.knowledgeCaptureDraft = null;
       render(window.location.pathname);
+    }));
+    root.querySelectorAll('[data-action="retry-learning-route"]').forEach((element) => element.addEventListener("click", () => {
+      const form = root.querySelector('form[data-demo-form="learning-route"]');
+      if (form?.requestSubmit) form.requestSubmit();
     }));
     root.querySelectorAll('[data-action="confirm-learning-route"]').forEach((element) => element.addEventListener("click", async () => {
       if (DEMO_STATE.isDemo) {
@@ -1416,6 +1472,7 @@ export function createApp(root = document.querySelector("#app")) {
           submit.disabled = true;
           submit.textContent = "正在核算时间并生成今天的第一步...";
         }
+        let routePayload = null;
         try {
           const baselineAssessment = {
             subject: String(values.get("assessment_subject") ?? "").trim(),
@@ -1424,7 +1481,7 @@ export function createApp(root = document.querySelector("#app")) {
             primary_blocker: String(values.get("assessment_primary_blocker") ?? ""),
             evidence: String(values.get("assessment_evidence") ?? "").trim(),
           };
-          const routeResult = await requestLearningRoute({
+          routePayload = {
             goal_type: String(values.get("goal_type") ?? ""),
             goal_name: String(values.get("goal_name") ?? "").trim(),
             target_date: String(values.get("target_date") ?? ""),
@@ -1435,9 +1492,11 @@ export function createApp(root = document.querySelector("#app")) {
             region: String(values.get("region") ?? "").trim(),
             focus_areas: splitEntries(values.get("focus_areas"), /[，,]/),
             constraints: splitEntries(values.get("constraints"), /\r?\n/),
-          });
+          };
+          DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, draft: null, clarification: null, error: "", form: routePayload };
+          const routeResult = await requestLearningRoute(routePayload);
           if (routeResult.status === "clarification_required") {
-            DEMO_STATE.learningRoute = { draft: null, clarification: routeResult, error: "" };
+            DEMO_STATE.learningRoute = { draft: null, clarification: routeResult, error: "", form: routePayload };
             render("/route");
             toast("还需要补充目标范围和现实约束");
             return;
@@ -1455,6 +1514,8 @@ export function createApp(root = document.querySelector("#app")) {
             DEMO_STATE.service.aiAvailable = false;
           }
           toast(error.message);
+          DEMO_STATE.learningRoute.form = routePayload;
+          render("/route");
         } finally {
           if (submit?.isConnected) {
             submit.disabled = false;

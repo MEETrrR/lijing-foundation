@@ -56,6 +56,38 @@ test("route generation asks for missing context before calling AI", async () => 
   }
 });
 
+test("route clarification treats spacing and common AI goal wording consistently", async () => {
+  let providerCalls = 0;
+  const { server } = createBackendServer({
+    aiEnabled: true,
+    clock: () => Date.parse("2026-09-18T00:00:00.000Z"),
+    provider: { async complete() { providerCalls += 1; throw new Error("provider should not be called"); } },
+  });
+  const baseUrl = await listen(server);
+  try {
+    for (const [index, goalName] of ["我要学会 AI", "我想学习 Python"].entries()) {
+      const result = await jsonRequest(baseUrl, "/api/v1/learning-routes", {
+        method: "POST",
+        headers: { Authorization: "Bearer dev-user-001-token", "Idempotency-Key": `route-clarify-normalized-${index}-0001` },
+        body: JSON.stringify({
+          request_id: `12121212-1212-4121-8121-1212121212${30 + index}`,
+          goal_type: "personal_growth",
+          goal_name: goalName,
+          target_date: "2027-01-18",
+          weekly_hours: 5,
+          baseline: "starting",
+        }),
+      });
+      assert.equal(result.response.status, 200);
+      assert.equal(result.body.status, "clarification_required");
+      assert.ok(result.body.missing_fields.includes("specific_scope"));
+    }
+    assert.equal(providerCalls, 0);
+  } finally {
+    await close(server);
+  }
+});
+
 test("route generation tolerates provider JSON wrapped in ordinary prose without relaxing validation", async () => {
   const provider = {
     async complete() {
