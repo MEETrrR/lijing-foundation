@@ -790,7 +790,13 @@ export function createApp(root = document.querySelector("#app")) {
     selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? DEMO_STATE.goals[0]?.id ?? "";
   };
 
-  const resetToDemoState = () => replaceState({ ...initialDemoState, isDemo: true, auth: { user: null, mode: "login" }, memory: { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] } });
+  const resetToDemoState = () => replaceState({
+    ...initialDemoState,
+    isDemo: true,
+    auth: { user: null, mode: "login" },
+    registrationPolicy: { ...DEMO_STATE.registrationPolicy },
+    memory: { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] },
+  });
   const resetToRealState = (user) => replaceState(createRealState(user));
 
   const persistUserState = async () => {

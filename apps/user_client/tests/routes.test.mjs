@@ -57,6 +57,11 @@ test("auth chapter exposes real login and registration forms", () => {
   assert.match(loginHtml, /data-action="forgot-password"/);
 });
 
+test("client keeps an already-loaded pilot invitation policy while resetting an anonymous session", async () => {
+  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  assert.match(source, /registrationPolicy:\s*\{\s*\.\.\.DEMO_STATE\.registrationPolicy\s*\}/);
+});
+
 test("unknown pages expose a recoverable 404 surface", () => {
   const html = renderPage("/404", DEMO_STATE);
   assert.match(html, /404/);
