@@ -21,19 +21,24 @@ const provider = new OpenAiCompatibleProvider({
   model,
   timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 75000),
 });
+const smokeTokens = Object.fromEntries(Array.from({ length: requestCount }, (_, index) => [
+  `material-smoke-token-${index + 1}`,
+  `material-smoke-${index + 1}`,
+]));
 const { server } = createBackendServer({
   env: { ...process.env, APP_ENV: "test", NODE_ENV: "test" },
   provider,
   aiEnabled: true,
   persistence: "ephemeral",
   allowDevTokens: true,
+  tokens: smokeTokens,
 });
 
-function request(base, actor, path, options = {}) {
+function request(base, token, path, options = {}) {
   return fetch(`${base}${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer dev-${actor}-token`,
+      Authorization: `Bearer ${token}`,
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.headers ?? {}),
     },
@@ -47,9 +52,9 @@ const outcomes = [];
 
 try {
   for (let index = 0; index < requestCount; index += 1) {
-    const actor = `material-smoke-${index + 1}`;
+    const token = `material-smoke-token-${index + 1}`;
     const artifactId = `artifact-smoke-${randomUUID()}`;
-    const artifact = await request(base, actor, "/api/v1/learning-artifacts", {
+    const artifact = await request(base, token, "/api/v1/learning-artifacts", {
       method: "POST",
       headers: { "Idempotency-Key": `artifact-smoke-${randomUUID()}` },
       body: JSON.stringify({
@@ -67,7 +72,7 @@ try {
       outcomes.push("artifact_write_failed");
       continue;
     }
-    const diagnosis = await request(base, actor, "/api/v1/companion/diagnoses", {
+    const diagnosis = await request(base, token, "/api/v1/companion/diagnoses", {
       method: "POST",
       headers: { "Idempotency-Key": `diagnosis-smoke-${randomUUID()}` },
       body: JSON.stringify({ request_id: randomUUID(), artifact_ids: [artifactId], focus: index % 2 === 0 ? "连续条件" : "链表删除步骤" }),
