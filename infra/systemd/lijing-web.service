@@ -1,5 +1,5 @@
 [Unit]
-Description=Lijing closed pilot web application
+Description=Lijing public beta web application
 After=network-online.target
 Wants=network-online.target
 
