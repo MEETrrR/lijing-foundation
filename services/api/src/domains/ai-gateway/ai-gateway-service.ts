@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { LEARNING_ROUTE_SYSTEM_PROMPT } = require("../learning-route/learning-route-prompt.ts");
-const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt, MATERIAL_DIAGNOSIS_SYSTEM_PROMPT } = require("../companion/companion-prompts.ts");
+const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt, MATERIAL_DIAGNOSIS_SYSTEM_PROMPT, MATERIAL_IMAGE_EXTRACTION_SYSTEM_PROMPT } = require("../companion/companion-prompts.ts");
 const { normalizeAssistantResponse } = require("./assistant-response.ts");
 
 const AI_FEATURES = Object.freeze([
@@ -13,6 +13,7 @@ const AI_FEATURES = Object.freeze([
   "progress_query",
   "emotional_support",
   "material_diagnosis",
+  "material_image_extraction",
 ]);
 const RESULT_SOURCE_TYPES = new Set(["system_course", "reviewed_content", "ai_assisted", "user_upload", "mixed"]);
 const DEFAULT_POLICY = Object.freeze({
@@ -35,6 +36,7 @@ const DEFAULT_POLICY = Object.freeze({
     progress_query: 20,
     emotional_support: 10,
     material_diagnosis: 10,
+    material_image_extraction: 10,
   }),
 });
 
@@ -182,7 +184,7 @@ class OpenAiCompatibleProvider {
     this.fetchImpl = fetchImpl;
   }
 
-  async complete({ feature, input, maxOutputTokens, systemPrompt }) {
+  async complete({ feature, input, maxOutputTokens, systemPrompt, imageDataUrls = [] }) {
     if (!this.baseUrl || !this.apiKey || !this.model) throw new PlatformError("DEPENDENCY_UNAVAILABLE", "AI provider is not configured");
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -196,7 +198,9 @@ class OpenAiCompatibleProvider {
           max_tokens: maxOutputTokens,
           messages: [
             { role: "system", content: systemPrompt ?? (feature === "learning_route_generation" ? LEARNING_ROUTE_SYSTEM_PROMPT : ASSISTANT_SYSTEM_PROMPT) },
-            { role: "user", content: JSON.stringify({ feature, input }) },
+            { role: "user", content: imageDataUrls.length
+              ? [{ type: "text", text: JSON.stringify({ feature, input }) }, ...imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } }))]
+              : JSON.stringify({ feature, input }) },
           ],
         }),
         signal: controller.signal,
@@ -321,12 +325,14 @@ class AiGatewayService {
       input: providerInput,
       systemPrompt: request.feature === "material_diagnosis"
         ? MATERIAL_DIAGNOSIS_SYSTEM_PROMPT
-        : buildCompanionSystemPrompt({ companionId, companionProfile, memoryProfile, retrieval }),
+        : request.feature === "material_image_extraction"
+          ? MATERIAL_IMAGE_EXTRACTION_SYSTEM_PROMPT
+          : buildCompanionSystemPrompt({ companionId, companionProfile, memoryProfile, retrieval }),
     };
   }
 
   async recordCompanionInteraction(actorId, request) {
-    if (!this.companion || request.feature === "learning_route_generation") return;
+    if (!this.companion || ["learning_route_generation", "material_image_extraction"].includes(request.feature)) return;
     const parsed = this.parseInput(request.input);
     const companionId = typeof parsed.companion_id === "string" ? parsed.companion_id : DEFAULT_COMPANION_ID;
     const memoryProfile = this.memory ? await this.memory.getMemories(actorId, request.request_id) : { iteration_count: 0 };
@@ -447,7 +453,7 @@ class AiGatewayService {
     });
   }
 
-  async completeReserved(actorId, request, rawIdempotencyKey) {
+  async completeReserved(actorId, request, rawIdempotencyKey, imageDataUrls = []) {
     let degradationReason = "provider_unavailable";
     const startedAt = this.clock();
     const model = typeof this.provider.model === "string" && this.provider.model.trim() ? this.provider.model.trim() : "unknown";
@@ -456,7 +462,7 @@ class AiGatewayService {
       let result;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          result = await this.provider.complete({ feature: request.feature, input: providerContext.input, systemPrompt: providerContext.systemPrompt, imageObjectIds: request.image_object_ids, maxOutputTokens: this.policy.maxOutputTokens });
+          result = await this.provider.complete({ feature: request.feature, input: providerContext.input, systemPrompt: providerContext.systemPrompt, imageObjectIds: request.image_object_ids, imageDataUrls, maxOutputTokens: this.policy.maxOutputTokens });
           break;
         } catch (error) {
           if (!isRetryableProviderError(error) || attempt === 1) throw error;
@@ -553,6 +559,21 @@ class AiGatewayService {
       return reservation.response;
     }
     return this.completeReserved(actorId, request, rawIdempotencyKey);
+  }
+
+  async submitWithImages(actorId, input, rawIdempotencyKey, imageDataUrls) {
+    if (!Array.isArray(imageDataUrls) || imageDataUrls.length < 1 || imageDataUrls.length > this.policy.maxImages || imageDataUrls.some((value) => typeof value !== "string" || !value.startsWith("data:image/"))) {
+      throw new PlatformError("VALIDATION_ERROR", "image inputs are invalid");
+    }
+    const request = inputValidation(input, this.policy);
+    const normalizedIdempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+    const reservation = await this.reserve(actorId, request, normalizedIdempotencyKey);
+    if (reservation.replayed) return reservation.response;
+    if (!reservation.shouldCallProvider) {
+      await this.release(actorId);
+      return reservation.response;
+    }
+    return this.completeReserved(actorId, request, normalizedIdempotencyKey, imageDataUrls);
   }
 
   async getRequest(actorId, requestId) {

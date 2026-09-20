@@ -27,6 +27,15 @@ async function jsonRequest(baseUrl, path, options = {}) {
   return { response, body: await response.json() };
 }
 
+async function binaryRequest(baseUrl, path, bytes, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    body: bytes,
+    headers: { "Content-Type": "image/png", ...(options.headers ?? {}) },
+  });
+  return { response, body: await response.json() };
+}
+
 function auth(token = "dev-user-001-token") { return { Authorization: `Bearer ${token}` }; }
 
 test("material Agent creates grounded actions, isolates artifacts, and rejects stale evidence", async () => {
@@ -190,6 +199,111 @@ test("material diagnosis returns need_material and degrades without a provider",
     assert.equal(usage.body.usage.total_runs, 1);
     assert.equal(usage.body.usage.degraded_runs, 1);
     assert.equal(usage.body.usage.degraded_rate, 1);
+  } finally {
+    await close(server);
+  }
+});
+
+test("learning image extraction is transient, idempotent, and requires learner confirmation before material storage", async () => {
+  let providerCalls = 0;
+  let providerRequest = null;
+  const provider = {
+    async complete(request) {
+      providerCalls += 1;
+      providerRequest = request;
+      assert.equal(request.feature, "material_image_extraction");
+      assert.equal(request.imageDataUrls.length, 1);
+      assert.match(request.imageDataUrls[0], /^data:image\/png;base64,/);
+      return {
+        source_type: "ai_assisted",
+        text: JSON.stringify({
+          source_title: "极限题照片",
+          kind: "question",
+          content_text: "求函数在 x=0 处的极限，并写出左右极限相等的判断条件。",
+          uncertain_parts: ["右下角的一处手写符号不清晰"],
+        }),
+      };
+    },
+  };
+  const { server } = createBackendServer({ aiEnabled: true, provider });
+  const baseUrl = await listen(server);
+  const requestId = "12121212-1212-4121-8121-121212121212";
+  const image = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from("temporary-learning-image")]);
+  try {
+    const extraction = await binaryRequest(baseUrl, "/api/v1/learning-image-extractions", image, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-extract-01", "X-Request-Id": requestId },
+    });
+    assert.equal(extraction.response.status, 200);
+    assert.equal(extraction.body.status, "ready");
+    assert.equal(extraction.body.request_id, requestId);
+    assert.equal(extraction.body.draft.source_title, "极限题照片");
+    assert.equal(providerCalls, 1);
+    assert.match(providerRequest.systemPrompt, /学习材料图片转写/);
+    const providerInput = JSON.parse(providerRequest.input);
+    assert.equal(providerInput.image_sha256.length, 64);
+    assert.doesNotMatch(providerRequest.input, /temporary-learning-image/);
+
+    const beforeConfirmation = await jsonRequest(baseUrl, "/api/v1/learning-artifacts", { headers: auth() });
+    assert.equal(beforeConfirmation.body.artifacts.length, 0);
+
+    const replay = await binaryRequest(baseUrl, "/api/v1/learning-image-extractions", image, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-extract-01", "X-Request-Id": requestId },
+    });
+    assert.equal(replay.response.status, 200);
+    assert.equal(replay.body.status, "ready");
+    assert.equal(providerCalls, 1);
+
+    const missingRequestId = await binaryRequest(baseUrl, "/api/v1/learning-image-extractions", image, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-no-request-01" },
+    });
+    assert.equal(missingRequestId.response.status, 422);
+    assert.equal(providerCalls, 1);
+
+    const confirmed = await jsonRequest(baseUrl, "/api/v1/learning-artifacts", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-confirm-01" },
+      body: JSON.stringify({
+        request_id: "13131313-1313-4131-8131-131313131313",
+        kind: extraction.body.draft.kind,
+        subject: "数学",
+        source_title: extraction.body.draft.source_title,
+        content_text: extraction.body.draft.content_text,
+      }),
+    });
+    assert.equal(confirmed.response.status, 201);
+    assert.equal(confirmed.body.artifact.source_title, "极限题照片");
+
+    const invalid = await binaryRequest(baseUrl, "/api/v1/learning-image-extractions", Buffer.from("not-an-image"), {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-invalid-01", "X-Request-Id": "14141414-1414-4141-8141-141414141414" },
+    });
+    assert.equal(invalid.response.status, 422);
+    assert.equal(invalid.body.code, "invalid_request");
+  } finally {
+    await close(server);
+  }
+});
+
+test("learning image extraction degrades when provider output cannot be confirmed", async () => {
+  const provider = { async complete() { return { source_type: "ai_assisted", text: "不是结构化转写" }; } };
+  const { server } = createBackendServer({ aiEnabled: true, provider });
+  const baseUrl = await listen(server);
+  const image = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from("temporary-learning-image")]);
+  try {
+    const degraded = await binaryRequest(baseUrl, "/api/v1/learning-image-extractions", image, {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "material-image-degraded-01", "X-Request-Id": "15151515-1515-4151-8151-151515151515" },
+    });
+    assert.equal(degraded.response.status, 200);
+    assert.equal(degraded.body.status, "degraded");
+    assert.equal(degraded.body.draft, null);
+    const usage = await jsonRequest(baseUrl, "/api/v1/me/ai/usage", { headers: auth() });
+    assert.equal(usage.body.usage.total_runs, 1);
+    assert.equal(usage.body.usage.completed_runs, 0);
+    assert.equal(usage.body.usage.degraded_runs, 1);
   } finally {
     await close(server);
   }

@@ -565,6 +565,11 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .material-intake input, .material-intake select, .material-intake textarea, .material-evidence textarea { width: 100%; padding: 11px 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid rgba(13, 23, 26, .16); outline: 0; font: inherit; font-size: 11px; line-height: 1.65; }
 .material-intake input:focus, .material-intake select:focus, .material-intake textarea:focus, .material-evidence textarea:focus { border-color: var(--gold); background: var(--paper-light); }
 .material-intake textarea { min-height: 180px; resize: vertical; }
+.material-photo { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 11px 12px; background: rgba(217, 211, 198, .28); border: 1px dashed rgba(13, 23, 26, .28); }
+.material-photo input { max-width: 190px; padding: 0; border: 0; background: transparent; font-size: 9px; }
+.material-photo > span { min-width: 0; overflow: hidden; color: var(--ink); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.material-photo__notice, .material-photo__uncertain { margin: -7px 0 0; color: var(--rock); font-size: 9px; line-height: 1.65; }
+.material-photo__uncertain { color: var(--red); }
 .material-intake__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 4px; color: var(--rock); font-size: 9px; line-height: 1.6; }
 .material-library, .material-diagnosis, .material-citations, .material-evidence { margin-top: 27px; padding-top: 24px; border-top: 1px solid var(--line-dark); }
 .material-library__head, .material-citations__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--rock); font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
@@ -1294,6 +1299,8 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
   .study-action__controls .button, .study-action__controls label { width: 100%; }
   .study-action__controls select { width: 100%; }
   .material-intake__grid, .material-evidence__levels { grid-template-columns: 1fr; }
+  .material-photo { grid-template-columns: 1fr; gap: 8px; }
+  .material-photo input { max-width: 100%; }
   .material-intake__footer { align-items: stretch; flex-direction: column; }
   .material-intake__footer .button, .material-evidence > .button { width: 100%; }
   .study-question h3 { font-size: 18px; }

@@ -1083,4 +1083,15 @@ test("OpenAI-compatible provider keeps the credential at the server boundary", a
   assert.equal(calls[0].url, "https://provider.example/v1/chat/completions");
   assert.equal(calls[0].options.headers.Authorization, "Bearer server-only-test-key");
   assert.equal(JSON.parse(calls[0].options.body).model, "test-model");
+
+  await provider.complete({
+    feature: "material_image_extraction",
+    input: "图片转写请求",
+    maxOutputTokens: 100,
+    imageDataUrls: ["data:image/png;base64,iVBORw0KGgo="],
+  });
+  const visionMessage = JSON.parse(calls[1].options.body).messages[1].content;
+  assert.equal(Array.isArray(visionMessage), true);
+  assert.deepEqual(visionMessage[0], { type: "text", text: JSON.stringify({ feature: "material_image_extraction", input: "图片转写请求" }) });
+  assert.deepEqual(visionMessage[1], { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo=" } });
 });

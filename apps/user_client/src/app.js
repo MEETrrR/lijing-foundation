@@ -260,6 +260,22 @@ async function requestLearningArtifact(payload) {
   return body;
 }
 
+async function requestMaterialImageExtraction(file) {
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/gif"]);
+  if (!file || !allowedTypes.has(file.type)) throw new Error("请拍摄或选择 JPEG、PNG、GIF 格式的图片");
+  if (file.size > 5 * 1024 * 1024) throw new Error("图片不能超过 5 MB");
+  const requestId = newRequestId();
+  const response = await fetch("/api/v1/learning-image-extractions", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": file.type, "Idempotency-Key": requestId, "X-Request-Id": requestId },
+    body: file,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, "图片暂时没有识别成功");
+  return body;
+}
+
 async function requestLearningArtifacts() {
   const response = await fetch("/api/v1/learning-artifacts", { credentials: "same-origin", cache: "no-store" });
   const body = await response.json().catch(() => ({}));
@@ -1493,6 +1509,20 @@ export function createApp(root = document.querySelector("#app")) {
         item.hidden = Boolean(query) && !item.textContent.toLowerCase().includes(query);
       });
     }));
+    root.querySelectorAll("[data-material-image]").forEach((input) => input.addEventListener("change", () => {
+      const form = input.closest('form[data-demo-form="learning-artifact"]');
+      if (!form) return;
+      form.dataset.photoConfirmed = "false";
+      const label = form.querySelector("[data-material-image-name]");
+      const uncertainty = form.querySelector("[data-material-image-uncertain]");
+      if (label) label.textContent = input.files?.[0]?.name || "选择图片或直接拍摄";
+      if (uncertainty) {
+        uncertainty.hidden = true;
+        uncertainty.textContent = "";
+      }
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.innerHTML = `交给器灵 ${icon("arrow")}`;
+    }));
     root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (form.dataset.submitting === "true") return;
@@ -1509,6 +1539,35 @@ export function createApp(root = document.querySelector("#app")) {
         const subject = String(values.get("subject") ?? "数学").trim() || "数学";
         const kind = String(values.get("kind") ?? "question").trim() || "question";
         const contentText = String(values.get("content_text") ?? "").trim();
+        const imageInput = form.querySelector("[data-material-image]");
+        const image = imageInput?.files?.[0] ?? null;
+        if (image && form.dataset.photoConfirmed !== "true") {
+          const extraction = await requestMaterialImageExtraction(image);
+          if (extraction.status !== "ready" || !extraction.draft) {
+            toast("图片暂时无法稳定识别，请直接粘贴文字后再交给器灵");
+            return;
+          }
+          const draft = extraction.draft;
+          const titleInput = form.querySelector('[name="source_title"]');
+          const kindInput = form.querySelector('[name="kind"]');
+          const contentInput = form.querySelector('[name="content_text"]');
+          if (titleInput) titleInput.value = draft.source_title;
+          if (kindInput) kindInput.value = draft.kind;
+          if (contentInput) contentInput.value = draft.content_text;
+          form.dataset.photoConfirmed = "true";
+          imageInput.value = "";
+          const label = form.querySelector("[data-material-image-name]");
+          if (label) label.textContent = "已提取，请确认文字后再提交";
+          const uncertainty = form.querySelector("[data-material-image-uncertain]");
+          if (uncertainty) {
+            uncertainty.hidden = !(draft.uncertain_parts?.length);
+            uncertainty.textContent = draft.uncertain_parts?.length ? `请核对：${draft.uncertain_parts.join("；")}` : "";
+          }
+          const submit = form.querySelector('button[type="submit"]');
+          if (submit) submit.innerHTML = `确认文字并交给器灵 ${icon("arrow")}`;
+          toast("已提取可确认文字，请核对后再提交");
+          return;
+        }
         if (!sourceTitle || contentText.length < 12) {
           toast("请至少填写材料标题，并粘贴 12 个字以上的内容");
           return;

@@ -11,6 +11,7 @@ const repositoryRoot = path.resolve(__dirname, "../..");
 const openApiPath = path.join(repositoryRoot, "packages/contracts/openapi.yaml");
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 const WRITE_METHODS = new Set(["put", "post", "delete", "patch"]);
+const BINARY_WRITE_OPERATIONS = new Set(["POST /api/v1/learning-image-extractions"]);
 const OPERATION_SECURITY = {
   "GET /api/v1/health": "public",
   "POST /api/v1/auth/register": "public",
@@ -31,6 +32,7 @@ const OPERATION_SECURITY = {
   "GET /api/v1/learning-artifacts": "bearer",
   "POST /api/v1/learning-artifacts": "bearer",
   "GET /api/v1/learning-artifacts/{artifact_id}": "bearer",
+  "POST /api/v1/learning-image-extractions": "bearer",
   "POST /api/v1/learning-attempts": "bearer",
   "POST /api/v1/companion/diagnoses": "bearer",
   "POST /api/v1/companion/actions/{action_id}/evidence": "bearer",
@@ -203,10 +205,17 @@ test("OpenAPI is parsed and validated as a versioned, secured use-case contract"
 
     if (!WRITE_METHODS.has(method)) continue;
     if (pathTemplate.startsWith("/api/v1/auth/")) continue;
-    const rawRequestSchema = operation.requestBody?.content?.["application/json"]?.schema;
-    const requestSchema = rawRequestSchema?.$ref ? resolveLocalRef(api, rawRequestSchema.$ref) : rawRequestSchema;
-    assert.ok(requestSchema, `${method.toUpperCase()} ${pathTemplate} must define a JSON request schema`);
-    assert.ok(requestSchema.required?.includes("request_id"), `${method.toUpperCase()} ${pathTemplate} must require request_id`);
+    const operationKey = `${method.toUpperCase()} ${pathTemplate}`;
+    if (BINARY_WRITE_OPERATIONS.has(operationKey)) {
+      const binaryMedia = operation.requestBody?.content?.["image/jpeg"]?.schema;
+      assert.ok(binaryMedia, `${operationKey} must define an image request schema`);
+      assert.ok(operation.parameters?.some((parameter) => parameter.$ref === "#/components/parameters/RequestId"));
+    } else {
+      const rawRequestSchema = operation.requestBody?.content?.["application/json"]?.schema;
+      const requestSchema = rawRequestSchema?.$ref ? resolveLocalRef(api, rawRequestSchema.$ref) : rawRequestSchema;
+      assert.ok(requestSchema, `${operationKey} must define a JSON request schema`);
+      assert.ok(requestSchema.required?.includes("request_id"), `${operationKey} must require request_id`);
+    }
     assert.ok(operation.parameters?.some((parameter) => parameter.$ref === "#/components/parameters/IdempotencyKey"));
     assert.ok(operation.responses?.["401"], `${method.toUpperCase()} ${pathTemplate} must define 401`);
     assert.ok(operation.responses?.["403"], `${method.toUpperCase()} ${pathTemplate} must define 403`);

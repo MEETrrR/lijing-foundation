@@ -498,6 +498,44 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/v1/learning-image-extractions:
+    post:
+      tags: [learning]
+      operationId: extractLearningImageText
+      summary: Extract a temporary learning image into user-confirmable text
+      description: The original image is used only for this request and is not stored as a learning artifact. The learner must confirm the returned text through the normal private-material endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              $ref: '#/components/schemas/LearningImageUpload'
+          image/png:
+            schema:
+              $ref: '#/components/schemas/LearningImageUpload'
+          image/gif:
+            schema:
+              $ref: '#/components/schemas/LearningImageUpload'
+      responses:
+        '200':
+          description: Extracted draft ready for learner confirmation, or an explainable degraded result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningImageExtractionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/learning-attempts:
     post:
       tags: [learning]
@@ -974,6 +1012,14 @@ components:
         type: string
         minLength: 16
         maxLength: 128
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      description: Client-generated correlation identifier for a binary learning-image extraction request.
+      schema:
+        type: string
+        format: uuid
   schemas:
     HealthResponse:
       type: object
@@ -1523,6 +1569,47 @@ components:
           $ref: '#/components/schemas/LearningArtifact'
         replayed:
           type: boolean
+    LearningImageUpload:
+      type: string
+      format: binary
+      description: JPEG, PNG, or GIF image bytes. Maximum size is 5 MB.
+    LearningImageExtractionDraft:
+      type: object
+      additionalProperties: false
+      required: [source_title, kind, content_text, uncertain_parts]
+      properties:
+        source_title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        kind:
+          type: string
+          enum: [question, note, attempt_draft, answer_reference, plan_outline]
+        content_text:
+          type: string
+          minLength: 12
+          maxLength: 12000
+        uncertain_parts:
+          type: array
+          maxItems: 4
+          items:
+            type: string
+            maxLength: 160
+    LearningImageExtractionResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, draft]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ready, degraded]
+        draft:
+          oneOf:
+            - $ref: '#/components/schemas/LearningImageExtractionDraft'
+            - type: 'null'
     LearningArtifactDetailResponse:
       type: object
       additionalProperties: false

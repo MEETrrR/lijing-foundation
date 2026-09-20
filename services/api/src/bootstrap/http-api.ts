@@ -1,6 +1,7 @@
 const http = require("node:http");
 const { randomUUID } = require("node:crypto");
 const { createRequestContext } = require("../platform/http/request-context.ts");
+const { isValidRequestId } = require("../platform/http/correlation-id.ts");
 const { PlatformError, toHttpError } = require("../platform/errors/error-catalog.ts");
 const { InMemoryDatabase } = require("../platform/persistence/database.ts");
 const { createSupabaseDatabaseFromEnv } = require("../platform/persistence/supabase-database.ts");
@@ -20,6 +21,7 @@ const { CompanionCycleService } = require("../domains/companion-cycle/companion-
 const { CompanionActionService } = require("../domains/companion-cycle/companion-action-service.ts");
 const { CompanionDiagnosisService } = require("../domains/companion-cycle/companion-diagnosis-service.ts");
 const { LearningArtifactService } = require("../domains/learning-artifact/learning-artifact-service.ts");
+const { VisionMaterialService, MAX_IMAGE_BYTES } = require("../domains/learning-artifact/vision-material-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -42,6 +44,18 @@ async function readJson(request) {
   } catch (error) {
     throw new PlatformError("VALIDATION_ERROR", "request body is not valid JSON", { cause: error });
   }
+}
+
+async function readBinary(request, maximum = MAX_IMAGE_BYTES) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maximum) throw new PlatformError("VALIDATION_ERROR", "request body is too large");
+    chunks.push(chunk);
+  }
+  if (size === 0) throw new PlatformError("VALIDATION_ERROR", "request body is required");
+  return Buffer.concat(chunks);
 }
 
 function sendJson(response, status, body, context, extraHeaders = {}) {
@@ -131,11 +145,12 @@ function createDefaultServices(options = {}) {
     outputPer1kUsd: env.AI_OUTPUT_COST_PER_1K_USD ?? 0,
   };
   const ai = options.ai ?? new AiGatewayService({ database, provider: configuredProvider, enabled: aiEnabled, policy: options.policy, pricing: aiPricing, clock, companion, memory, knowledge });
+  const visionMaterials = options.visionMaterials ?? new VisionMaterialService({ ai });
   const learningRoutes = options.learningRoutes ?? new LearningRouteService({ database, ai, knowledge, memory, userState, clock });
   const diagnosis = options.diagnosis ?? new CompanionDiagnosisService({ database, artifacts, actions, ai, userState, clock });
   const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, ai, knowledge, learningRoutes, health };
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, ai, visionMaterials, knowledge, learningRoutes, health };
 }
 
 function createBackendHandler(services) {
@@ -240,6 +255,18 @@ function createBackendHandler(services) {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
         const result = await services.artifacts.createArtifact(actor.actorId, await readJson(request), idempotencyKey(request));
         sendJson(response, 201, { ...result.response, replayed: result.replayed }, actorContext);
+        return;
+      }
+
+      if (url.pathname === "/api/v1/learning-image-extractions" && request.method === "POST") {
+        if (!isValidRequestId(headerValue(request.headers, "x-request-id"))) throw new PlatformError("VALIDATION_ERROR", "X-Request-Id must be a UUID");
+        const contentType = headerValue(request.headers, "content-type");
+        const result = await services.visionMaterials.extract(actor.actorId, {
+          requestId: actorContext.requestId,
+          contentType,
+          bytes: await readBinary(request),
+        }, idempotencyKey(request));
+        sendJson(response, 200, result, actorContext);
         return;
       }
 
@@ -433,5 +460,6 @@ module.exports = {
   createBackendHandler,
   createBackendServer,
   createDefaultServices,
+  readBinary,
   readJson,
 };
