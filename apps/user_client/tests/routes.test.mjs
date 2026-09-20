@@ -277,6 +277,9 @@ test("material intake supports a temporary photo-to-text confirmation step", asy
   const html = renderPage("/study", state);
   assert.match(html, /name="material_image"/);
   assert.match(html, /data-material-image/);
+  assert.match(html, /拍照 \/ 上传图片/);
+  assert.match(html, /选择图片、上传文件或直接拍摄/);
+  assert.match(html, /accept="image\/jpeg,image\/png,image\/gif"/);
   assert.match(html, /capture="environment"/);
   assert.match(html, /图片仅用于本次识别，不会保存/);
   assert.match(html, /material-submit-label--confirm/);
@@ -286,6 +289,7 @@ test("material intake supports a temporary photo-to-text confirmation step", asy
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   assert.match(source, /requestMaterialImageExtraction/);
   assert.match(source, /photoConfirmed/);
+  assert.match(source, /选择图片、上传文件或直接拍摄/);
   assert.match(source, /form\.dataset\.photoConfirmed = "true"/);
 });
 

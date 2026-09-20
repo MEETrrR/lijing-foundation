@@ -566,7 +566,7 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .material-intake input:focus, .material-intake select:focus, .material-intake textarea:focus, .material-evidence textarea:focus { border-color: var(--gold); background: var(--paper-light); }
 .material-intake textarea { min-height: 180px; resize: vertical; }
 .material-photo { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 11px 12px; background: rgba(217, 211, 198, .28); border: 1px dashed rgba(13, 23, 26, .28); }
-.material-photo input { max-width: 190px; padding: 0; border: 0; background: transparent; font-size: 9px; }
+.material-photo input { max-width: 240px; padding: 0; border: 0; background: transparent; cursor: pointer; font-size: 9px; }
 .material-photo > span { min-width: 0; overflow: hidden; color: var(--ink); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .material-photo__notice, .material-photo__uncertain { margin: -7px 0 0; color: var(--rock); font-size: 9px; line-height: 1.65; }
 .material-photo__uncertain { color: var(--red); }

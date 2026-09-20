@@ -1515,7 +1515,7 @@ export function createApp(root = document.querySelector("#app")) {
       form.dataset.photoConfirmed = "false";
       const label = form.querySelector("[data-material-image-name]");
       const uncertainty = form.querySelector("[data-material-image-uncertain]");
-      if (label) label.textContent = input.files?.[0]?.name || "选择图片或直接拍摄";
+      if (label) label.textContent = input.files?.[0]?.name || "选择图片、上传文件或直接拍摄";
       if (uncertainty) {
         uncertainty.hidden = true;
         uncertainty.textContent = "";
