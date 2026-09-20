@@ -73,11 +73,11 @@ function text(value, field, max) {
   return value.trim();
 }
 
-function fallbackFor(artifact, reason = "AI 暂不可用") {
+function fallbackFor(artifact) {
   return {
     status: "degraded",
     observations: [],
-    unknowns: [reason, "还没有足够证据确认最终答案或掌握程度。"],
+    unknowns: ["还没有足够证据确认最终答案或掌握程度。"],
     error_tags: ["provider-unavailable"],
     action: {
       title: `先复述“${artifact.source_title}”中的一个关键条件`,
@@ -200,7 +200,7 @@ class CompanionDiagnosisService {
       aiResponse = await this.ai.submit(actorId, { request_id: request.request_id, feature: DIAGNOSIS_FEATURE, input: providerInput }, `material-diagnosis-${idem}`);
       if (aiResponse.status !== "completed") {
         status = "degraded";
-        parsed = fallbackFor(firstArtifact, "AI 服务没有返回可验证诊断。");
+        parsed = fallbackFor(firstArtifact);
       } else {
         parsed = validateProviderDiagnosis(parseJson(aiResponse.result.text), retrieved);
       }
@@ -210,7 +210,7 @@ class CompanionDiagnosisService {
         await this.ai.markRunDegraded(actorId, request.request_id, structuredDiagnosisReason(error));
       }
       status = "degraded";
-      parsed = fallbackFor(firstArtifact, error instanceof PlatformError ? error.message : "AI 服务没有返回可验证诊断。");
+      parsed = fallbackFor(firstArtifact);
     }
     parsed.status = status === "ready" ? "ready" : "degraded";
     const state = this.userState ? (await this.userState.getState(actorId, request.request_id)).state : null;

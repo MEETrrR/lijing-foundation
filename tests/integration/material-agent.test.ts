@@ -182,6 +182,7 @@ test("material diagnosis returns need_material and degrades without a provider",
     assert.equal(degraded.response.status, 200);
     assert.equal(degraded.body.status, "degraded");
     assert.equal(degraded.body.action.origin, "recovery_template");
+    assert.deepEqual(degraded.body.diagnosis.unknowns, ["还没有足够证据确认最终答案或掌握程度。"]);
     const usage = await jsonRequest(baseUrl, "/api/v1/me/ai/usage", { headers: auth() });
     assert.equal(usage.body.usage.total_runs, 1);
     assert.equal(usage.body.usage.degraded_runs, 1);
@@ -209,6 +210,7 @@ test("material diagnosis degrades when provider output is invalid or cites unava
     assert.equal(invalid.response.status, 200);
     assert.equal(invalid.body.status, "degraded");
     assert.equal(invalid.body.action.origin, "recovery_template");
+    assert.deepEqual(invalid.body.diagnosis.unknowns, ["还没有足够证据确认最终答案或掌握程度。"]);
     const invalidUsage = await jsonRequest(baseUrl, "/api/v1/me/ai/usage", { headers: auth() });
     assert.equal(invalidUsage.body.usage.total_runs, 1);
     assert.equal(invalidUsage.body.usage.completed_runs, 0);
@@ -246,6 +248,7 @@ test("material diagnosis degrades when provider output is invalid or cites unava
     assert.equal(invalidReference.response.status, 200);
     assert.equal(invalidReference.body.status, "degraded");
     assert.equal(invalidReference.body.action.origin, "recovery_template");
+    assert.deepEqual(invalidReference.body.diagnosis.unknowns, ["还没有足够证据确认最终答案或掌握程度。"]);
     const referenceUsage = await jsonRequest(badBaseUrl, "/api/v1/me/ai/usage", { headers: auth() });
     assert.equal(referenceUsage.body.usage.total_runs, 1);
     assert.equal(referenceUsage.body.usage.completed_runs, 0);

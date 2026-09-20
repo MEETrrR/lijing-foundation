@@ -309,6 +309,15 @@ test("material action cards expose citations and remove write controls for termi
   assert.match(activeHtml, /data-action-version="2"/);
   assert.match(activeHtml, /data-demo-form="material-evidence"/);
 
+  state.companionCycle.diagnosisSummary = {
+    status: "degraded",
+    unknowns: ["还没有足够证据确认最终答案或掌握程度。"],
+  };
+  const degradedHtml = renderPage("/study", state);
+  assert.match(degradedHtml, /基于材料生成的保底行动/);
+  assert.match(degradedHtml, /不作掌握、正确率或路线结论/);
+  assert.doesNotMatch(degradedHtml, /diagnosis action.expected_evidence is invalid/);
+
   state.companionCycle.currentAction.status = "completed";
   state.companionCycle.screenState = "cycle_completed";
   const terminalHtml = renderPage("/study", state);

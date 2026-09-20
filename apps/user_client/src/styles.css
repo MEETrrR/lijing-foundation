@@ -577,6 +577,7 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .material-diagnosis > span, .material-citations__head span { color: var(--red); font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .1em; }
 .material-diagnosis p { margin: 0; color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 17px; line-height: 1.65; }
 .material-diagnosis small { color: var(--rock); font-size: 9px; line-height: 1.6; }
+.material-diagnosis--degraded > span { color: var(--gold); }
 .material-citations { display: grid; gap: 10px; }
 .material-citations__head small { color: var(--rock); font-size: 9px; letter-spacing: 0; text-transform: none; }
 .material-citations article { padding: 12px 13px; background: rgba(217, 211, 198, .32); border-left: 2px solid rgba(189, 141, 67, .7); }
