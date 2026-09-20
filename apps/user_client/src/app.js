@@ -1184,7 +1184,7 @@ export function createApp(root = document.querySelector("#app")) {
       render("/onboarding");
     }));
     root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", async () => {
-      navigate("/route", () => toast("方向和节律已带入，补充路线条件后即可生成今日计划"));
+      navigate("/study", () => toast("先粘贴一道题、笔记或草稿，器灵会据此准备第一条行动"));
     }));
     root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.tour.active = false;
@@ -1777,6 +1777,7 @@ export function createApp(root = document.querySelector("#app")) {
         const previousUser = structuredClone(DEMO_STATE.user);
         const previousProfile = structuredClone(DEMO_STATE.onboarding.profile);
         const previousGoals = structuredClone(DEMO_STATE.goals);
+        const previousOnboardingCompleted = DEMO_STATE.onboarding.completed;
         const goal = DEMO_STATE.goals.find((item) => item.id === goalId) ?? DEMO_STATE.goals[0];
         DEMO_STATE.goals.forEach((item) => { item.selected = item.id === goal.id; });
         DEMO_STATE.user = {
@@ -1793,13 +1794,16 @@ export function createApp(root = document.querySelector("#app")) {
         };
         DEMO_STATE.onboarding.profile = { name, stage, school, major, age, region, target: goal.id, dailyMinutes };
         try {
+          DEMO_STATE.onboarding.completed = true;
           await persistUserState();
           DEMO_STATE.onboarding.step = 1;
-          navigate("/route", () => toast("目标和时间已带入；填完目标名称即可生成今天的第一步"));
+          await syncCompanionCycle();
+          navigate("/study", () => toast("先粘贴一道题、笔记或草稿，器灵会据此准备第一条行动"));
         } catch (error) {
           DEMO_STATE.user = previousUser;
           DEMO_STATE.onboarding.profile = previousProfile;
           DEMO_STATE.goals = previousGoals;
+          DEMO_STATE.onboarding.completed = previousOnboardingCompleted;
           toast(error.message);
         }
         return;
@@ -1892,7 +1896,7 @@ export function createApp(root = document.querySelector("#app")) {
           resetToRealState(body.user);
           await syncAuthenticatedAccount();
           toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
-          navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/");
+          navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/study");
         } catch (error) {
           toast(error.message);
         } finally {

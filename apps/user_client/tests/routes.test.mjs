@@ -177,7 +177,7 @@ test("learning route intake asks for real capacity and only exposes a draft afte
   assert.match(tightHtml, /接受紧凑安排，开始今天这一步/);
 });
 
-test("first-visit onboarding collects only the minimum setup before route building", () => {
+test("first-visit onboarding collects only the minimum setup before material intake", () => {
   const state = structuredClone(DEMO_STATE);
   state.onboarding.step = 1;
   const profileHtml = renderPage("/onboarding", state);
@@ -186,10 +186,10 @@ test("first-visit onboarding collects only the minimum setup before route buildi
   assert.match(profileHtml, /data-demo-form="onboarding-profile"/);
   assert.match(profileHtml, /name="school"/);
   assert.match(profileHtml, /你现在最想完成什么/);
-  assert.match(profileHtml, /先完成最少信息，其他资料之后也能补充/);
+  assert.match(profileHtml, /接下来直接粘贴正在卡住的材料/);
   assert.match(profileHtml, /长期技能伴学/);
   assert.match(profileHtml, /开发中/);
-  assert.match(profileHtml, /继续补充路线/);
+  assert.match(profileHtml, /进入材料诊断/);
   assert.match(profileHtml, /补充更多资料/);
   assert.doesNotMatch(profileHtml, /继续选择书鼎/);
 
@@ -250,7 +250,7 @@ test("study chapter exposes the evidence protocol and action-oriented review con
   for (const label of ["用了什么证据", "发现了什么问题", "为什么这样判断", "明日行动"]) assert.match(reviewHtml, new RegExp(label));
 });
 
-test("study chapter uses the server-selected companion cycle instead of a fixed mathematics prompt", () => {
+test("real accounts prioritize material intake over legacy route diagnostics", () => {
   const state = structuredClone(DEMO_STATE);
   state.isDemo = false;
   state.companionCycle = {
@@ -264,11 +264,10 @@ test("study chapter uses the server-selected companion cycle instead of a fixed 
     nextAction: "先列出三个小标题，再补每个标题的一句话。",
   };
   const html = renderPage("/study", state);
-  assert.match(html, /完成论文提纲的三个小节/);
-  assert.match(html, /先列出三个小标题/);
-  assert.equal((html.match(/data-action="companion-check-in"/g) ?? []).length, 3);
-  assert.match(html, /data-task-id="route-task-writing-01"/);
-  assert.doesNotMatch(html, /函数在某点连续/);
+  assert.match(html, /data-demo-form="learning-artifact"/);
+  assert.match(html, /先把正在卡住的地方交出来/);
+  assert.doesNotMatch(html, /完成论文提纲的三个小节/);
+  assert.doesNotMatch(html, /首日独立诊断/);
 });
 
 test("material study state asks for real material before showing a diagnosis", () => {
@@ -328,7 +327,7 @@ test("material study warns when durable persistence is not confirmed", () => {
   assert.match(html, /本次操作没有保存/);
 });
 
-test("initial postgraduate diagnostic requires three real exercises instead of a fabricated platform score", () => {
+test("legacy route diagnostics do not replace material intake for real accounts", () => {
   const state = structuredClone(DEMO_STATE);
   state.isDemo = false;
   state.companionCycle = {
@@ -347,13 +346,11 @@ test("initial postgraduate diagnostic requires three real exercises instead of a
     error: "",
   };
   const html = renderPage("/study", state);
-  assert.match(html, /首日独立诊断 · 数学二/);
-  assert.equal((html.match(/data-diagnostic-source=/g) ?? []).length, 3);
-  assert.equal((html.match(/data-diagnostic-outcome=/g) ?? []).length, 3);
-  assert.equal((html.match(/data-diagnostic-minutes=/g) ?? []).length, 3);
-  assert.match(html, /按原题答案自行核对。砺境只记录过程和结果，不生成虚假分数/);
-  assert.match(html, /保存诊断并生成下一步/);
-  assert.doesNotMatch(html, /data-evidence-input/);
+  assert.match(html, /data-demo-form="learning-artifact"/);
+  assert.match(html, /材料 → 诊断 → 一条现在能完成的行动/);
+  assert.doesNotMatch(html, /首日独立诊断/);
+  assert.equal((html.match(/data-diagnostic-source=/g) ?? []).length, 0);
+  assert.equal((html.match(/data-diagnostic-outcome=/g) ?? []).length, 0);
 });
 
 test("review chapter exposes the user-controlled memory loop", () => {
@@ -511,7 +508,7 @@ test("shell exposes navigation, motion controls and content landmarks", () => {
 test("onboarding shell keeps the focused surface and approved background", () => {
   const html = renderShell("/onboarding", DEMO_STATE, renderPage("/onboarding", DEMO_STATE));
   assert.match(html, /class="app-shell app-shell--onboarding"/);
-  assert.match(html, /约 2 分钟 · 可随时修改/);
+  assert.match(html, /约 1 分钟 · 可随时修改/);
   assert.doesNotMatch(html, /class="feature-nav-trigger"/);
   assert.match(html, /onboarding\/onboarding-background-v2\.png/);
   assert.match(html, /data-scene="onboarding"/);
