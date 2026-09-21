@@ -217,29 +217,25 @@ export const ROUTES = {
   },
 };
 
-export const NAV_ITEMS = [
-  { href: "/features", label: "目录", short: "中", gua: "☯", position: "center" },
-  { href: "/review", label: "回望", short: "坎", gua: "☵", position: "north" },
-  { href: "/plan", label: "行旅", short: "艮", gua: "☶", position: "northeast" },
-  { href: "/growth", label: "成长", short: "震", gua: "☳", position: "east" },
-  { href: "/knowledge", label: "知识库", short: "巽", gua: "☴", position: "southeast" },
-  { href: "/study", label: "攀登", short: "离", gua: "☲", position: "south" },
-  { href: "/map", label: "山海图", short: "坤", gua: "☷", position: "southwest" },
-  { href: "/assistant", label: "引路", short: "兑", gua: "☱", position: "west" },
-  { href: "/goals", label: "目标", short: "乾", gua: "☰", position: "northwest" },
+export const FEATURE_ITEMS = [
+  { href: "/route", label: "路线", gua: "乾", short: "乾", direction: "northwest", position: "northwest", chapter: "路线", detail: "目标与可行路线" },
+  { href: "/plan", label: "行旅", gua: "艮", short: "艮", direction: "northeast", position: "northeast", chapter: "行旅", detail: "安排今天的路线" },
+  { href: "/study", label: "攀登", gua: "离", short: "离", direction: "south", position: "south", chapter: "攀登", detail: "进入当前学习山段" },
+  { href: "/review", label: "回望", gua: "坎", short: "坎", direction: "north", position: "north", chapter: "回望", detail: "加固走过的知识" },
+  { href: "/knowledge", label: "知识库", gua: "巽", short: "巽", direction: "southeast", position: "southeast", chapter: "知识库", detail: "查看你的知识脉络" },
+  { href: "/assistant", label: "引路", gua: "兑", short: "兑", direction: "west", position: "west", chapter: "引路", detail: "向云中引路人提问" },
+  { href: "/growth", label: "成长", gua: "震", short: "震", direction: "east", position: "east", chapter: "成长", detail: "查看成长留下的印记" },
+  { href: "/map", label: "山海图", gua: "坤", short: "坤", direction: "southwest", position: "southwest", chapter: "山海图", detail: "看见远方山系" },
 ];
 
-export const FEATURE_ITEMS = [
-  { href: "/goals", label: "目标", gua: "乾", detail: "调整你的主方向" },
-  { href: "/route", label: "路线", gua: "乾", detail: "生成并确认可行路线" },
-  { href: "/plan", label: "行旅", gua: "艮", detail: "安排今天的路线" },
-  { href: "/study", label: "攀登", gua: "离", detail: "进入当前学习山段" },
-  { href: "/review", label: "回望", gua: "坎", detail: "加固走过的知识" },
-  { href: "/knowledge", label: "知识库", gua: "巽", detail: "查看你的知识脉络" },
-  { href: "/assistant", label: "引路", gua: "兑", detail: "向云中引路人提问" },
-  { href: "/growth", label: "成长", gua: "震", detail: "查看成长留下的印记" },
-  { href: "/map", label: "山海图", gua: "坤", detail: "看见远方山系" },
-];
+export const NAV_ITEMS = FEATURE_ITEMS.map(({ href, label, short, gua, position, chapter }) => ({
+  href,
+  label,
+  short,
+  gua,
+  position,
+  chapter,
+}));
 
 const FIRST_PHASE_ROUTES = new Set(Object.keys(ROUTES));
 

@@ -12,9 +12,16 @@ const DIRECTIONS = [
 ];
 
 export function renderBaguaField({ active = "坎", compact = false, label = "八方方位", directoryItems = null } = {}) {
+  if (directoryItems && directoryItems.length > DIRECTIONS.length) {
+    console.warn("[bagua] 传入 " + directoryItems.length + " 项但只有 " + DIRECTIONS.length + " 个方位，多余项不会渲染");
+  }
+  const directionKeys = directoryItems?.map((item) => item.direction);
+  if (directionKeys && new Set(directionKeys).size !== directionKeys.length) {
+    console.warn("[bagua] 存在重复的 direction，会导致项被静默丢弃", directionKeys);
+  }
   const nodes = DIRECTIONS.map((direction) => {
     const selected = direction.gua === active;
-    const item = directoryItems?.find((entry) => entry.gua === direction.gua);
+    const item = directoryItems?.find((entry) => entry.direction === direction.key);
     const copy = item
       ? `<b>${direction.label}</b><strong>${item.label}</strong><small>${item.detail}</small>`
       : `<b>${direction.label}</b><strong>${direction.gua}${direction.element}</strong><small>${direction.meaning}</small>`;

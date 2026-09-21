@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NAV_ITEMS, ROUTES, getRouteMeta, normalizeRoute } from "../src/data/routes.js";
+import { FEATURE_ITEMS, NAV_ITEMS, ROUTES, getRouteMeta, normalizeRoute } from "../src/data/routes.js";
 import { PAGE_RENDERERS, renderPage } from "../src/pages/index.js";
 import { renderShell } from "../src/components/shell.js";
 import { DEMO_STATE } from "../src/data/demo-data.js";
@@ -490,9 +490,12 @@ test("feature directory exposes eight clickable directions", () => {
 test("navigation centers on the feature directory and keeps the eight modules around it", () => {
   const html = renderShell("/features", DEMO_STATE);
   assert.match(html, /href="\/features"[^>]+data-route="\/features"/);
-  for (const route of ["/goals", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map"]) {
+  assert.equal(FEATURE_ITEMS.length, 8);
+  assert.equal(new Set(FEATURE_ITEMS.map((item) => item.direction)).size, 8);
+  for (const route of ["/route", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map"]) {
     assert.match(html, new RegExp(`data-route="${route.replace("/", "\\/")}"`));
   }
+  assert.match(renderPage("/route", DEMO_STATE), new RegExp("data-route=\"/goals\""));
 });
 
 test("bagua navigation opens as a full-screen selection surface", async () => {
