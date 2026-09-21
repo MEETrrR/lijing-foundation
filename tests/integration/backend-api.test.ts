@@ -666,7 +666,7 @@ test("companion prompts are server-selected and continuity is persisted per acco
     assert.equal(profileAfterFirst.response.status, 200);
     assert.equal(profileAfterFirst.body.interaction_count, 1);
     assert.equal(profileAfterFirst.body.companion_id, "lijing-guide-fan-v2");
-    assert.equal(profileAfterFirst.body.prompt_version, "v2.1");
+    assert.equal(profileAfterFirst.body.prompt_version, "v3.0");
 
     const second = await makeRequest(ids.request8, "companion-continuity-02", "把同一个概念迁移到新题里");
     assert.equal(second.body.status, "accepted");

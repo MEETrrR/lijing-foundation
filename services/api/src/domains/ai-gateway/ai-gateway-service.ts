@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const { isValidRequestId } = require("../../platform/http/correlation-id.ts");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { LEARNING_ROUTE_SYSTEM_PROMPT } = require("../learning-route/learning-route-prompt.ts");
-const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt, MATERIAL_DIAGNOSIS_SYSTEM_PROMPT, MATERIAL_IMAGE_EXTRACTION_SYSTEM_PROMPT } = require("../companion/companion-prompts.ts");
+const { buildCompanionSystemPrompt, DEFAULT_COMPANION_ID, getCompanionPrompt, getCompanionRequestMode, MATERIAL_DIAGNOSIS_SYSTEM_PROMPT, MATERIAL_IMAGE_EXTRACTION_SYSTEM_PROMPT } = require("../companion/companion-prompts.ts");
 const { normalizeAssistantResponse } = require("./assistant-response.ts");
 
 const AI_FEATURES = Object.freeze([
@@ -300,8 +300,11 @@ class AiGatewayService {
         id: getCompanionPrompt(companionId).id,
         name: getCompanionPrompt(companionId).name,
         prompt_version: getCompanionPrompt(companionId).version,
+        request_mode: getCompanionRequestMode(request.feature).id,
         interaction_count: companionProfile.interaction_count ?? 0,
         last_seen_at: companionProfile.last_seen_at ?? null,
+        last_topic: companionProfile.last_topic ?? null,
+        recent_topics: Array.isArray(companionProfile.recent_topics) ? companionProfile.recent_topics.slice(0, 4) : [],
       },
       memory: {
         iteration_count: memoryProfile.iteration_count ?? 0,
@@ -327,7 +330,7 @@ class AiGatewayService {
         ? MATERIAL_DIAGNOSIS_SYSTEM_PROMPT
         : request.feature === "material_image_extraction"
           ? MATERIAL_IMAGE_EXTRACTION_SYSTEM_PROMPT
-          : buildCompanionSystemPrompt({ companionId, companionProfile, memoryProfile, retrieval }),
+          : buildCompanionSystemPrompt({ companionId, feature: request.feature, companionProfile, memoryProfile, retrieval }),
     };
   }
 
