@@ -85,8 +85,20 @@ test("local client server keeps AI disabled honest and protects the formal AI ro
     const faviconResponse = await fetch(`${baseUrl}/apps/user_client/src/favicon.svg`);
     assert.equal(faviconResponse.status, 200);
     assert.equal(faviconResponse.headers.get("content-type"), "image/svg+xml");
-    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`);
+    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`);
     assert.equal(assetResponse.status, 200);
+    assert.equal(assetResponse.headers.get("content-type"), "image/webp");
+    assert.equal(assetResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+    assert.match(assetResponse.headers.get("etag") ?? "", /^W\//);
+    const cachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`, {
+      headers: { "If-None-Match": assetResponse.headers.get("etag") ?? "" },
+    });
+    assert.equal(cachedAssetResponse.status, 304);
+    const compressedSourceResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
+      headers: { "Accept-Encoding": "gzip" },
+    });
+    assert.equal(compressedSourceResponse.headers.get("content-encoding"), "gzip");
+    assert.equal(compressedSourceResponse.headers.get("vary"), "Accept-Encoding");
     const openingVideoResponse = await fetch(`${baseUrl}/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4`);
     assert.equal(openingVideoResponse.status, 200);
     assert.equal(openingVideoResponse.headers.get("content-type"), "video/mp4");

@@ -4,6 +4,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { gzipSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 const { createBackendHandler, createDefaultServices } = require("../../services/api/src/bootstrap/http-api.ts");
@@ -15,7 +16,7 @@ const CLIENT_SOURCE_ROOT = path.join(CLIENT_ROOT, "src");
 const ASSET_SOURCE_ROOT = path.join(ROOT, "assets", "generated", "source");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4187);
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
 const KNOWN_CLIENT_ROUTES = new Set(["/", "/404", "/features", "/auth", "/privacy", "/terms", "/contact", "/onboarding", "/goals", "/route", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map", "/profile", "/settings", "/state/loading", "/state/empty", "/state/error", "/state/review", "/state/permission"]);
 
 function configureDatabaseTunnel(env) {
@@ -75,11 +76,30 @@ async function handler(request, response) {
   if (!filePath) { response.writeHead(404); response.end("Not found"); return; }
   if ((!existsSync(filePath) || !statSync(filePath).isFile()) && !pathname.startsWith("/assets/")) filePath = path.join(ROOT, "apps/user_client/index.html");
   if (!existsSync(filePath) || !statSync(filePath).isFile()) { response.writeHead(404); response.end("Not found"); return; }
-  const body = await readFile(filePath);
+  const fileStats = statSync(filePath);
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
   const isExtensionlessRoute = !pathname.startsWith("/assets/") && !path.extname(pathname);
   const status = isExtensionlessRoute && !KNOWN_CLIENT_ROUTES.has(normalizedPath) ? 404 : 200;
-  response.writeHead(status, { "Content-Type": MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream", "Cache-Control": "no-cache" });
+  const contentType = MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+  const isHashedAsset = /\/assets\/.*\.[a-f0-9]{12}\.(?:webp|png|jpe?g|svg|mp4)$/i.test(pathname);
+  const etag = `W/"${fileStats.size.toString(16)}-${Math.trunc(fileStats.mtimeMs).toString(16)}"`;
+  const headers = {
+    "Content-Type": contentType,
+    "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : "no-cache",
+    ETag: etag,
+    "Last-Modified": fileStats.mtime.toUTCString(),
+  };
+  if (request.headers["if-none-match"] === etag) { response.writeHead(304, headers); response.end(); return; }
+  const body = await readFile(filePath);
+  const acceptsGzip = /\bgzip\b/.test(request.headers["accept-encoding"] ?? "");
+  const isCompressible = contentType.startsWith("text/") || contentType.startsWith("application/javascript") || contentType.startsWith("application/json");
+  if (acceptsGzip && isCompressible) {
+    const compressedBody = gzipSync(body);
+    response.writeHead(status, { ...headers, "Content-Encoding": "gzip", Vary: "Accept-Encoding", "Content-Length": compressedBody.length });
+    response.end(compressedBody);
+    return;
+  }
+  response.writeHead(status, { ...headers, "Content-Length": body.length });
   response.end(body);
 }
 

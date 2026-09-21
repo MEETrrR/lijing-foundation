@@ -31,8 +31,8 @@ test("auth chapter exposes real login and registration forms", () => {
   const state = structuredClone(DEMO_STATE);
   state.auth = { user: null, mode: "register" };
   const html = renderPage("/auth", state);
-  assert.equal(getAsset("lijing-auth-gate-v1")?.path, "/assets/generated/source/auth/lijing-auth-gate-v1.png");
-  assert.match(html, /auth\/lijing-auth-gate-v1\.png/);
+  assert.equal(getAsset("lijing-auth-gate-v1")?.path, "/assets/generated/source/auth/lijing-auth-gate-v1.c44ade6c283e.webp");
+  assert.match(html, /auth\/lijing-auth-gate-v1\.c44ade6c283e\.webp/);
   assert.match(html, /class="auth-backdrop"/);
   assert.match(html, /data-demo-form="auth" data-auth-mode="register"/);
   assert.match(html, /name="email"/);
@@ -181,8 +181,8 @@ test("first-visit onboarding collects only the minimum setup before material int
   const state = structuredClone(DEMO_STATE);
   state.onboarding.step = 1;
   const profileHtml = renderPage("/onboarding", state);
-  assert.equal(getAsset("lijing-onboarding-background-v2")?.path, "/assets/generated/source/onboarding/onboarding-background-v2.png");
-  assert.doesNotMatch(profileHtml, /onboarding\/onboarding-background-v2\.png/);
+  assert.equal(getAsset("lijing-onboarding-background-v2")?.path, "/assets/generated/source/onboarding/onboarding-background-v2.38f3c1adef81.webp");
+  assert.doesNotMatch(profileHtml, /onboarding\/onboarding-background-v2\.38f3c1adef81\.webp/);
   assert.match(profileHtml, /data-demo-form="onboarding-profile"/);
   assert.match(profileHtml, /name="school"/);
   assert.match(profileHtml, /你现在最想完成什么/);
@@ -202,7 +202,7 @@ test("first-visit onboarding collects only the minimum setup before material int
 });
 
 test("bagua reference is registered and integrated into orientation chapters", () => {
-  assert.equal(getAsset("bagua-ink-compass-v1")?.path, "/assets/generated/source/bagua-ink-compass-v1.png");
+  assert.equal(getAsset("bagua-ink-compass-v1")?.path, "/assets/generated/source/bagua-ink-compass-v1.d0aab454dc70.webp");
   assert.match(renderPage("/review", DEMO_STATE), /bagua-field/);
   assert.match(renderPage("/goals", DEMO_STATE), /data-bagua="乾"/);
 });
@@ -443,17 +443,17 @@ test("knowledge chapter distinguishes private material and grounded citations", 
 
 test("functional chapters keep their approved full-screen scene backgrounds", () => {
   const expectedScenes = {
-    "/": "lijing-horizon-ink-v1.png",
-    "/route": "lijing-growth-journey-ink-v1.png",
-    "/plan": "lijing-growth-journey-ink-v1.png",
-    "/study": "lijing-summit-climb-ink-v2.png",
-    "/review": "lijing-recall-ink-v1.png",
-    "/knowledge": "lijing-summit-climb-ink-v2.png",
-    "/map": "lijing-summit-climb-ink-v2.png",
-    "/profile": "lijing-archive-ink-v2.png",
-    "/settings": "lijing-archive-ink-v2.png",
-    "/assistant": "guides/lijing-guide-background-ink-v1.png",
-    "/onboarding": "onboarding/onboarding-background-v2.png",
+    "/": "lijing-horizon-ink-v1.9ae90710b4bb.webp",
+    "/route": "lijing-growth-journey-ink-v1.1efcfebe37dc.webp",
+    "/plan": "lijing-growth-journey-ink-v1.1efcfebe37dc.webp",
+    "/study": "lijing-summit-climb-ink-v2.70d2d55c7a8a.webp",
+    "/review": "lijing-recall-ink-v1.c87ff09f0ecc.webp",
+    "/knowledge": "lijing-summit-climb-ink-v2.70d2d55c7a8a.webp",
+    "/map": "lijing-summit-climb-ink-v2.70d2d55c7a8a.webp",
+    "/profile": "lijing-archive-ink-v2.b60a537519bc.webp",
+    "/settings": "lijing-archive-ink-v2.b60a537519bc.webp",
+    "/assistant": "guides/lijing-guide-background-ink-v1.91af800a6c54.webp",
+    "/onboarding": "onboarding/onboarding-background-v2.38f3c1adef81.webp",
   };
   for (const [route, filename] of Object.entries(expectedScenes)) {
     const html = renderShell(route, DEMO_STATE);
@@ -512,26 +512,30 @@ test("bagua navigation opens as a full-screen selection surface", async () => {
   assert.match(html, /aria-controls="feature-nav-overlay"/);
   assert.match(html, /class="feature-nav-overlay"/);
   assert.match(html, /class="feature-nav-dial"/);
-  assert.match(html, /bagua-ink-compass-v1\.png/);
-  assert.match(html, /bagua-yinyang-core-v1\.png/);
+  assert.doesNotMatch(html, /bagua-ink-compass-v1|bagua-yinyang-core-v1/);
   assert.match(html, /feature-nav-dial__ink/);
   assert.match(html, /feature-nav-trigger__core/);
   assert.equal((html.match(/class="feature-nav-trigger__direction /g) ?? []).length, 8);
   assert.equal((html.match(/class="feature-nav-node /g) ?? []).length, 8);
   const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
   assert.match(styles, /\.feature-nav-overlay \{[^}]*transform-origin: 51px 48px/);
+  assert.doesNotMatch(styles, /--bagua-(?:base|core)-image/);
+  assert.match(styles, /repeating-conic-gradient/);
   assert.match(styles, /feature-nav-trigger-rotate/);
   assert.match(styles, /feature-nav-trigger-breathe/);
 });
 
-test("onboarding completion exposes the approved dragon-phoenix video transition", () => {
+test("onboarding completion exposes the approved dragon-phoenix video transition", async () => {
   const html = renderShell("/goals", DEMO_STATE, renderPage("/goals", DEMO_STATE));
   assert.match(html, /data-action="complete-onboarding"/);
   assert.equal(getAsset("opening-longfeng-clean-v1")?.path, "/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4");
   assert.match(html, /opening\/ink_longfeng_clean_1920x1080_24fps\.mp4/);
   assert.match(html, /class="ascension-intro__video"/);
   assert.match(html, /playsinline/);
+  assert.match(html, /preload="none"/);
   assert.match(html, /id="ascension-intro"/);
+  const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /video\.load\(\);/);
 });
 
 test("core actions use human language", () => {
@@ -567,14 +571,14 @@ test("onboarding shell keeps the focused surface and approved background", () =>
   assert.match(html, /class="app-shell app-shell--onboarding"/);
   assert.match(html, /约 1 分钟 · 可随时修改/);
   assert.doesNotMatch(html, /class="feature-nav-trigger"/);
-  assert.match(html, /onboarding\/onboarding-background-v2\.png/);
+  assert.match(html, /onboarding\/onboarding-background-v2\.38f3c1adef81\.webp/);
   assert.match(html, /data-scene="onboarding"/);
 });
 
 test("auth shell is a focused entry surface", () => {
   const html = renderShell("/auth", DEMO_STATE, renderPage("/auth", DEMO_STATE));
   assert.match(html, /class="app-shell app-shell--auth"/);
-  assert.match(html, /lijing-auth-gate-v1\.png/);
+  assert.match(html, /lijing-auth-gate-v1\.c44ade6c283e\.webp/);
   assert.match(html, /topbar--auth/);
   assert.doesNotMatch(html, /class="feature-nav-trigger"/);
   assert.doesNotMatch(html, /class="status-axis"/);

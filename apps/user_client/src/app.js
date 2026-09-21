@@ -1108,6 +1108,7 @@ export function createApp(root = document.querySelector("#app")) {
     if (video) {
       video.addEventListener("ended", finish, { once: true });
       video.addEventListener("error", finish, { once: true });
+      video.load();
       try { video.currentTime = 0; } catch { /* The browser may not have loaded metadata yet. */ }
       video.play().catch(() => {});
     }
