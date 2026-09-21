@@ -292,7 +292,7 @@ async function requestMaterialDiagnosis(payload) {
     body: JSON.stringify({ request_id: requestId, ...payload }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw apiError(response, body, "器灵暂时无法读取这份材料");
+  if (!response.ok) throw apiError(response, body, "引路暂时无法读取这份材料");
   return body;
 }
 
@@ -942,7 +942,7 @@ export function createApp(root = document.querySelector("#app")) {
       window.localStorage?.setItem(storageKey, "shown");
       const message = body.tasks?.[0]?.title ? `今天还有：${body.tasks[0].title}` : "今天还有一段学习计划等待完成";
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("砺境 · 今日行旅", { body: message });
+        new Notification("砺境 · 今天", { body: message });
       }
       toast(message);
     } catch {
@@ -1171,7 +1171,7 @@ export function createApp(root = document.querySelector("#app")) {
         node.classList.toggle("is-active", selected);
         node.setAttribute("aria-pressed", String(selected));
       });
-      toast(`${active}位已点亮，今日行旅将沿此方向展开`);
+      toast(`${active}位已点亮，今天将沿此方向展开`);
     }));
     root.querySelectorAll('[data-action="complete-onboarding"]').forEach((element) => element.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1186,7 +1186,7 @@ export function createApp(root = document.querySelector("#app")) {
       render("/onboarding");
     }));
     root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", async () => {
-      navigate("/study", () => toast("先粘贴一道题、笔记或草稿，器灵会据此准备第一条行动"));
+      navigate("/study", () => toast("先粘贴一道题、笔记或草稿，引路会据此准备第一条行动"));
     }));
     root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.tour.active = false;
@@ -1217,7 +1217,7 @@ export function createApp(root = document.querySelector("#app")) {
       const taskId = element.dataset.taskId;
       if (!intent || !taskId) return;
       if (DEMO_STATE.isDemo) {
-        toast("登录后，器灵会把这次行动保存到你的今日循环");
+        toast("登录后，引路会把这次行动保存到你的今日循环");
         return;
       }
       element.disabled = true;
@@ -1227,7 +1227,7 @@ export function createApp(root = document.querySelector("#app")) {
         if (intent === "stuck") payload.blocker_type = root.querySelector("[data-companion-blocker]")?.value || "unknown";
         applyCompanionCycle(await requestCompanionCheckIn(payload));
         render(window.location.pathname);
-        toast(intent === "start" ? "已开始这一段，完成后回来留下证据" : intent === "stuck" ? "已记下卡住的位置，先按器灵给出的最小一步继续" : "今天先缓一缓，下一次会从更小的一步开始");
+        toast(intent === "start" ? "已开始这一段，完成后回来留下证据" : intent === "stuck" ? "已记下卡住的位置，先按引路给出的最小一步继续" : "今天先缓一缓，下一次会从更小的一步开始");
       } catch (error) {
         if (error.code === "action_version_conflict" || error.status === 409) {
           await syncCompanionCycle();
@@ -1424,7 +1424,7 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll('[data-action="capture-knowledge"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.knowledgeCaptureDraft = {
         title: element.dataset.knowledgeTitle ?? "",
-        source: element.dataset.knowledgeSource ?? "攀登 · 当前山段",
+        source: element.dataset.knowledgeSource ?? "学习 · 当前学习",
         strand: "当前学习",
       };
       DEMO_STATE.knowledgeComposerOpen = true;
@@ -1515,7 +1515,7 @@ export function createApp(root = document.querySelector("#app")) {
       try {
       if (form.dataset.demoForm === "learning-artifact") {
         if (DEMO_STATE.isDemo) {
-          toast("请先登录真实账号，再把材料交给器灵");
+          toast("请先登录真实账号，再把材料交给引路");
           return;
         }
         const values = new FormData(form);
@@ -1528,7 +1528,7 @@ export function createApp(root = document.querySelector("#app")) {
         if (image && form.dataset.photoConfirmed !== "true") {
           const extraction = await requestMaterialImageExtraction(image);
           if (extraction.status !== "ready" || !extraction.draft) {
-            toast("图片暂时无法稳定识别，请直接粘贴文字后再交给器灵");
+            toast("图片暂时无法稳定识别，请直接粘贴文字后再交给引路");
             return;
           }
           const draft = extraction.draft;
@@ -1561,7 +1561,7 @@ export function createApp(root = document.querySelector("#app")) {
         if (diagnosisResult.status === "degraded") {
           DEMO_STATE.service.aiStatus = "unavailable";
           DEMO_STATE.service.aiAvailable = false;
-          toast("器灵暂时没有完成模型诊断，已根据材料给你一条可执行动作");
+          toast("引路暂时没有完成模型诊断，已根据材料给你一条可执行动作");
         } else {
           DEMO_STATE.service.aiStatus = "available";
           DEMO_STATE.service.aiAvailable = true;
@@ -1839,7 +1839,7 @@ export function createApp(root = document.querySelector("#app")) {
           await persistUserState();
           DEMO_STATE.onboarding.step = 1;
           await syncCompanionCycle();
-          navigate("/study", () => toast("先粘贴一道题、笔记或草稿，器灵会据此准备第一条行动"));
+          navigate("/study", () => toast("先粘贴一道题、笔记或草稿，引路会据此准备第一条行动"));
         } catch (error) {
           DEMO_STATE.user = previousUser;
           DEMO_STATE.onboarding.profile = previousProfile;

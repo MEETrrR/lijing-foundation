@@ -600,6 +600,7 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .evidence-review__grid > div { display: grid; gap: 7px; min-height: 88px; padding: 15px; background: rgba(217, 211, 198, .45); }
 .evidence-review__grid span { color: var(--red); font-size: 9px; }
 .evidence-review__grid strong { color: var(--ink); font-size: 11px; font-weight: 500; line-height: 1.7; }
+.evidence-review__note { display: block; margin-top: 12px; color: var(--rock); font-size: 9px; line-height: 1.6; }
 .evidence-review__next { border: 1px solid rgba(169, 75, 64, .38) !important; }
 .memory-loop { position: relative; margin-top: 20px; padding: 30px 34px; color: var(--ink); background: rgba(238, 234, 224, .97); border-left: 3px solid var(--red); box-shadow: var(--shadow-paper); }
 .memory-loop .section-title { align-items: flex-end; }
@@ -1403,7 +1404,7 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 /* The home overview is a spread: a red-edged reading sheet beside a dark ledger. */
 .home-overview { background: transparent; }
 .home-overview__lead { position: relative; overflow: hidden; background: rgba(247, 244, 237, .98); border-top: 1px solid rgba(169, 75, 64, .55); }
-.home-overview__lead::before { content: "今日行旅"; position: absolute; top: 39px; right: 28px; color: rgba(169, 75, 64, .4); font-family: var(--font-display); font-size: 18px; writing-mode: vertical-rl; }
+.home-overview__lead::before { content: "今天"; position: absolute; top: 39px; right: 28px; color: rgba(169, 75, 64, .4); font-family: var(--font-display); font-size: 18px; writing-mode: vertical-rl; }
 .home-overview__lead::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: var(--red); opacity: .75; }
 .home-overview__stats { color: var(--paper); background: rgba(13, 23, 26, .93); border-left: 1px solid rgba(228, 189, 112, .55); }
 .home-overview__stats .meta-line { border-color: rgba(238, 234, 224, .17); }

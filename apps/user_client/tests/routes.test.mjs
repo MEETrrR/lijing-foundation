@@ -16,7 +16,7 @@ test("covers every first-phase chapter in navigation metadata", () => {
   const routeKeys = new Set(Object.keys(ROUTES));
   for (const item of NAV_ITEMS) assert.equal(routeKeys.has(item.href), true);
   assert.equal(routeKeys.size >= 11, true);
-  assert.equal(getRouteMeta("/study").chapter, "攀登");
+  assert.equal(getRouteMeta("/study").chapter, "学习");
 });
 
 test("every product chapter has a real page renderer", () => {
@@ -167,7 +167,7 @@ test("learning route intake asks for real capacity and only exposes a draft afte
   assert.match(draftHtml, /确认后会展开/);
   assert.match(draftHtml, /起点校准 · 学习者陈述/);
   assert.match(draftHtml, /数学二/);
-  assert.match(draftHtml, /不把这份陈述当作已验证的分数或掌握结论/);
+  assert.match(draftHtml, /下一段将通过独立练习继续校准/);
   assert.doesNotMatch(draftHtml, /route-plan-preview/);
 
   state.learningRoute.draft.feasibility = { ...state.learningRoute.draft.feasibility, status: "tight", message: "计划接近可用时长。" };
@@ -191,7 +191,7 @@ test("first-visit onboarding collects only the minimum setup before material int
   assert.match(profileHtml, /开发中/);
   assert.match(profileHtml, /进入材料诊断/);
   assert.match(profileHtml, /补充更多资料/);
-  assert.doesNotMatch(profileHtml, /继续选择书鼎/);
+  assert.doesNotMatch(profileHtml, /选择引路/);
 
   state.onboarding.step = 2;
   const repeatedHtml = renderPage("/onboarding", state);
@@ -295,7 +295,7 @@ test("material intake supports a temporary photo-to-text confirmation step", asy
   assert.match(html, /capture="environment"/);
   assert.match(html, /图片仅用于本次识别，不会保存/);
   assert.match(html, /material-submit-label--confirm/);
-  assert.match(html, /确认文字并交给器灵/);
+  assert.match(html, /确认文字并交给引路/);
   assert.doesNotMatch(html, /首版只接收文字/);
 
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
@@ -314,7 +314,7 @@ test("material study state asks for real material before showing a diagnosis", (
   assert.match(html, /data-demo-form="learning-artifact"/);
   assert.match(html, /name="source_title"/);
   assert.match(html, /name="content_text"/);
-  assert.match(html, /交给器灵/);
+  assert.match(html, /交给引路/);
   assert.doesNotMatch(html, /data-demo-form="material-evidence"/);
   assert.doesNotMatch(html, /data-action="companion-check-in"/);
 });
@@ -465,7 +465,7 @@ test("functional chapters keep their approved full-screen scene backgrounds", ()
 test("assistant keeps one default guide without a picker", () => {
   const html = renderPage("/assistant", DEMO_STATE);
   assert.match(html, /lijing-guide-heavenly-book-v2/);
-  assert.doesNotMatch(html, /assistant-guide-picker|data-action="select-guide"|选择你的书鼎/);
+  assert.doesNotMatch(html, /assistant-guide-picker|data-action="select-guide"/);
   assert.doesNotMatch(html, /lijing-guide-pagoda-v2|lijing-guide-ding-v2|lijing-guide-fan-v2/);
   assert.doesNotMatch(html, /aaa-hero-character-female-v2/);
 });
@@ -474,7 +474,7 @@ test("assistant falls back to the default guide for a historic selection", () =>
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-ding-v2";
   const html = renderPage("/assistant", state);
-  assert.match(html, /教学人格 · 拆解、追问、复述/);
+  assert.match(html, /引路方式 · 拆解、追问、复述/);
   assert.doesNotMatch(html, /lijing-guide-ding-v2/);
 });
 
@@ -482,8 +482,8 @@ test("assistant presents companion teaching identity without a picker", () => {
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-fan-v2";
   const html = renderPage("/assistant", state);
-  assert.match(html, /专属教学人格/);
-  assert.match(html, /教学人格 · 拆解、追问、复述/);
+  assert.match(html, /专属引路/);
+  assert.match(html, /引路方式 · 拆解、追问、复述/);
   assert.doesNotMatch(html, /它会改变解释、提问和反馈方式/);
 });
 
@@ -535,12 +535,21 @@ test("onboarding completion exposes the approved dragon-phoenix video transition
 });
 
 test("core actions use human language", () => {
-  assert.equal(renderPage("/", DEMO_STATE).includes("开始今日行旅"), true);
+  assert.equal(renderPage("/", DEMO_STATE).includes("开始今天"), true);
   const newUserState = structuredClone(DEMO_STATE);
   newUserState.today = { completed: 0, total: 0, streak: 0, minutes: 0, tasks: [] };
   assert.equal(renderPage("/", newUserState).includes("继续建立路线"), true);
-  assert.equal(renderPage("/plan", DEMO_STATE).includes("今日行旅"), true);
+  assert.equal(renderPage("/plan", DEMO_STATE).includes("今天"), true);
   assert.equal(renderPage("/growth", DEMO_STATE).includes("回望来路"), true);
+});
+
+test("visible product language uses one guide and plain navigation labels", () => {
+  const legacyTerms = /器灵|书鼎|引路人|行旅|攀登|山段|山海图|登峰碑|身份印记|八方行旅/;
+  for (const route of Object.keys(ROUTES)) {
+    assert.doesNotMatch(renderPage(route, DEMO_STATE), legacyTerms, route);
+  }
+  assert.doesNotMatch(renderShell("/study", DEMO_STATE), legacyTerms);
+  assert.match(renderPage("/review", DEMO_STATE), /本次结论基于 L2 级证据，不等同于最终掌握/);
 });
 
 test("shell exposes navigation, motion controls and content landmarks", () => {

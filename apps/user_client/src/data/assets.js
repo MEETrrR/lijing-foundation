@@ -21,13 +21,13 @@ const ASSET_CATALOG = {
     assetId: "lijing-growth-journey-ink-v1",
     path: "/assets/generated/source/lijing-growth-journey-ink-v1.png",
     role: "chapter_background",
-    alt: "沿山路向上延伸的成长行旅",
+    alt: "沿山路向上延伸的成长历程",
   },
   "lijing-summit-climb-ink-v2": {
     assetId: "lijing-summit-climb-ink-v2",
     path: "/assets/generated/source/lijing-summit-climb-ink-v2.png",
     role: "chapter_background",
-    alt: "通往东方天门主峰的攀登群峰",
+    alt: "通往东方天门主峰的学习群峰",
   },
   "lijing-guide-background-ink-v1": {
     assetId: "lijing-guide-background-ink-v1",
@@ -51,7 +51,7 @@ const ASSET_CATALOG = {
     assetId: "lijing-guide-heavenly-book-v2",
     path: "/assets/generated/source/guides/lijing-guide-heavenly-book-v2.png",
     role: "guide_relic",
-    alt: "展开山河星轨的东方天书引路灵器",
+    alt: "展开山河星轨的砺境引路",
   },
   "bagua-ink-compass-v1": {
     assetId: "bagua-ink-compass-v1",
@@ -81,7 +81,7 @@ const ASSET_CATALOG = {
     assetId: "assistant-portrait-v1",
     path: "/assets/generated/source/assistant-portrait-v1.png",
     role: "assistant_avatar",
-    alt: "砺境引路人头像",
+    alt: "砺境引路头像",
   },
 };
 
