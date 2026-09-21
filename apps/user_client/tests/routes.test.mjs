@@ -213,12 +213,23 @@ test("knowledge chapter exposes a personal graph and node detail", () => {
   assert.match(html, /个人复利知识关系网络/);
   assert.match(html, /PERSONAL COMPOUND/);
   assert.match(html, /Agent 管理/);
-  assert.match(html, /外部资源归档/);
+  assert.doesNotMatch(html, /待接入/);
   assert.equal((html.match(/data-action="select-knowledge"/g) ?? []).length >= 6, true);
   assert.equal((html.match(/class="knowledge-network__dot /g) ?? []).length, 96);
   assert.match(html, /把这次理解接入知识库|我留下的理解/);
   assert.match(html, /搜索节点、来源或关键词/);
   assert.match(html, /data-knowledge-view="directory"/);
+});
+
+test("empty knowledge chapter offers a focused first action", () => {
+  const state = structuredClone(DEMO_STATE);
+  state.knowledge = [];
+  state.activeKnowledgeId = "";
+  const html = renderPage("/knowledge", state);
+  assert.match(html, /这里还没有你的知识节点/);
+  assert.match(html, /data-route="[/]plan"/);
+  assert.doesNotMatch(html, /0 个核心节点|0 条已知连接|data-action="knowledge-zoom"|L1 · 0%|待接入/);
+  assert.doesNotMatch(html, /knowledge-network|knowledge-inspector/);
 });
 
 test("knowledge network stays legible as the library grows", () => {

@@ -425,6 +425,7 @@ function knowledgeGraphProjection(items, activeId = "") {
 
 function knowledgeNetwork(state, active) {
   const items = state.knowledge ?? [];
+  if (items.length === 0) return "";
   const projection = knowledgeGraphProjection(items, active.id);
   const zoom = Math.min(1.24, Math.max(.86, Number(state.knowledgeGraphZoom) || 1));
   const visibleNodes = projection.nodes.map((node) => node.isLabel
@@ -438,8 +439,6 @@ function knowledgeCatalog(state) {
   const collections = [
     { label: "Agent 管理", detail: "书鼎与专属提示词", count: state.guide?.options?.length ?? 0, status: "已连接" },
     { label: "知识库本体", detail: "概念、技能与证据", count: state.knowledge?.length ?? 0, status: "当前" },
-    { label: "外部资源归档", detail: "网页、文档与引用", count: "-", status: "待接入" },
-    { label: "全局笔记", detail: "想法、片段与灵感", count: "-", status: "待接入" },
     { label: "控制配置", detail: "权限、规则与连接", count: "-", status: "系统" },
   ];
   return `<aside class="knowledge-catalog"><div class="knowledge-catalog__head"><span>知识资产</span><strong>${state.knowledge?.length ?? 0}</strong></div><div class="knowledge-catalog__groups">${collections.map((item, index) => `<div class="knowledge-catalog__item ${index === 1 ? "is-active" : ""}"><span class="knowledge-catalog__index">0${index + 1}</span><div><strong>${item.label}</strong><small>${item.detail}</small></div><b>${item.count}</b><em>${item.status}</em></div>`).join("")}</div><div class="knowledge-catalog__foot"><span>复利链路</span><strong>输入 → 关联 → 复习 → 迁移</strong></div></aside>`;
@@ -457,12 +456,16 @@ function knowledgeDirectory(state, recentOnly = false) {
 }
 
 function knowledgeInspector(active, related) {
+  if (!active || active.id === "empty") return "";
   return `<aside class="knowledge-inspector"><div class="knowledge-inspector__top"><span>当前节点 · ${active.gua}</span><b>${active.state}</b></div><h3>${esc(active.title)}</h3><span class="knowledge-inspector__strand">${esc(active.strand)}</span><p>${esc(active.summary)}</p><div class="knowledge-inspector__mastery"><div><span>证据覆盖</span><strong>L${active.evidenceLevel ?? 2} · ${active.mastery}%</strong></div>${progressBar(active.mastery, active.color === "cinnabar" ? "red" : active.color === "rock" ? "gray" : "amber")}</div><div class="knowledge-inspector__meta"><div><span>来自</span><strong>${esc(active.source)}</strong></div><div><span>最近更新</span><strong>${esc(active.updated)}</strong></div></div><div class="knowledge-inspector__links"><span>它连接到</span><div>${related.map((item) => `<button type="button" data-action="select-knowledge" data-knowledge-id="${item.id}">${item.gua} ${esc(item.title)}</button>`).join("") || `<small>还没有关联节点</small>`}</div></div><div class="knowledge-inspector__note"><span>我留下的理解</span><p>${esc(active.note)}</p></div>${action("沿这条脉络回望", "/review", "button button--ink")}</aside>`;
 }
 
 function pageKnowledge(state) {
   const items = state.knowledge ?? [];
-  const active = items.find((item) => item.id === state.activeKnowledgeId) ?? items[0] ?? { id: "empty", title: "还没有知识节点", state: "初探", gua: "巽", strand: "新知识", summary: "从一次学习记录开始建立你的第一条连接。", evidenceLevel: 1, mastery: 0, source: "尚未收录", updated: "现在", note: "", relatedIds: [], color: "rock" };
+  if (items.length === 0) {
+    return `<div class="page page--knowledge" data-demo-state="${state.isDemo}">${intro("/knowledge", state, "个人复利 Agent 知识库")}<section class="knowledge-empty"><h2>这里还没有你的知识节点</h2><p>完成一次学习并提交证据后，第一条记录会自动出现在这里。</p>${action("开始今天的学习", "/plan", "button button--ink")}</section></div>`;
+  }
+  const active = items.find((item) => item.id === state.activeKnowledgeId) ?? items[0];
   const related = (active.relatedIds ?? []).map((id) => items.find((item) => item.id === id)).filter(Boolean);
   const view = ["network", "directory", "recent"].includes(state.knowledgeView) ? state.knowledgeView : "network";
   const workspace = view === "directory" ? knowledgeDirectory(state) : view === "recent" ? knowledgeDirectory(state, true) : knowledgeNetwork(state, active);
@@ -478,6 +481,7 @@ function knowledgeMaterials(state) {
 }
 
 function pageKnowledgeWithMaterials(state) {
+  if (!(state.knowledge ?? []).length) return pageKnowledge(state);
   const html = pageKnowledge(state);
   const close = html.lastIndexOf("</div>");
   return close === -1 ? html : `${html.slice(0, close)}${knowledgeMaterials(state)}${html.slice(close)}`;

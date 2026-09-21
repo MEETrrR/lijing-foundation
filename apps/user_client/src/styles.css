@@ -1603,6 +1603,9 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 
 /* A knowledge base grows through layers: network for shape, directory for retrieval, inspector for meaning. */
 .knowledge-workbench { margin-top: 25px; color: var(--paper); border-top: 1px solid rgba(228, 189, 112, .58); }
+.knowledge-empty { display: grid; justify-items: start; gap: 13px; max-width: 680px; margin-top: 25px; padding: 34px; color: var(--ink); background: rgba(247, 244, 237, .96); border-top: 2px solid var(--red); }
+.knowledge-empty h2 { margin: 0; font-family: var(--font-display); font-size: 30px; font-weight: 400; }
+.knowledge-empty p { max-width: 470px; margin: 0; color: var(--rock); font-family: var(--font-reading); font-size: 12px; line-height: 1.8; }
 .knowledge-workbench__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; padding: 28px 30px 25px; background: rgba(8, 18, 21, .78); border-bottom: 1px solid rgba(238, 234, 224, .12); }
 .knowledge-workbench__head h2 { margin: 12px 0 11px; color: var(--paper); font-family: var(--font-display); font-size: 36px; font-weight: 400; line-height: 1.12; }
 .knowledge-workbench__head h2 em { color: var(--gold-light); font-style: normal; }
