@@ -1132,21 +1132,6 @@ export function createApp(root = document.querySelector("#app")) {
       openFeatureNav();
     }));
     root.querySelectorAll('[data-action="close-feature-nav"]').forEach((element) => element.addEventListener("click", closeFeatureNav));
-    root.querySelectorAll('[data-action="toggle-menu"]').forEach((element) => element.addEventListener("click", () => {
-      const panel = root.querySelector("#mobile-nav-panel");
-      const open = panel?.hasAttribute("hidden");
-      if (!panel) return;
-      if (open) panel.removeAttribute("hidden"); else panel.setAttribute("hidden", "");
-      root.querySelectorAll('[data-action="toggle-menu"]').forEach((button) => button.setAttribute("aria-expanded", String(open)));
-    }));
-    root.querySelectorAll('[data-action="toggle-dial"]').forEach((element) => element.addEventListener("click", () => {
-      const rail = root.querySelector(".nav-rail");
-      const open = !rail?.classList.contains("is-dial-open");
-      if (!rail) return;
-      rail.classList.toggle("is-dial-open", open);
-      element.setAttribute("aria-expanded", String(open));
-      element.setAttribute("title", open ? "收起八方导航" : "展开八方导航");
-    }));
     root.querySelectorAll('[data-action="toggle-motion"]').forEach((element) => element.addEventListener("click", () => {
       motionEnabled = !motionEnabled;
       DEMO_STATE.preferences.motion = motionEnabled;

@@ -44,7 +44,6 @@ export const DEMO_STATE = {
   user: {
     name: "行者 01",
     title: "初见山门",
-    avatarAssetId: "assistant-portrait-v1",
     stage: "考研备考",
     school: "",
     major: "数学",

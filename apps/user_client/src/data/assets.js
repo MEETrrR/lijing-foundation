@@ -89,35 +89,11 @@ const ASSET_CATALOG = {
     role: "opening_animation_video",
     alt: "龙凤合流形成太极的东方水墨开场动画",
   },
-  "opening-dragon-v1": {
-    assetId: "opening-dragon-v1",
-    path: "/assets/generated/source/opening/opening-dragon-v1.png",
-    role: "opening_animation_subject",
-    alt: "黑金水墨升天神龙",
-  },
-  "opening-phoenix-v1": {
-    assetId: "opening-phoenix-v1",
-    path: "/assets/generated/source/opening/opening-phoenix-v1.png",
-    role: "opening_animation_subject",
-    alt: "朱砂金色水墨飞凤",
-  },
   "starforged-frontier-scene-v1": {
     assetId: "starforged-frontier-scene-v1",
     path: "/assets/generated/source/starforged-frontier-scene-v1.png",
     role: "mountain_scene",
     alt: "云海之上的山门与星轨",
-  },
-  "aaa-home-title-screen-female-v2": {
-    assetId: "aaa-home-title-screen-female-v2",
-    path: "/assets/generated/source/aaa-home-title-screen-female-v2.png",
-    role: "mountain_approach",
-    alt: "行者站在山路前遥望云海山门",
-  },
-  "aaa-hero-character-female-v2": {
-    assetId: "aaa-hero-character-female-v2",
-    path: "/assets/generated/source/aaa-hero-character-female-v2.png",
-    role: "guide_portrait",
-    alt: "砺境引路人的肖像",
   },
   "assistant-portrait-v1": {
     assetId: "assistant-portrait-v1",
