@@ -776,19 +776,6 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
 .assistant-guide-card__copy { position: relative; z-index: 1; padding: 18px 20px 21px; background: rgba(13, 23, 26, .86); }
 .assistant-guide-card__copy strong { display: block; margin: 8px 0 5px; color: var(--paper); font-family: "Noto Serif SC", serif; font-size: 22px; font-weight: 500; }
 .assistant-guide-card__copy p { max-width: 240px; margin: 0; color: rgba(238, 234, 224, .62); font-family: "Noto Serif SC", serif; font-size: 11px; line-height: 1.7; }
-.assistant-guide-picker { padding: 18px; color: var(--paper); background: rgba(13, 23, 26, .66); border: 1px solid rgba(238, 234, 224, .15); }
-.assistant-guide-picker__heading { display: grid; gap: 6px; }
-.assistant-guide-picker__heading small { color: rgba(238, 234, 224, .52); font-size: 9px; line-height: 1.55; }
-.guide-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 15px; }
-.guide-option { display: grid; grid-template-columns: 39px minmax(0, 1fr); grid-template-rows: minmax(39px, auto) auto; align-items: center; gap: 7px 8px; min-width: 0; min-height: 100px; padding: 8px; color: var(--paper); text-align: left; background: rgba(238, 234, 224, .06); border: 1px solid rgba(238, 234, 224, .14); transition: border-color var(--fast) ease, background var(--fast) ease, transform var(--fast) var(--ease); }
-.guide-option:hover, .guide-option.is-selected { background: rgba(228, 189, 112, .12); border-color: rgba(228, 189, 112, .76); transform: translateY(-2px); }
-.guide-option__art { display: grid; place-items: center; width: 39px; height: 46px; overflow: hidden; background: var(--paper-light); border: 1px solid rgba(238, 234, 224, .12); }
-.guide-option__art img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; opacity: .92; filter: saturate(.82) contrast(1.04); }
-.guide-option__text { min-width: 0; align-self: center; }
-.guide-option__text strong, .guide-option__text small { display: block; overflow-wrap: anywhere; }
-.guide-option__text strong { color: var(--gold-light); font-family: "Noto Serif SC", serif; font-size: 10px; font-weight: 500; line-height: 1.35; }
-.guide-option__text small { margin-top: 4px; color: rgba(238, 234, 224, .54); font-size: 8px; line-height: 1.45; }
-.guide-option__mark { grid-column: 1 / -1; justify-self: end; color: var(--red); font-family: "Noto Serif SC", serif; font-size: 14px; line-height: 1; }
 .assistant-aside__portrait { position: relative; min-height: 420px; overflow: hidden; background-image: linear-gradient(180deg, transparent 35%, rgba(13, 23, 26, .84)), var(--image); background-size: cover; background-position: center; box-shadow: var(--shadow-ink); }
 .assistant-aside__portrait::after { content: ""; position: absolute; inset: 16px; border: 1px solid rgba(228, 189, 112, .32); pointer-events: none; }
 .assistant-aside__portrait span { position: absolute; z-index: 1; left: 24px; bottom: 23px; color: var(--paper); font-family: "Noto Serif SC", serif; font-size: 22px; line-height: 1.35; }
@@ -1275,8 +1262,6 @@ em { color: var(--gold-light); font-family: "Noto Serif SC", "STKaiti", serif; f
   .suggestion-list { margin-left: 0; }
   .assistant-guide-card { min-height: 390px; }
   .assistant-guide-card__art { min-height: 245px; }
-  .assistant-guide-picker { padding: 16px; }
-  .guide-option { min-height: 96px; }
   .growth-hero { grid-template-columns: 1fr; gap: 29px; padding: 27px 19px; }
   .growth-hero__seal { justify-self: center; width: 163px; height: 163px; }
   .growth-hero__meter { grid-column: auto; }
@@ -1464,9 +1449,6 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .evidence-level { min-height: 70px; }
 .knowledge-trail__item { padding: 14px 4px; background: transparent; border: 0; border-bottom: 1px solid rgba(238, 234, 224, .2); }
 .knowledge-trail__item:hover { background: rgba(228, 189, 112, .08); border-color: rgba(228, 189, 112, .58); transform: translateX(5px); }
-.guide-option { background: transparent; border: 0; border-top: 1px solid rgba(238, 234, 224, .18); border-bottom: 1px solid rgba(238, 234, 224, .12); }
-.guide-option:hover,
-.guide-option.is-selected { background: rgba(228, 189, 112, .1); border-color: rgba(228, 189, 112, .72); transform: translateX(4px); }
 .achievement { border: 0; border-top: 1px solid rgba(238, 234, 224, .2); background: transparent; }
 .achievement.is-unlocked { border-color: rgba(228, 189, 112, .58); background: rgba(30, 58, 66, .42); }
 .setting-row { padding-top: 19px; padding-bottom: 19px; }

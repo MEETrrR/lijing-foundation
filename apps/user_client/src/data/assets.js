@@ -47,24 +47,6 @@ const ASSET_CATALOG = {
     role: "auth_background",
     alt: "古典山门、石阶与云海组成的入山身份背景",
   },
-  "lijing-guide-pagoda-v2": {
-    assetId: "lijing-guide-pagoda-v2",
-    path: "/assets/generated/source/guides/lijing-guide-pagoda-v2.png",
-    role: "guide_relic",
-    alt: "悬于云海中的东方宝塔引路灵器",
-  },
-  "lijing-guide-ding-v2": {
-    assetId: "lijing-guide-ding-v2",
-    path: "/assets/generated/source/guides/lijing-guide-ding-v2.png",
-    role: "guide_relic",
-    alt: "承载阴阳云火的东方重鼎引路灵器",
-  },
-  "lijing-guide-fan-v2": {
-    assetId: "lijing-guide-fan-v2",
-    path: "/assets/generated/source/guides/lijing-guide-fan-v2.png",
-    role: "guide_relic",
-    alt: "展开山河星轨的东方折扇引路灵器",
-  },
   "lijing-guide-heavenly-book-v2": {
     assetId: "lijing-guide-heavenly-book-v2",
     path: "/assets/generated/source/guides/lijing-guide-heavenly-book-v2.png",

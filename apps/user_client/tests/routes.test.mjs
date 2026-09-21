@@ -462,32 +462,29 @@ test("functional chapters keep their approved full-screen scene backgrounds", ()
   }
 });
 
-test("guide chapter offers gender-neutral Chinese relic guides", () => {
+test("assistant keeps one default guide without a picker", () => {
   const html = renderPage("/assistant", DEMO_STATE);
-  assert.match(html, /选择你的书鼎/);
-  assert.equal((html.match(/data-action="select-guide"/g) ?? []).length, 4);
-  for (const assetId of ["lijing-guide-heavenly-book-v2", "lijing-guide-pagoda-v2", "lijing-guide-ding-v2", "lijing-guide-fan-v2"]) {
-    assert.match(html, new RegExp(assetId));
-  }
+  assert.match(html, /lijing-guide-heavenly-book-v2/);
+  assert.doesNotMatch(html, /assistant-guide-picker|data-action="select-guide"|选择你的书鼎/);
+  assert.doesNotMatch(html, /lijing-guide-pagoda-v2|lijing-guide-ding-v2|lijing-guide-fan-v2/);
   assert.doesNotMatch(html, /aaa-hero-character-female-v2/);
 });
 
-test("guide selection renders the selected relic as the active guide", () => {
+test("assistant falls back to the default guide for a historic selection", () => {
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-ding-v2";
   const html = renderPage("/assistant", state);
-  assert.match(html, /教学人格 · 专注、减负、短行动<\/span><strong>重鼎 · 镇心<\/strong>/);
-  assert.match(html, /data-guide="lijing-guide-ding-v2" aria-pressed="true"/);
-  assert.match(html, /guide-option--ding is-selected/);
+  assert.match(html, /教学人格 · 拆解、追问、复述/);
+  assert.doesNotMatch(html, /lijing-guide-ding-v2/);
 });
 
-test("assistant presents companion teaching identity instead of a visual-only guide", () => {
+test("assistant presents companion teaching identity without a picker", () => {
   const state = structuredClone(DEMO_STATE);
   state.guide.selectedAssetId = "lijing-guide-fan-v2";
   const html = renderPage("/assistant", state);
   assert.match(html, /专属教学人格/);
-  assert.match(html, /教学人格 · 类比、反例、换角度/);
-  assert.match(html, /它会改变解释、提问和反馈方式/);
+  assert.match(html, /教学人格 · 拆解、追问、复述/);
+  assert.doesNotMatch(html, /它会改变解释、提问和反馈方式/);
 });
 
 test("feature directory exposes eight clickable directions", () => {
