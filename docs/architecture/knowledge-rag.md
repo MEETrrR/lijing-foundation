@@ -22,7 +22,7 @@
   -> 用户确认
 ```
 
-当前 v1 使用服务端持久化的审核知识索引和确定性关键词/二元组召回，确保本地和测试环境可运行。检索服务的输入输出与模型生成解耦，后续可以把索引适配器替换为 PostgreSQL `pgvector` 或混合检索，而不改变 `/api/v1/knowledge/search` 和 `/api/v1/learning-routes` 的契约。
+当前 v1 使用服务端持久化的审核知识索引和确定性关键词/二元组召回，确保本地和测试环境可运行。2026-09-20 起，考研素材包中的政策与科目结构条目进入官方索引，数学、408、英语和政治的框架与诊断映射进入独立的学习指导索引；随后加入 Python、HTML/CSS/JavaScript/HTTP、Git、PostgreSQL、TypeScript、OWASP Web/LLM 安全、Go、Java、Linux、C 工具链、AI 风险治理，以及 GitHub 学习资源调研的 9 条学习节点。当前索引为 `2026-09-20.rag-v8`，共 128 个审核知识片段和 34 个来源入口；T1/T2事实证据、T3学习方法和个人成长技术资料仍分开标注。检索服务的输入输出与模型生成解耦，后续可以把索引适配器替换为 PostgreSQL `pgvector` 或混合检索，而不改变 `/api/v1/knowledge/search` 和 `/api/v1/learning-routes` 的契约。
 
 ## 当前接口
 

@@ -27,6 +27,19 @@ class FakeClient {
     if (text === "ROLLBACK") { this.state.clear(); for (const [key, value] of this.snapshot ?? []) this.state.set(key, value); this.snapshot = null; return { rows: [], rowCount: 0 }; }
     if (text.startsWith("SELECT 1")) return { rows: [{ '?column?': 1 }], rowCount: 1 };
     if (text.startsWith("SELECT \"value\"")) return { rows: this.state.has(values[0]) ? [{ value: this.state.get(values[0]) }] : [], rowCount: this.state.has(values[0]) ? 1 : 0 };
+    if (text.startsWith("SELECT COUNT(DISTINCT CASE")) {
+      const prefixes = values.filter((value, index) => index % 2 === 0).map((pattern) => String(pattern).slice(0, -1));
+      const suffixes = new Set();
+      for (const key of this.state.keys()) {
+        const prefix = prefixes.find((candidate) => key.startsWith(candidate));
+        if (prefix) suffixes.add(key.slice(prefix.length));
+      }
+      return { rows: [{ count: suffixes.size }], rowCount: 1 };
+    }
+    if (text.startsWith("SELECT COUNT(*)")) {
+      const prefix = String(values[0]).slice(0, -1);
+      return { rows: [{ count: [...this.state.keys()].filter((key) => key.startsWith(prefix)).length }], rowCount: 1 };
+    }
     if (text.startsWith("INSERT INTO")) {
       if (text.includes("DO NOTHING") && this.state.has(values[0])) return { rows: [], rowCount: 0 };
       this.state.set(values[0], JSON.parse(values[1]));
@@ -50,6 +63,10 @@ test("Supabase database adapter uses parameterized SQL and real transaction boun
 
   await database.set("progress:account-001", { energy: 99 });
   assert.deepEqual(await database.get("progress:account-001"), { energy: 99 });
+  await database.set("analytics:active:2026-09-21:actor-a", {});
+  await database.set("analytics:active:2026-09-20:actor-a", {});
+  await database.set("analytics:active:2026-09-20:actor-b", {});
+  assert.equal(await database.countDistinctKeySuffixes(["analytics:active:2026-09-21:", "analytics:active:2026-09-20:"]), 2);
   assert.equal(await database.setIfAbsent("unique:key", { first: true }), true);
   assert.equal(await database.setIfAbsent("unique:key", { first: false }), false);
   assert.deepEqual(await database.get("unique:key"), { first: true });

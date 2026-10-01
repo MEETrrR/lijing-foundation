@@ -29,6 +29,7 @@ const OPERATION_SECURITY = {
   "GET /api/v1/me/reminders": "bearer",
   "GET /api/v1/me/companion": "bearer",
   "GET /api/v1/me/ai/usage": "bearer",
+  "GET /api/v1/admin/overview": "bearer",
   "GET /api/v1/companion/today": "bearer",
   "POST /api/v1/companion/check-ins": "bearer",
   "GET /api/v1/learning-artifacts": "bearer",
@@ -474,7 +475,7 @@ test("AI policy uses strict YAML and includes security, fallback, and governance
     "limits.tokens.max_input": 4000,
     "limits.tokens.max_output": 1000,
     "limits.images.max_images_per_request": 2,
-    "limits.images.max_size_mb_each": 5,
+    "limits.images.max_size_mb_each": 20,
     "limits.complex_requests.max_per_day": 3,
   };
   for (const [fieldPath, expectedValue] of Object.entries(expectedLimits)) {

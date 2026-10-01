@@ -51,6 +51,11 @@ async function waitForAi(baseUrl, requestId, cookie) {
 test("AI pilot calls the provider from the server and returns structured results", async () => {
   const providerCalls = [];
   const provider = http.createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/v1/models") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "test-model" }] }));
+      return;
+    }
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     providerCalls.push({
@@ -106,7 +111,7 @@ test("AI pilot calls the provider from the server and returns structured results
     const response = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/requests`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie, "Idempotency-Key": "ai-pilot-review-key-01" },
-      body: JSON.stringify({ request_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", feature: "wrong_answer_hint", input: JSON.stringify({ task: "当前学习任务", evidence_level: 2, evidence: "我写下了概念边界和一个反例。" }) }),
+      body: JSON.stringify({ request_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", feature: "wrong_answer_hint", input: JSON.stringify({ task: "当前学习任务", evidence_level: 2, evidence: "我写下了概念边界和一个反例。", response_format: "lijing_evidence_review_v1" }) }),
     });
     const body = await response.json();
     assert.equal(response.status, 202);
@@ -121,6 +126,9 @@ test("AI pilot calls the provider from the server and returns structured results
     assert.equal(providerCalls.length, 1);
     assert.equal(providerCalls[0].authorization, "Bearer test-server-only-key");
     assert.equal(providerCalls[0].body.model, "test-model");
+    assert.match(providerCalls[0].body.messages[0].content, /证据复盘专用输出协议/);
+    assert.match(providerCalls[0].body.messages[0].content, /不得根据单道题/);
+    assert.match(providerCalls[0].body.messages[1].content, /lijing_evidence_review_v1/);
     assert.doesNotMatch(JSON.stringify(body), /test-server-only-key/);
 
     const assistResponse = await fetch(`http://127.0.0.1:${appPort}/api/v1/ai/requests`, {
@@ -134,6 +142,7 @@ test("AI pilot calls the provider from the server and returns structured results
     const assistCompleted = await waitForAi(`http://127.0.0.1:${appPort}`, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", cookie);
     assert.equal(assistCompleted.status, "completed");
     assert.equal(providerCalls[1].body.model, "test-model");
+    assert.doesNotMatch(providerCalls[1].body.messages[0].content, /证据复盘专用输出协议/);
   } finally {
     child.kill();
     await close(provider);

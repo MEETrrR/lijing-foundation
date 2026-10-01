@@ -474,6 +474,18 @@ test("cross-subject guidance, confirmed-memory snapshots, and action budgets sta
     assert.equal(second.response.status, 200);
     assert.ok(providerContexts[1].context.learner_snapshot.confirmed_memories.some((memory) => memory.id === candidate.response.candidates[0].id));
 
+    const customSubject = await jsonRequest(baseUrl, "/api/v1/companion/diagnoses", {
+      method: "POST",
+      headers: { ...auth(), "Idempotency-Key": "cross-subject-diagnosis-python-01" },
+      body: JSON.stringify({ request_id: "23232323-2323-4232-8232-232323232323", artifact_ids: [artifact.body.artifact.id], subject: "Python", focus: "阅读定位" }),
+    });
+    assert.equal(customSubject.response.status, 200);
+    assert.equal(customSubject.body.guidance_evidence.length, 0);
+    assert.deepEqual(customSubject.body.action.knowledge_node_refs, []);
+    assert.equal(providerContexts[2].context.goal_type, "personal_growth");
+    assert.equal(providerContexts[2].context.subject_scope, "material_only");
+    assert.deepEqual(providerContexts[2].learning_guidance, []);
+
     assert.throws(() => validateProviderDiagnosis({
       observations: [{ claim: "定位不足", artifact_id: "artifact-1", chunk_id: "chunk-1", evidence_excerpt: "原文定位句", confidence: 0.8 }],
       unknowns: [],

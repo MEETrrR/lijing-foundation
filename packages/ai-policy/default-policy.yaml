@@ -34,12 +34,12 @@ limits:
     max_input: 4000
     max_output: 1000
   feature_daily:
-    learning_route_generation: 3
+    learning_route_generation: 5
     study_plan_suggestion: 10
     emotional_support: 10
   images:
     max_images_per_request: 2
-    max_size_mb_each: 5
+    max_size_mb_each: 20
   complex_requests:
     max_per_day: 3
     modes:

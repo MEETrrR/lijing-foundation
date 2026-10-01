@@ -67,7 +67,7 @@ export const ROUTES = {
     chapter: "入山引导",
     direction: "中宫",
     gua: "☯",
-    eyebrow: "入山引导 · 三道山门",
+    eyebrow: "入山引导 · 两步",
     title: "先认识自己，再认领一盏灯",
     description: "用几步告诉砺境你的方向，再开始今天的学习。",
   },
@@ -107,6 +107,15 @@ export const ROUTES = {
     title: "现在，走下一步",
     description: "专注一小段时间，结束时留下可回看的证据。",
   },
+  "/cet": {
+    label: "四六级",
+    chapter: "英语训练",
+    direction: "离位",
+    gua: "☲",
+    eyebrow: "大学英语 · CET-4 / CET-6",
+    title: "把英语练习，落在今天",
+    description: "按笔试四个板块练习，记录真实作答，再根据错因安排下一步。",
+  },
   "/review": {
     label: "回望",
     chapter: "回望",
@@ -118,10 +127,10 @@ export const ROUTES = {
   },
   "/knowledge": {
     label: "知识库",
-    chapter: "群峰",
+    chapter: "知识库",
     direction: "巽位",
     gua: "☴",
-    eyebrow: "第五章 · 个人复利 Agent 知识库",
+    eyebrow: "个人学习证据",
     title: "让知识持续产生复利",
     description: "每一条记录都能被关联、复习和再次调用，慢慢长成你的个人认知网络。",
   },
@@ -169,6 +178,15 @@ export const ROUTES = {
     eyebrow: "设置 · 行者控制台",
     title: "把砺境调成你的样子",
     description: "管理个人信息、账户会话、使用偏好，并把真实反馈交给我们。",
+  },
+  "/admin": {
+    label: "运营后台",
+    chapter: "运营后台",
+    direction: "中宫",
+    gua: "☯",
+    eyebrow: "运营 · 真实使用",
+    title: "看见真实的使用轨迹",
+    description: "只展示聚合后的活跃、转化和 AI 使用数据，不展示任何用户内容。",
   },
   "/state/loading": {
     label: "云中传信",
@@ -228,14 +246,14 @@ export const FEATURE_ITEMS = [
   { href: "/map", label: "路线图", gua: "坤", short: "坤", direction: "southwest", position: "southwest", chapter: "路线图", detail: "看见远方山系" },
 ];
 
-export const NAV_ITEMS = FEATURE_ITEMS.map(({ href, label, short, gua, position, chapter }) => ({
-  href,
-  label,
-  short,
-  gua,
-  position,
-  chapter,
-}));
+// Older chapters remain addressable, but this is the only navigation users need daily.
+export const NAV_ITEMS = [
+  { href: "/", label: "今天", icon: "play" },
+  { href: "/route", label: "路线", icon: "compass" },
+  { href: "/review", label: "回望", icon: "spark" },
+  { href: "/knowledge", label: "知识库", icon: "search" },
+  { href: "/settings", label: "我的", icon: "user" },
+];
 
 const FIRST_PHASE_ROUTES = new Set(Object.keys(ROUTES));
 

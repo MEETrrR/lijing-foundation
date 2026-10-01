@@ -120,19 +120,30 @@ paths:
     get:
       tags: [identity]
       operationId: getCurrentAccount
-      summary: Read the current learner account
+      summary: Read the current account or anonymous session state
       security:
         - bearerAuth: []
         - sessionCookie: []
+        - {}
       responses:
         '200':
-          description: Current account profile.
+          description: Current account profile or an anonymous guest state.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                type: object
+                additionalProperties: false
+                required: [user, request_id]
+                properties:
+                  user:
+                    anyOf:
+                      - $ref: '#/components/schemas/User'
+                      - type: 'null'
+                  request_id:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/me/progress:
     get:
       tags: [learning]
@@ -187,7 +198,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+            enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
       responses:
         '200':
           description: Official sources available to the retrieval index.
@@ -212,7 +223,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+            enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
         - name: q
           in: query
           required: false
@@ -430,6 +441,34 @@ paths:
                 $ref: '#/components/schemas/AiUsageResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/admin/overview:
+    get:
+      tags: [admin]
+      operationId: getAdminOverview
+      summary: Read aggregate operator metrics
+      description: Administrator-only aggregate metrics. The response never contains account content, prompts, or model responses.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Aggregate operator metrics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /api/v1/companion/today:
     get:
       tags: [companion]
@@ -833,7 +872,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+            enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
       responses:
         '200':
           description: Official-source registry for supported route domains.
@@ -1141,7 +1180,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, display_name, created_at, email_verified]
+      required: [id, email, display_name, created_at, email_verified, is_admin]
       properties:
         id:
           type: string
@@ -1154,6 +1193,8 @@ components:
           type: [string, 'null']
           format: date-time
         email_verified:
+          type: boolean
+        is_admin:
           type: boolean
     AuthResponse:
       type: object
@@ -1384,6 +1425,7 @@ components:
         updated_at:
           type: string
           format: date-time
+          readOnly: true
     CompanionIntervention:
       type: object
       additionalProperties: false
@@ -1642,7 +1684,7 @@ components:
     LearningImageUpload:
       type: string
       format: binary
-      description: JPEG, PNG, or GIF image bytes. Maximum size is 5 MB.
+      description: JPEG, PNG, or GIF image bytes. Maximum size is 20 MB.
     LearningImageExtractionDraft:
       type: object
       additionalProperties: false
@@ -2215,6 +2257,100 @@ components:
             last_run_at:
               type: [string, 'null']
               format: date-time
+    AdminOverviewResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, date, timezone, totals, series]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        timezone:
+          type: string
+        totals:
+          type: object
+          additionalProperties: false
+          required: [registered_users_total, active_users_7d, active_users_30d, dau, new_users_today, first_action_users_today, material_submitted_users_today, evidence_submitted_users_today, ai_requests_today, ai_completed_today, ai_degraded_today, estimated_cost_usd_today]
+          properties:
+            registered_users_total:
+              type: integer
+              minimum: 0
+            active_users_7d:
+              type: integer
+              minimum: 0
+            active_users_30d:
+              type: integer
+              minimum: 0
+            dau:
+              type: integer
+              minimum: 0
+            new_users_today:
+              type: integer
+              minimum: 0
+            first_action_users_today:
+              type: integer
+              minimum: 0
+            material_submitted_users_today:
+              type: integer
+              minimum: 0
+            evidence_submitted_users_today:
+              type: integer
+              minimum: 0
+            ai_requests_today:
+              type: integer
+              minimum: 0
+            ai_completed_today:
+              type: integer
+              minimum: 0
+            ai_degraded_today:
+              type: integer
+              minimum: 0
+            estimated_cost_usd_today:
+              type: number
+              minimum: 0
+        series:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [date, dau, new_users, first_action_users, material_submitted_users, evidence_submitted_users, ai_requests, ai_completed, ai_degraded, ai_rejected, estimated_cost_usd]
+            properties:
+              date:
+                type: string
+                format: date
+              dau:
+                type: integer
+                minimum: 0
+              new_users:
+                type: integer
+                minimum: 0
+              first_action_users:
+                type: integer
+                minimum: 0
+              material_submitted_users:
+                type: integer
+                minimum: 0
+              evidence_submitted_users:
+                type: integer
+                minimum: 0
+              ai_requests:
+                type: integer
+                minimum: 0
+              ai_completed:
+                type: integer
+                minimum: 0
+              ai_degraded:
+                type: integer
+                minimum: 0
+              ai_rejected:
+                type: integer
+                minimum: 0
+              estimated_cost_usd:
+                type: number
+                minimum: 0
     UserStateRequest:
       type: object
       additionalProperties: false
@@ -2372,7 +2508,7 @@ components:
               maxLength: 80
         goal_id:
           type: string
-          enum: [goal-exam, goal-skill, goal-life]
+          enum: [goal-exam, goal-cet4, goal-cet6, goal-skill, goal-life]
         guide_asset_id:
           type: string
           enum: [lijing-guide-heavenly-book-v2, lijing-guide-pagoda-v2, lijing-guide-ding-v2, lijing-guide-fan-v2]
@@ -2551,6 +2687,9 @@ components:
             type: string
         position:
           type: string
+        goal_id:
+          type: string
+          enum: [goal-exam, goal-cet4, goal-cet6, goal-skill, goal-life]
         evidence_level:
           type: integer
           minimum: 1
@@ -2702,7 +2841,7 @@ components:
           format: uuid
         goal_type:
           type: string
-          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+          enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
         goal_name:
           type: string
           minLength: 1
@@ -2750,7 +2889,7 @@ components:
           type: string
         goal_type:
           type: string
-          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+          enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
         title:
           type: string
         publisher:
@@ -2847,7 +2986,7 @@ components:
           type: string
         goal_type:
           type: string
-          enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+          enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
         region:
           oneOf:
             - type: string
@@ -2877,7 +3016,8 @@ components:
           type: string
           format: date
         planned_hours:
-          type: integer
+          type: number
+          multipleOf: 0.1
           minimum: 1
           maximum: 1000
         outcomes:
@@ -2891,7 +3031,7 @@ components:
     LearningPlanDay:
       type: object
       additionalProperties: false
-      required: [id, date, title, type, planned_minutes, milestone_title, completion_status, review_prompt]
+      required: [id, date, title, type, topic, planned_minutes, milestone_title, action, expected_output, practice, resource, feedback, completion_status, review_prompt]
       properties:
         id:
           type: string
@@ -2903,6 +3043,10 @@ components:
         type:
           type: string
           enum: [学习, 练习, 产出, 修正, 复盘]
+        topic:
+          type: string
+          minLength: 1
+          maxLength: 180
         planned_minutes:
           type: integer
           minimum: 5
@@ -2912,8 +3056,23 @@ components:
           type: string
         action:
           type: string
+          minLength: 1
         expected_output:
           type: string
+          minLength: 1
+        resource:
+          oneOf:
+            - $ref: '#/components/schemas/LearningPlanResource'
+            - type: 'null'
+        resource_search_url:
+          type: string
+          format: uri
+        practice:
+          $ref: '#/components/schemas/LearningPlanPractice'
+        feedback:
+          oneOf:
+            - $ref: '#/components/schemas/LearningPlanFeedback'
+            - type: 'null'
         completion_standard:
           type: string
         completion_status:
@@ -2921,6 +3080,74 @@ components:
           enum: [planned, active, done]
         review_prompt:
           type: string
+    LearningPlanResource:
+      type: object
+      additionalProperties: false
+      required: [source_id, title, url, kind, publisher, duration_minutes, excerpt, locator, verification_status]
+      properties:
+        source_id:
+          type: string
+        title:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+        kind:
+          type: string
+          enum: [course, practice, reference]
+        publisher:
+          type: string
+        excerpt:
+          type: string
+          maxLength: 320
+        duration_minutes:
+          oneOf:
+            - type: integer
+              minimum: 1
+            - type: 'null'
+        locator:
+          type: string
+          maxLength: 140
+        verification_status:
+          type: string
+          const: catalogued
+    LearningPlanPractice:
+      type: object
+      additionalProperties: false
+      required: [count, source, scope]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          maximum: 100
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/LearningPlanResource'
+            - type: 'null'
+        scope:
+          type: string
+          maxLength: 180
+    LearningPlanFeedback:
+      type: object
+      additionalProperties: false
+      required: [status, actual_minutes, note, reported_at]
+      properties:
+        status:
+          type: string
+          enum: [completed, partial, not_started]
+        actual_minutes:
+          oneOf:
+            - type: integer
+              minimum: 0
+              maximum: 1440
+            - type: 'null'
+        note:
+          type: string
+          maxLength: 500
+        reported_at:
+          type: string
+          format: date-time
     LearningPlanWeek:
       type: object
       additionalProperties: false
@@ -3012,7 +3239,7 @@ components:
     LearningPlan:
       type: object
       additionalProperties: false
-      required: [version, generated_at, daily_minutes, horizon, current_year, months, today]
+      required: [version, generated_at, daily_minutes, weekly_hours, horizon, current_year, months, today, weekly_tasks]
       properties:
         version:
           type: integer
@@ -3024,6 +3251,14 @@ components:
           type: integer
           minimum: 5
           maximum: 1440
+        requested_daily_minutes:
+          oneOf:
+            - type: integer
+            - type: 'null'
+        weekly_hours:
+          type: integer
+          minimum: 1
+          maximum: 60
         horizon:
           type: object
           additionalProperties: false
@@ -3061,6 +3296,22 @@ components:
               type: array
             items:
               $ref: '#/components/schemas/LearningPlanDay'
+        cycle_start_date:
+          type: string
+          format: date
+        cycle_end_date:
+          type: string
+          format: date
+        weekly_tasks:
+          type: array
+          minItems: 1
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/LearningPlanDay'
+        upcoming_tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningPlanDay'
         last_updated_at:
           type: string
           format: date-time
@@ -3147,7 +3398,7 @@ components:
           properties:
             type:
               type: string
-              enum: [postgraduate_entrance_exam, civil_service_exam, employment, professional_certificate, personal_growth]
+              enum: [postgraduate_entrance_exam, college_english_exam, civil_service_exam, employment, professional_certificate, personal_growth]
             name:
               type: string
             target_date:
@@ -3322,6 +3573,31 @@ components:
           type: integer
           minimum: 0
           maximum: 1440
+        task_feedbacks:
+          type: array
+          maxItems: 7
+          items:
+            type: object
+            additionalProperties: false
+            required: [task_id, status]
+            properties:
+              task_id:
+                type: string
+                pattern: '^plan-day-\\d{4}-\\d{2}-\\d{2}$'
+              status:
+                type: string
+                enum: [completed, partial, not_started]
+              actual_minutes:
+                oneOf:
+                  - type: integer
+                    minimum: 0
+                    maximum: 1440
+                  - type: 'null'
+              note:
+                type: string
+                maxLength: 500
+        advance_week:
+          type: boolean
     LearningRouteConfirmationResponse:
       type: object
       additionalProperties: false

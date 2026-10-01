@@ -21,6 +21,11 @@ function validateKey(key) {
   return key;
 }
 
+function keyPrefixPattern(prefix) {
+  validateKey(prefix);
+  return `${prefix.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
 function positiveInteger(value, field, fallback) {
   const normalized = value ?? fallback;
   if (!Number.isInteger(normalized) || normalized < 1 || normalized > 100) throw new RangeError(`${field} must be an integer between 1 and 100`);
@@ -110,6 +115,37 @@ class SupabasePostgresDatabase {
       "read",
     );
     return result.rows[0]?.value;
+  }
+
+  async countKeys(prefix) {
+    const result = await this.query(
+      `SELECT COUNT(*)::int AS count FROM ${this.qualifiedTable} WHERE "key" LIKE $1 ESCAPE '\\'`,
+      [keyPrefixPattern(prefix)],
+      "count",
+    );
+    return Number(result.rows[0]?.count) || 0;
+  }
+
+  async countDistinctKeySuffixes(prefixes) {
+    const normalized = [...new Set(prefixes.map(validateKey))].sort((left, right) => right.length - left.length);
+    if (normalized.length === 0) return 0;
+    const values = [];
+    const cases = [];
+    const conditions = normalized.map((prefix) => {
+      const patternIndex = values.length + 1;
+      values.push(keyPrefixPattern(prefix));
+      const suffixIndex = values.length + 1;
+      values.push(prefix.length + 1);
+      const condition = `"key" LIKE $${patternIndex} ESCAPE '\\'`;
+      cases.push(`WHEN ${condition} THEN SUBSTRING("key" FROM $${suffixIndex})`);
+      return condition;
+    });
+    const result = await this.query(
+      `SELECT COUNT(DISTINCT CASE ${cases.join(" ")} ELSE NULL END)::int AS count FROM ${this.qualifiedTable} WHERE (${conditions.join(" OR ")})`,
+      values,
+      "count_distinct",
+    );
+    return Number(result.rows[0]?.count) || 0;
   }
 
   async set(key, value) {
@@ -207,4 +243,5 @@ module.exports = {
   createSupabaseDatabaseFromEnv,
   safeIdentifier,
   validateKey,
+  keyPrefixPattern,
 };

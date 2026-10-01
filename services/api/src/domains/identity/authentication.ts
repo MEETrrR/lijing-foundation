@@ -69,6 +69,11 @@ function normalizeInviteCodeHashes(value) {
   return new Set(codes.map(normalizeInviteCode).filter(Boolean).map(tokenHash));
 }
 
+function normalizeAdminValues(value) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return new Set(values.map((item) => String(item).normalize("NFKC").trim()).filter(Boolean));
+}
+
 async function hashPassword(password) {
   const salt = randomBytes(16).toString("base64url");
   const derived = await scryptAsync(password, salt, SCRYPT_PARAMS.keylen, SCRYPT_PARAMS);
@@ -110,8 +115,8 @@ function extractToken(headers) {
   return typeof cookieToken === "string" && TOKEN_PATTERN.test(cookieToken) ? cookieToken : undefined;
 }
 
-function publicUser(user) {
-  return { id: user.id, email: user.email, display_name: user.display_name, created_at: user.created_at, email_verified: user.email_verified === true };
+function publicUser(user, isAdmin = false) {
+  return { id: user.id, email: user.email, display_name: user.display_name, created_at: user.created_at, email_verified: user.email_verified === true, is_admin: isAdmin === true };
 }
 
 function validateBody(input, allowed) {
@@ -130,6 +135,13 @@ class IdentityService {
     });
     this.allowDevTokens = options.allowDevTokens ?? true;
     this.inviteCodeHashes = normalizeInviteCodeHashes(options.pilotInviteCodes);
+    this.adminActorIds = normalizeAdminValues(options.adminActorIds);
+    this.adminEmails = new Set([...normalizeAdminValues(options.adminEmails)].map((email) => email.toLowerCase()));
+  }
+
+  isAdmin(actorId, email = "") {
+    if (this.adminActorIds.size > 0) return this.adminActorIds.has(actorId);
+    return this.adminEmails.has(String(email).trim().toLowerCase());
   }
 
   async register(input) {
@@ -176,21 +188,21 @@ class IdentityService {
     const sessionToken = randomBytes(32).toString("base64url");
     const expiresAt = this.clock() + this.sessionTtlMs;
     await this.database.set(sessionKey(tokenHash(sessionToken)), { user_id: user.id, created_at: new Date(this.clock()).toISOString(), expires_at: expiresAt, revoked_at: null });
-    return { user: publicUser(user), sessionToken, expiresAt };
+    return { user: publicUser(user, this.isAdmin(user.id, user.email)), sessionToken, expiresAt };
   }
 
   async authenticate(headers) {
     const token = extractToken(headers);
     if (!token) throw new PlatformError("UNAUTHENTICATED", "Bearer token or session cookie is missing");
     const devActorId = this.allowDevTokens ? this.tokens.get(token) : undefined;
-    if (devActorId) return Object.freeze({ actorId: devActorId, subjectType: "learner", sessionToken: token, user: { id: devActorId, email: `${devActorId}@local.invalid`, display_name: devActorId, created_at: null, email_verified: false } });
+    if (devActorId) return Object.freeze({ actorId: devActorId, subjectType: "learner", sessionToken: token, user: publicUser({ id: devActorId, email: `${devActorId}@local.invalid`, display_name: devActorId, created_at: null, email_verified: false }, this.isAdmin(devActorId, `${devActorId}@local.invalid`)) });
     const session = await this.database.get(sessionKey(tokenHash(token)));
     if (!session || session.revoked_at || !Number.isFinite(session.expires_at) || session.expires_at <= this.clock()) {
       throw new PlatformError("UNAUTHENTICATED", "session is missing, expired, or revoked");
     }
     const user = await this.database.get(userIdKey(session.user_id));
     if (!user || user.status !== "active") throw new PlatformError("UNAUTHENTICATED", "account is unavailable");
-    return Object.freeze({ actorId: user.id, subjectType: "learner", sessionToken: token, user: publicUser(user) });
+    return Object.freeze({ actorId: user.id, subjectType: "learner", sessionToken: token, user: publicUser(user, this.isAdmin(user.id, user.email)) });
   }
 
   async logout(headers) {
@@ -203,7 +215,7 @@ class IdentityService {
 
   async getUser(actorId) {
     const user = await this.database.get(userIdKey(actorId));
-    return user ? publicUser(user) : { id: actorId, email: `${actorId}@local.invalid`, display_name: actorId, created_at: null, email_verified: false };
+    return user ? publicUser(user, this.isAdmin(user.id, user.email)) : { id: actorId, email: `${actorId}@local.invalid`, display_name: actorId, created_at: null, email_verified: false, is_admin: this.isAdmin(actorId, `${actorId}@local.invalid`) };
   }
 }
 
@@ -221,6 +233,7 @@ module.exports = {
   hashPassword,
   normalizeEmail,
   normalizeInviteCode,
+  normalizeAdminValues,
   parseCookieHeader,
   publicUser,
   verifyPassword,

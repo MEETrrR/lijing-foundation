@@ -118,7 +118,7 @@ function interventionFor(intent, task, blockerType) {
   if (intent === "complete") {
     return {
       type: "review",
-      next_action: "证据已留下。花一分钟写下最难的一步，器灵会在下一次同行时据此调整。",
+      next_action: "证据已留下。花一分钟写下最难的一步，引路会在下一次同行时据此调整。",
       source: "template",
     };
   }
@@ -229,7 +229,7 @@ class CompanionCycleService {
     const hasRoute = Boolean(context.route);
     const nextAction = context.action?.reason
       ?? cycle?.intervention?.next_action
-      ?? (visibleTask ? `今天先完成“${visibleTask.title}”。` : "把正在卡住的题、笔记或草稿交给器灵，先生成一条可验证行动。");
+      ?? (visibleTask ? `今天先完成“${visibleTask.title}”。` : "把正在卡住的题、笔记或草稿交给引路，先生成一条可验证行动。");
     const screenState = context.action
       ? context.action.status === "planned" ? "next_action_ready" : "action_active"
       : cycle?.status === "completed" ? "cycle_completed" : visibleTask ? "action_active" : "need_material";

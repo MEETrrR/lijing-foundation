@@ -24,6 +24,7 @@ const { CompanionDiagnosisService } = require("../domains/companion-cycle/compan
 const { LearnerSnapshotService } = require("../domains/companion-cycle/learner-snapshot-service.ts");
 const { LearningArtifactService } = require("../domains/learning-artifact/learning-artifact-service.ts");
 const { VisionMaterialService, MAX_IMAGE_BYTES } = require("../domains/learning-artifact/vision-material-service.ts");
+const { AdminAnalyticsService } = require("../domains/analytics/admin-analytics-service.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -88,6 +89,11 @@ function idempotencyKey(request) {
   return headerValue(request.headers, "idempotency-key");
 }
 
+function scheduleAnalytics(services, operation) {
+  if (typeof operation !== "function") return;
+  void Promise.resolve().then(operation).catch(() => {});
+}
+
 function sessionCookie(sessionToken, expiresAt, env) {
   const maxAge = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
   const secure = env.APP_ENV === "production" || env.NODE_ENV === "production" ? "; Secure" : "";
@@ -112,6 +118,12 @@ function createDefaultServices(options = {}) {
   const cache = options.cache ?? new InMemoryCache();
   const queue = options.queue ?? new InMemoryMessageBus();
   const objectStorage = options.objectStorage ?? { async healthCheck() { return { dependency: "object_storage", status: "up", latency_ms: 0, reason_code: "ok" }; } };
+  const analytics = options.analytics ?? new AdminAnalyticsService({
+    database,
+    clock,
+    timezone: env.ANALYTICS_TIMEZONE,
+    hashSalt: env.ANALYTICS_HASH_SALT,
+  });
   const identity = options.identity ?? new IdentityService({
     database,
     tokens: options.tokens,
@@ -119,6 +131,8 @@ function createDefaultServices(options = {}) {
     clock,
     sessionTtlMs: options.sessionTtlMs,
     pilotInviteCodes: options.pilotInviteCodes ?? env.PILOT_INVITE_CODES,
+    adminActorIds: options.adminActorIds ?? env.ADMIN_ACTOR_IDS,
+    adminEmails: options.adminEmails ?? env.ADMIN_EMAILS,
   });
   const learning = options.learning ?? new LearningService({ database, questions: options.questions, clock });
   const memory = options.memory ?? new MemoryService({ database, clock });
@@ -155,7 +169,7 @@ function createDefaultServices(options = {}) {
   if (!options.snapshots) snapshots.diagnosis = diagnosis;
   const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, artifacts, examKnowledge, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, snapshots, ai, visionMaterials, knowledge, examKnowledge, learningRoutes, health };
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, snapshots, ai, visionMaterials, knowledge, examKnowledge, learningRoutes, health, analytics };
 }
 
 function createBackendHandler(services) {
@@ -174,11 +188,13 @@ function createBackendHandler(services) {
       }
       if (url.pathname === "/api/v1/health" && request.method === "GET") {
         const health = await services.health.check();
+        if (services.ai.enabled === true && typeof services.ai.refreshAvailability === "function") await services.ai.refreshAvailability();
         const aiAvailability = typeof services.ai.getAvailability === "function"
           ? services.ai.getAvailability()
           : { status: services.ai.enabled === true ? "unknown" : "disabled", reason_code: null, checked_at: null };
+        const aiReady = services.ai.enabled !== true || aiAvailability.status === "available";
         sendJson(response, 200, {
-          status: health.status === "up" ? "ok" : "degraded",
+          status: health.status === "up" && aiReady ? "ok" : "degraded",
           ai_configured: services.ai.enabled === true,
           ai_available: aiAvailability.status === "available",
           ai_status: aiAvailability.status,
@@ -201,17 +217,27 @@ function createBackendHandler(services) {
           ? await services.identity.register(await readJson(request))
           : await services.identity.login(await readJson(request));
         const status = url.pathname.endsWith("/register") ? 201 : 200;
+        scheduleAnalytics(services, () => services.analytics?.recordActivity(result.user.id));
+        if (url.pathname.endsWith("/register")) scheduleAnalytics(services, () => services.analytics?.recordRegistration(result.user.id));
         sendJson(response, status, { user: result.user, request_id: context.requestId }, context, { "Set-Cookie": sessionCookie(result.sessionToken, result.expiresAt, services.env ?? process.env) });
+        return;
+      }
+
+      if (url.pathname === "/api/v1/auth/me" && request.method === "GET") {
+        let user = null;
+        try {
+          const currentActor = await services.identity.authenticate(request.headers);
+          user = currentActor.user ?? await services.identity.getUser(currentActor.actorId);
+        } catch (error) {
+          if (error?.code !== "UNAUTHENTICATED") throw error;
+        }
+        sendJson(response, 200, { user, request_id: context.requestId }, context);
         return;
       }
 
       const actor = await services.identity.authenticate(request.headers);
       const actorContext = createRequestContext({ requestId: context.requestId, traceId: context.traceId, clientVersion: context.clientVersion, actorId: actor.actorId });
-
-      if (url.pathname === "/api/v1/auth/me" && request.method === "GET") {
-        sendJson(response, 200, { user: actor.user ?? await services.identity.getUser(actor.actorId), request_id: actorContext.requestId }, actorContext);
-        return;
-      }
+      scheduleAnalytics(services, () => services.analytics?.recordActivity(actor.actorId));
 
       if (url.pathname === "/api/v1/auth/logout" && request.method === "POST") {
         await services.identity.logout(request.headers);
@@ -249,9 +275,21 @@ function createBackendHandler(services) {
         return;
       }
 
+      if (url.pathname === "/api/v1/admin/overview" && request.method === "GET") {
+        if (typeof services.identity.isAdmin !== "function" || !services.identity.isAdmin(actor.actorId, actor.user?.email)) {
+          throw new PlatformError("FORBIDDEN", "administrator access is required");
+        }
+        if (!services.analytics || typeof services.analytics.getOverview !== "function") throw new PlatformError("DEPENDENCY_UNAVAILABLE", "analytics is unavailable");
+        const overview = await services.analytics.getOverview(url.searchParams.get("date") ?? undefined);
+        sendJson(response, 200, { request_id: actorContext.requestId, ...overview }, actorContext);
+        return;
+      }
+
       if (url.pathname === "/api/v1/companion/check-ins" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
-        const result = await services.companionCycle.recordCheckIn(actor.actorId, await readJson(request), idempotencyKey(request));
+        const body = await readJson(request);
+        const result = await services.companionCycle.recordCheckIn(actor.actorId, body, idempotencyKey(request));
+        if (body.intent === "start") scheduleAnalytics(services, () => services.analytics?.recordUniqueEvent(actor.actorId, "first_action"));
         sendJson(response, 200, result.response, actorContext);
         return;
       }
@@ -264,6 +302,7 @@ function createBackendHandler(services) {
       if (url.pathname === "/api/v1/learning-artifacts" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
         const result = await services.artifacts.createArtifact(actor.actorId, await readJson(request), idempotencyKey(request));
+        scheduleAnalytics(services, () => services.analytics?.recordUniqueEvent(actor.actorId, "material_submitted"));
         sendJson(response, 201, { ...result.response, replayed: result.replayed }, actorContext);
         return;
       }
@@ -306,6 +345,7 @@ function createBackendHandler(services) {
         const contextForAction = await services.companionCycle.currentContext(actor.actorId, actorContext.requestId);
         const body = await readJson(request);
         const result = await services.actions.completeEvidence(actor.actorId, contextForAction.date, { ...body, action_id: decodeURIComponent(actionEvidenceMatch[1]) }, idempotencyKey(request));
+        scheduleAnalytics(services, () => services.analytics?.recordUniqueEvent(actor.actorId, "evidence_submitted"));
         sendJson(response, 200, { ...result.response, replayed: result.replayed }, actorContext);
         return;
       }
@@ -415,7 +455,12 @@ function createBackendHandler(services) {
 
       if (url.pathname === "/api/v1/ai/requests" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
-        sendJson(response, 202, await services.ai.accept(actor.actorId, await readJson(request), idempotencyKey(request)), actorContext);
+        const result = await services.ai.accept(actor.actorId, await readJson(request), idempotencyKey(request));
+        scheduleAnalytics(services, async () => {
+          const usage = typeof services.ai.getRunUsage === "function" ? await services.ai.getRunUsage(actor.actorId, result.request_id) : null;
+          await services.analytics?.recordAiRequest(result.status, usage?.estimated_cost_usd ?? 0, services.clock?.(), result.request_id);
+        });
+        sendJson(response, 202, result, actorContext);
         return;
       }
 
@@ -425,13 +470,17 @@ function createBackendHandler(services) {
       }
 
       if (url.pathname === "/api/v1/learning-routes" && request.method === "GET") {
-        sendJson(response, 200, { ...await services.learningRoutes.getLatest(actor.actorId), request_id: actorContext.requestId }, actorContext);
+        const latest = await services.learningRoutes.getLatest(actor.actorId);
+        const generation_quota = await services.ai.getFeatureQuota(actor.actorId, "learning_route_generation");
+        sendJson(response, 200, { ...latest, generation_quota, request_id: actorContext.requestId }, actorContext);
         return;
       }
 
       if (url.pathname === "/api/v1/learning-routes" && request.method === "POST") {
         if (!/^application\/json(?:;|$)/i.test(String(headerValue(request.headers, "content-type") ?? ""))) throw new PlatformError("VALIDATION_ERROR", "Content-Type must be application/json");
-        sendJson(response, 200, await services.learningRoutes.generateDraft(actor.actorId, await readJson(request), idempotencyKey(request)), actorContext);
+        const result = await services.learningRoutes.generateDraft(actor.actorId, await readJson(request), idempotencyKey(request));
+        const generation_quota = await services.ai.getFeatureQuota(actor.actorId, "learning_route_generation");
+        sendJson(response, 200, { ...result, generation_quota }, actorContext);
         return;
       }
 
@@ -451,7 +500,13 @@ function createBackendHandler(services) {
 
       const aiRequestMatch = /^\/api\/v1\/ai\/requests\/([^/]+)$/.exec(url.pathname);
       if (aiRequestMatch && request.method === "GET") {
-        sendJson(response, 200, await services.ai.getRequest(actor.actorId, decodeURIComponent(aiRequestMatch[1])), actorContext);
+        const requestId = decodeURIComponent(aiRequestMatch[1]);
+        const result = await services.ai.getRequest(actor.actorId, requestId);
+        if (["completed", "degraded", "rejected"].includes(result.status)) scheduleAnalytics(services, async () => {
+          const usage = typeof services.ai.getRunUsage === "function" ? await services.ai.getRunUsage(actor.actorId, requestId) : null;
+          await services.analytics?.recordAiOutcome(requestId, result.status, usage?.estimated_cost_usd ?? 0);
+        });
+        sendJson(response, 200, result, actorContext);
         return;
       }
 

@@ -31,8 +31,8 @@ function normalizeTopic(value) {
 
 function validateInteraction(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new PlatformError("VALIDATION_ERROR", "companion interaction must be an object");
-  const companionId = input.companion_id || DEFAULT_COMPANION_ID;
-  if (!Object.hasOwn(COMPANION_PROMPTS, companionId)) throw new PlatformError("VALIDATION_ERROR", "companion_id is not supported");
+  const requestedCompanionId = input.companion_id || DEFAULT_COMPANION_ID;
+  const companionId = Object.hasOwn(COMPANION_PROMPTS, requestedCompanionId) ? requestedCompanionId : DEFAULT_COMPANION_ID;
   if (typeof input.request_id !== "string" || input.request_id.length < 16 || input.request_id.length > 120) throw new PlatformError("VALIDATION_ERROR", "companion request_id is invalid");
   const iterationCount = input.learning_iteration_count === undefined ? null : Number(input.learning_iteration_count);
   if (iterationCount !== null && (!Number.isInteger(iterationCount) || iterationCount < 0 || iterationCount > 100000)) throw new PlatformError("VALIDATION_ERROR", "learning_iteration_count is invalid");
@@ -47,10 +47,11 @@ function validateInteraction(input) {
 }
 
 function publicProfile(profile) {
+  const companion = getCompanionPrompt(profile.companion_id);
   return {
     version: profile.version,
-    companion_id: profile.companion_id,
-    prompt_version: profile.prompt_version,
+    companion_id: companion.id,
+    prompt_version: companion.version,
     interaction_count: profile.interaction_count,
     first_seen_at: profile.first_seen_at,
     last_seen_at: profile.last_seen_at,

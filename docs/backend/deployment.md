@@ -37,6 +37,14 @@ AI_MODEL=<已批准且有预算的模型名>
 # 公开版不要设置 PILOT_INVITE_CODES，注册无需邀请码。
 # 只有需要封闭试点时才设置 15-20 个高熵邀请码，以逗号分隔；每个码只能注册一个账号。
 # PILOT_INVITE_CODES=<仅服务器 Secret，不要写入公开文案>
+# 管理员运营后台：推荐填写注册后得到的用户 ID，可用逗号配置多个管理员。
+# ADMIN_ACTOR_IDS=user-<管理员账号 ID>
+# 仅封闭部署或本地测试可按邮箱指定管理员；公开注册环境优先不要使用它。
+# ADMIN_EMAILS=admin@example.com
+# 运营统计按这个时区切分自然日。
+ANALYTICS_TIMEZONE=Asia/Shanghai
+# 建议使用随机 Secret；只用于生成不可逆的活跃用户摘要。
+# ANALYTICS_HASH_SALT=<仅服务器 Secret>
 ```
 
 不要把 `SUPABASE_DATABASE_URL`、`AI_PROVIDER_API_KEY`、`PILOT_INVITE_CODES` 或任何 session/token 写入 Git、前端变量、日志和聊天记录。生产环境必须保留 `APP_ENV=production`，这样固定开发 token 会被关闭，session cookie 会带 `Secure`。公开推广时保持 `PILOT_INVITE_CODES` 未设置；若回到封闭试点，再通过服务器 Secret 私下配置，不要写入公开文案。
@@ -81,7 +89,21 @@ Invoke-RestMethod https://<你的域名>/api/v1/ai/requests -Method Post -Conten
 
 `/api/v1/auth/register`、`/api/v1/auth/login` 和 `/api/v1/auth/me` 返回的用户对象不包含密码哈希。AI 请求先快速返回 `accepted`，再通过 request state 查询最终结果；AI Provider 失败时返回 `degraded` 模板状态，不伪装成模型成功。
 
-## 5. 上线前检查
+## 5. 管理员运营后台
+
+后台不是靠隐藏前端链接保护，而是由 API 在服务端校验管理员身份。普通用户即使手动访问页面或调用接口，也会收到 `403 Forbidden`。
+
+配置步骤：
+
+1. 先用普通注册流程创建你的管理员账号。
+2. 登录后读取 `GET /api/v1/auth/me`，记录返回的 `user.id`。只记录 ID，不记录密码、Cookie 或密钥。
+3. 在服务器 Secret 中设置 `ADMIN_ACTOR_IDS=<这个 user.id>`，多个 ID 用逗号分隔，然后重启 API 服务。
+4. 用该账号打开 `https://<你的域名>/admin`。页面提供注册总数、DAU、近 7/30 日活跃、首个行动、材料提交、证据提交、AI 请求和预计成本等聚合指标。
+5. 用普通账号请求 `GET /api/v1/admin/overview`，应返回 `403`，作为权限验收证据。
+
+`ADMIN_EMAILS` 只适合封闭部署或本地测试。公开注册时优先使用 `ADMIN_ACTOR_IDS`，避免仅凭邮箱字符串决定管理员身份。统计从启用后台后开始累计；现有代码此前没有保存活跃标记，因此不能自动补回启用前的历史 DAU。
+
+## 6. 上线前检查
 
 - Supabase 已执行迁移，连接串来自生产 Secret，数据库备份和恢复演练已完成。
 - Provider 项目、模型、日/月预算、告警和停用开关已确认，先用小范围试点。
@@ -92,3 +114,4 @@ Invoke-RestMethod https://<你的域名>/api/v1/ai/requests -Method Post -Conten
 - 公开推广前确认 `GET /api/v1/auth/registration-policy` 返回 `invitation_required: false`，再进行新账号注册验收。
 - 个人材料检索评估：`pnpm rag:evaluate`，当前固定评估集包含 20 个数学/408 案例，目标为 recall@3 ≥ 95%。
 - 账户级 Agent 使用汇总：登录后读取 `GET /api/v1/me/ai/usage`，只返回运行次数、降级率、token 估算和估算成本。
+- 管理员后台验收：管理员访问 `/admin` 能看到聚合统计，普通用户访问同一路径和 `GET /api/v1/admin/overview` 均不能读取数据。

@@ -7,7 +7,7 @@ import { assetUrl } from "../data/assets.js";
 import { icon } from "./icons.js";
 
 const INTERFACE_TOUR_STEPS = [
-  { id: "feature-nav", kicker: "界面导览 · 01 / 04", title: "左上角八卦，是总入口", body: "点开它，可以看到砺境的全部功能。你不需要记住每个名字，想去哪里时从这里找就好。" },
+  { id: "feature-nav", kicker: "界面导览 · 01 / 04", title: "导航只保留五个入口", body: "今天是主入口；路线只在你要调整约束时使用。回望、知识库和我的，分别保存结论、材料和账号信息。" },
   { id: "topbar", kicker: "界面导览 · 02 / 04", title: "顶部这一行，告诉你身在何处", body: "左侧是当前章节，右侧是通知和你的行者档案。以后看到章节名变化，就知道自己正在使用哪一段功能。" },
   { id: "daily-panel", kicker: "界面导览 · 03 / 04", title: "首页先看今天，不看一生", body: "这里会把你的目标折成今天走得完的一小段。先看当前营地和专注状态，再决定要不要进入当前学习。" },
   { id: "today-route", kicker: "界面导览 · 04 / 04", title: "今天，是你每天真正要走的路", body: "任务会按“现在出发、已抵达、云后显现”展开。完成学习后留下证据，砺境才会把下一步交给你。" },
@@ -33,22 +33,23 @@ function renderInterfaceTour(state) {
 
 export function renderShell(currentRoute, state, content = "") {
   const meta = getRouteMeta(currentRoute);
+  const isLoading = currentRoute === "/state/loading";
   const isOnboarding = currentRoute === "/onboarding";
-  const shellMode = isOnboarding ? "onboarding" : currentRoute === "/auth" ? "auth" : "standard";
+  const shellMode = isLoading ? "loading" : isOnboarding ? "onboarding" : currentRoute === "/auth" ? "auth" : "standard";
   const isAuth = currentRoute === "/auth";
   const onboardingStyle = isOnboarding
     ? ` style="--onboarding-image: url('${assetUrl("lijing-onboarding-background-v2")}')"`
     : "";
   return `<div class="app-shell app-shell--${shellMode}"${onboardingStyle} data-motion="on" data-current-route="${currentRoute}" data-route-phase="in">
-    ${isAuth ? "" : renderWorldStage(currentRoute)}
-    ${isAuth || isOnboarding ? "" : renderNavigation(currentRoute)}
+    ${isAuth || isLoading ? "" : renderWorldStage(currentRoute)}
+    ${isAuth || isOnboarding || isLoading ? "" : renderNavigation(currentRoute, state)}
     <div class="app-frame">
-      ${renderTopbar(meta, state, currentRoute)}
+      ${isLoading ? "" : renderTopbar(meta, state, currentRoute)}
       <main id="main-content" tabindex="-1"><div class="page-view" data-page="${currentRoute}">${content}</div></main>
     </div>
-    <div class="shell-status">${isAuth || isOnboarding ? "" : renderStatusAxis(state)}</div>
-    <div class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div class="shell-status">${isAuth || isOnboarding || isLoading ? "" : renderStatusAxis(state)}</div>
+    ${isLoading ? "" : '<div class="toast-region" aria-live="polite" aria-atomic="true"></div>'}
     ${currentRoute === "/" && state.tour?.active ? renderInterfaceTour(state) : ""}
-    ${renderAscensionIntro()}
+    ${isLoading ? "" : renderAscensionIntro()}
   </div>`;
 }

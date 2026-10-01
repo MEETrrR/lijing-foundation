@@ -4,7 +4,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 const { createBackendHandler, createDefaultServices } = require("../../services/api/src/bootstrap/http-api.ts");
@@ -17,7 +17,47 @@ const ASSET_SOURCE_ROOT = path.join(ROOT, "assets", "generated", "source");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4187);
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
-const KNOWN_CLIENT_ROUTES = new Set(["/", "/404", "/features", "/auth", "/privacy", "/terms", "/contact", "/onboarding", "/goals", "/route", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map", "/profile", "/settings", "/state/loading", "/state/empty", "/state/error", "/state/review", "/state/permission"]);
+const KNOWN_CLIENT_ROUTES = new Set(["/", "/404", "/features", "/auth", "/privacy", "/terms", "/contact", "/onboarding", "/goals", "/route", "/cet", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map", "/profile", "/settings", "/admin", "/state/loading", "/state/empty", "/state/error", "/state/review", "/state/permission"]);
+
+function normalizedEntityTag(value) {
+  return String(value ?? "").trim().replace(/^W\/\s*/i, "");
+}
+
+function matchesIfNoneMatch(header, etag) {
+  const value = Array.isArray(header) ? header.join(",") : String(header ?? "");
+  return value.split(",").some((candidate) => candidate.trim() === "*" || normalizedEntityTag(candidate) === normalizedEntityTag(etag));
+}
+
+function isNotModified(request, etag, fileStats) {
+  const ifNoneMatch = request.headers["if-none-match"];
+  if (ifNoneMatch) return matchesIfNoneMatch(ifNoneMatch, etag);
+  const ifModifiedSince = request.headers["if-modified-since"];
+  if (!ifModifiedSince) return false;
+  const modifiedSince = Date.parse(String(ifModifiedSince));
+  if (!Number.isFinite(modifiedSince)) return false;
+  return Math.trunc(fileStats.mtimeMs / 1000) * 1000 <= modifiedSince;
+}
+
+function parseByteRange(header, size) {
+  if (!header) return null;
+  const value = String(header).trim();
+  if (!value.startsWith("bytes=") || value.slice(6).includes(",")) return { invalid: true };
+  const [startText, endText = ""] = value.slice(6).split("-", 2);
+  let start;
+  let end;
+  if (!startText) {
+    const suffixLength = Number(endText);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return { invalid: true };
+    start = Math.max(0, size - suffixLength);
+    end = size - 1;
+  } else {
+    start = Number(startText);
+    end = endText ? Number(endText) : size - 1;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= size) return { invalid: true };
+    end = Math.min(end, size - 1);
+  }
+  return { start, end };
+}
 
 function configureDatabaseTunnel(env) {
   const rawPort = typeof env.SUPABASE_DATABASE_TUNNEL_PORT === "string" ? env.SUPABASE_DATABASE_TUNNEL_PORT.trim() : "";
@@ -82,17 +122,38 @@ async function handler(request, response) {
   const status = isExtensionlessRoute && !KNOWN_CLIENT_ROUTES.has(normalizedPath) ? 404 : 200;
   const contentType = MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream";
   const isHashedAsset = /\/assets\/.*\.[a-f0-9]{12}\.(?:webp|png|jpe?g|svg|mp4)$/i.test(pathname);
+  const isVideo = contentType === "video/mp4";
   const etag = `W/"${fileStats.size.toString(16)}-${Math.trunc(fileStats.mtimeMs).toString(16)}"`;
   const headers = {
     "Content-Type": contentType,
-    "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : "no-cache",
+    "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : isVideo ? "public, max-age=86400" : "no-cache",
     ETag: etag,
     "Last-Modified": fileStats.mtime.toUTCString(),
+    ...(isVideo ? { "Accept-Ranges": "bytes" } : {}),
   };
-  if (request.headers["if-none-match"] === etag) { response.writeHead(304, headers); response.end(); return; }
+  if (isNotModified(request, etag, fileStats)) { response.writeHead(304, headers); response.end(); return; }
   const body = await readFile(filePath);
+  const range = isVideo && status === 200 ? parseByteRange(request.headers.range, body.length) : null;
+  if (range?.invalid) {
+    response.writeHead(416, { ...headers, "Content-Range": `bytes */${body.length}`, "Content-Length": "0" });
+    response.end();
+    return;
+  }
+  if (range) {
+    const rangedBody = body.subarray(range.start, range.end + 1);
+    response.writeHead(206, { ...headers, "Content-Range": `bytes ${range.start}-${range.end}/${body.length}`, "Content-Length": rangedBody.length });
+    response.end(rangedBody);
+    return;
+  }
+  const acceptsBrotli = /\bbr\b/.test(request.headers["accept-encoding"] ?? "");
   const acceptsGzip = /\bgzip\b/.test(request.headers["accept-encoding"] ?? "");
   const isCompressible = contentType.startsWith("text/") || contentType.startsWith("application/javascript") || contentType.startsWith("application/json");
+  if (acceptsBrotli && isCompressible) {
+    const compressedBody = brotliCompressSync(body);
+    response.writeHead(status, { ...headers, "Content-Encoding": "br", Vary: "Accept-Encoding", "Content-Length": compressedBody.length });
+    response.end(compressedBody);
+    return;
+  }
   if (acceptsGzip && isCompressible) {
     const compressedBody = gzipSync(body);
     response.writeHead(status, { ...headers, "Content-Encoding": "gzip", Vary: "Accept-Encoding", "Content-Length": compressedBody.length });

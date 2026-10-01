@@ -41,6 +41,14 @@ function milestoneForDate(date, milestones) {
   return milestones.find((milestone) => date >= milestone.start_date && date <= milestone.end_date) ?? null;
 }
 
+function milestoneForPlanDate(date, milestones) {
+  return milestoneForDate(date, milestones)
+    ?? milestones.filter((milestone) => milestone.end_date < date).at(-1)
+    ?? milestones.find((milestone) => milestone.start_date > date)
+    ?? milestones.at(-1)
+    ?? null;
+}
+
 function validationError(code, message, meta = {}) {
   return { code, message, meta };
 }
@@ -89,18 +97,27 @@ function validatePlan({ plan, milestones, input, profile = {}, today }) {
     } else {
       dates.add(task.date);
     }
-    if (task.date < today || task.date > input.target_date) {
+    if (task.date > input.target_date || task.date < plan.horizon?.start_date) {
       errors.push(validationError("PLAN_TASK_OUT_OF_RANGE", "计划任务超出了目标日期范围。", { date: task.date }));
     }
     if (!Number.isInteger(task.planned_minutes) || task.planned_minutes < 5 || task.planned_minutes > 1440) {
       errors.push(validationError("PLAN_TASK_DURATION_INVALID", "计划任务时长无效。", { id: task.id ?? null, planned_minutes: task.planned_minutes ?? null }));
     }
-    for (const field of ["title", "action", "expected_output", "completion_standard"]) {
+    for (const field of ["title", "topic", "action", "expected_output"]) {
       if (typeof task[field] !== "string" || !task[field].trim()) {
         errors.push(validationError("PLAN_TASK_NOT_ACTIONABLE", "计划任务缺少可以直接执行或验收的内容。", { id: task.id ?? null, field }));
       }
     }
-    const milestone = milestoneForDate(task.date, milestones);
+    if (!Number.isInteger(task.practice?.count) || task.practice.count < 0 || task.practice.count > 100) {
+      errors.push(validationError("PLAN_PRACTICE_COUNT_INVALID", "计划练习数量无效。", { id: task.id ?? null }));
+    }
+    if (task.practice?.count > 0 && (!task.practice.source || !task.practice.scope?.trim())) {
+      errors.push(validationError("PLAN_PRACTICE_SOURCE_MISSING", "计划练习必须指向现成题库和范围。", { id: task.id ?? null }));
+    }
+    if (task.resource && (task.resource.verification_status !== "catalogued" || !/^https:\/\//i.test(task.resource.url))) {
+      errors.push(validationError("PLAN_RESOURCE_UNVERIFIED", "计划资源必须来自已收录的安全链接。", { id: task.id ?? null }));
+    }
+    const milestone = milestoneForPlanDate(task.date, milestones);
     if (!milestone) {
       errors.push(validationError("PLAN_PHASE_DATE_MISMATCH", "任务日期不属于任何阶段，无法判断它服务于哪个目标。", { date: task.date, id: task.id ?? null }));
     } else if (task.milestone_title !== milestone.title) {
@@ -125,6 +142,27 @@ function validatePlan({ plan, milestones, input, profile = {}, today }) {
     }
   }
 
+  const cycleTasks = plan.weekly_tasks ?? [];
+  const expectedCycleDays = Math.min(7, Math.floor((Date.parse(`${input.target_date}T00:00:00.000Z`) - dateValue(today)) / DAY_MS) + 1);
+  if (cycleTasks.length !== expectedCycleDays) {
+    errors.push(validationError("PLAN_WEEKLY_TASK_COUNT_INVALID", "七日计划没有覆盖当前可安排的连续日期。", { expected: expectedCycleDays, actual: cycleTasks.length }));
+  }
+  for (let index = 0; index < cycleTasks.length; index += 1) {
+    const task = cycleTasks[index];
+    const expectedDate = dateOnly(dateValue(today) + index * DAY_MS);
+    if (task.date !== expectedDate) {
+      errors.push(validationError("PLAN_WEEKLY_DATES_NOT_CONTIGUOUS", "七日计划日期必须从今天开始连续排列。", { expected: expectedDate, actual: task.date ?? null }));
+    }
+    if (!tasks.some((stored) => stored.id === task.id && stored.date === task.date)) {
+      errors.push(validationError("PLAN_WEEKLY_TASK_NOT_STORED", "七日计划任务没有保存在计划明细中。", { id: task.id ?? null }));
+    }
+  }
+  const cycleMinutes = cycleTasks.reduce((total, task) => total + (Number(task.planned_minutes) || 0), 0);
+  const cycleBudget = Math.floor(weeklyCapacity * 0.8);
+  if (cycleMinutes > cycleBudget) {
+    errors.push(validationError("PLAN_CYCLE_BUFFER_EXCEEDED", "七日计划必须为复盘和现实变化保留至少 20% 时间。", { minutes: cycleMinutes, budget: cycleBudget }));
+  }
+
   const todayIds = new Set((plan.today?.tasks ?? []).map((task) => task?.id).filter(Boolean));
   const actualTodayIds = new Set(tasks.filter((task) => task.date === today).map((task) => task.id));
   if (todayIds.size !== actualTodayIds.size || [...todayIds].some((id) => !actualTodayIds.has(id))) {
@@ -139,7 +177,7 @@ function validatePlan({ plan, milestones, input, profile = {}, today }) {
   for (const milestone of milestones) {
     const scheduled = phaseTotals.get(milestone.title) ?? 0;
     const requested = milestone.planned_hours * 60;
-    if (scheduled < requested) {
+    if (!Array.isArray(plan.weekly_tasks) && scheduled < requested) {
       warnings.push({
         code: "PLAN_PHASE_UNSCHEDULED_CAPACITY",
         message: `${milestone.title}还有${Math.round((requested - scheduled) / 60 * 10) / 10}小时没有被排入当前可用时段。`,
@@ -155,6 +193,7 @@ function validatePlan({ plan, milestones, input, profile = {}, today }) {
     metrics: {
       task_count: tasks.length,
       scheduled_minutes: tasks.reduce((total, task) => total + (Number(task.planned_minutes) || 0), 0),
+      cycle_minutes: cycleMinutes,
       effective_daily_minutes: effectiveDaily,
       weekly_capacity_minutes: weeklyCapacity,
     },

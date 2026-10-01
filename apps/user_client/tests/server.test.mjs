@@ -65,11 +65,15 @@ test("local client server keeps AI disabled honest and protects the formal AI ro
 
     const pageResponse = await fetch(`${baseUrl}/knowledge`);
     assert.equal(pageResponse.status, 200);
-    assert.match(await pageResponse.text(), /<div id="app"><\/div>/);
+    assert.match(await pageResponse.text(), /<div id="app"><div class="boot-state" role="status"/);
+
+    const cetPageResponse = await fetch(`${baseUrl}/cet`);
+    assert.equal(cetPageResponse.status, 200);
+    assert.match(await cetPageResponse.text(), /<div id="app">/);
 
     const missingPageResponse = await fetch(`${baseUrl}/missing-page`);
     assert.equal(missingPageResponse.status, 404);
-    assert.match(await missingPageResponse.text(), /<div id="app"><\/div>/);
+    assert.match(await missingPageResponse.text(), /<div id="app">/);
 
     for (const publicRoute of ["/privacy", "/terms", "/contact"]) {
       const publicResponse = await fetch(`${baseUrl}${publicRoute}`);
@@ -82,26 +86,58 @@ test("local client server keeps AI disabled honest and protects the formal AI ro
     }
     const sourceResponse = await fetch(`${baseUrl}/apps/user_client/src/main.js`);
     assert.equal(sourceResponse.status, 200);
-    const faviconResponse = await fetch(`${baseUrl}/apps/user_client/src/favicon.svg`);
+    const faviconResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-favicon.svg`);
     assert.equal(faviconResponse.status, 200);
     assert.equal(faviconResponse.headers.get("content-type"), "image/svg+xml");
-    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`);
+    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`);
     assert.equal(assetResponse.status, 200);
-    assert.equal(assetResponse.headers.get("content-type"), "image/webp");
-    assert.equal(assetResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+    assert.equal(assetResponse.headers.get("content-type"), "image/png");
+    assert.equal(assetResponse.headers.get("cache-control"), "no-cache");
     assert.match(assetResponse.headers.get("etag") ?? "", /^W\//);
-    const cachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`, {
+    const cachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`, {
       headers: { "If-None-Match": assetResponse.headers.get("etag") ?? "" },
     });
     assert.equal(cachedAssetResponse.status, 304);
+    const stronglyCachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`, {
+      headers: { "If-None-Match": (assetResponse.headers.get("etag") ?? "").replace(/^W\//, "") },
+    });
+    assert.equal(stronglyCachedAssetResponse.status, 304);
     const compressedSourceResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
       headers: { "Accept-Encoding": "gzip" },
     });
     assert.equal(compressedSourceResponse.headers.get("content-encoding"), "gzip");
     assert.equal(compressedSourceResponse.headers.get("vary"), "Accept-Encoding");
+    const brotliSourceResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
+      headers: { "Accept-Encoding": "br, gzip" },
+    });
+    assert.equal(brotliSourceResponse.headers.get("content-encoding"), "br");
+    assert.equal(brotliSourceResponse.headers.get("vary"), "Accept-Encoding");
+    const cachedSourceResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
+      headers: { "If-Modified-Since": brotliSourceResponse.headers.get("last-modified") ?? "" },
+    });
+    assert.equal(cachedSourceResponse.status, 304);
+    const cachedSourceByTagResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
+      headers: { "If-None-Match": brotliSourceResponse.headers.get("etag") ?? "" },
+    });
+    assert.equal(cachedSourceByTagResponse.status, 304);
+    const cachedSourceByBothValidatorsResponse = await fetch(`${baseUrl}/apps/user_client/src/styles.css`, {
+      headers: {
+        "If-None-Match": brotliSourceResponse.headers.get("etag") ?? "",
+        "If-Modified-Since": brotliSourceResponse.headers.get("last-modified") ?? "",
+      },
+    });
+    assert.equal(cachedSourceByBothValidatorsResponse.status, 304);
     const openingVideoResponse = await fetch(`${baseUrl}/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4`);
     assert.equal(openingVideoResponse.status, 200);
     assert.equal(openingVideoResponse.headers.get("content-type"), "video/mp4");
+    assert.equal(openingVideoResponse.headers.get("accept-ranges"), "bytes");
+    assert.equal(openingVideoResponse.headers.get("cache-control"), "public, max-age=86400");
+    const openingVideoRangeResponse = await fetch(`${baseUrl}/assets/generated/source/opening/ink_longfeng_clean_1920x1080_24fps.mp4`, {
+      headers: { Range: "bytes=0-1023" },
+    });
+    assert.equal(openingVideoRangeResponse.status, 206);
+    assert.equal(openingVideoRangeResponse.headers.get("content-range"), "bytes 0-1023/3676198");
+    assert.equal((await openingVideoRangeResponse.arrayBuffer()).byteLength, 1024);
   } finally {
     child.kill();
     await wait(25);

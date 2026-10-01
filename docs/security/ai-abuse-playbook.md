@@ -15,7 +15,7 @@ The AI Gateway is a cost, safety, and authorization boundary. No client, worker,
 | Feature quota | Learning route generation: 3 per day; study-plan suggestion: 10 per day; emotional support: 10 per day | AI Gateway feature quota gate |
 | Input | 4,000 tokens per request | normalized request gate |
 | Output | 1,000 tokens per request | provider request and output validator |
-| Images | 2 per request, 5 MB each | upload and AI request gate |
+| Images | 2 per request, 20 MB each | upload and AI request gate |
 | Complex vision/long-context | 3 per day, preferably asynchronous | feature quota and queue gate |
 
 The limits are evaluated independently across relevant dimensions. A request must pass all applicable gates; passing the account limit does not bypass the device, IP, feature, concurrency, or global budget limit.
@@ -27,10 +27,19 @@ The limits are evaluated independently across relevant dimensions. A request mus
 3. **Normalize:** assign a request ID, policy version, feature ID, prompt version, input type, attachment metadata, and a duplicate fingerprint. Do not put complete prompt or file content in logs.
 4. **Limit:** apply account, device, IP, feature, concurrency, daily, monthly, and global budget controls. Reserve quota before queueing.
 5. **Validate input:** enforce token, image count, image size, pixel, MIME, context, and source allowlists. Reject URLs or tools outside the allowlist.
-6. **Execute:** use a provider adapter with a bounded timeout. The current synchronous path does not automatically retry provider failures; it degrades to a safe template response.
+6. **Execute:** use a provider adapter with a bounded timeout and at most one retry for retryable dependency failures. Authentication failures are classified as `provider_unauthorized` without exposing provider details; the request degrades to a safe template response.
 7. **Validate output:** apply schema, sensitive-content, source/version, and tool-result checks. Unsafe, malformed, or unverifiable output is rejected or replaced with a safe fallback.
 8. **Settle:** record estimated and actual tokens, cost, policy/model/prompt versions, cache/degradation state, and the final decision. Release unused reservations on failure, timeout, or cancellation.
 9. **Respond:** return a safe result with request/trace identifiers, a stable reason code, and a retry hint. Never return provider credentials, internal prompts, stack traces, or hidden policy details.
+
+The public health endpoint performs a cached, non-generating provider preflight against the compatible provider's `/models` endpoint. A `401` or `403` is exposed only as `provider_unauthorized`; it must not be treated as configured or available AI. Unsupported preflight endpoints remain `unknown` until a real completion succeeds.
+
+## Content safety boundary
+
+- Neutral political education, historical context, and source-checking questions remain allowed; the safety gate is aimed at targeted hate, political violence, terrorist propaganda, and actionable harm, not at a political topic merely being sensitive.
+- Requests for explicit sexual generation, sexual content involving minors, self-harm methods, weapon or explosive construction, attacks, or terrorist propaganda are rejected before provider execution with a stable `safety_*` reason code.
+- Provider output is checked again. Unsafe output is never returned to the client; the run is degraded to the existing template/recovery path and records only the category, reason code, and input hash.
+- Material diagnosis checks the learner's focus and intent while preserving room to submit historical, scientific, or safety-learning material as evidence. Unsupported subject names do not borrow unrelated curated nodes; the action is marked as material-only.
 
 ## Signals and triage
 

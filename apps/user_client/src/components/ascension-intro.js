@@ -2,6 +2,6 @@ import { assetUrl } from "../data/assets.js";
 
 export function renderAscensionIntro() {
   return `<div class="ascension-intro" id="ascension-intro" role="status" aria-live="polite" aria-label="正在打开功能" aria-hidden="true" hidden>
-    <video class="ascension-intro__video" src="${assetUrl("opening-longfeng-clean-v1")}" autoplay muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video>
+    <video class="ascension-intro__video" data-src="${assetUrl("opening-longfeng-clean-v1")}" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video>
   </div>`;
 }

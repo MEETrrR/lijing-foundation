@@ -10,6 +10,12 @@ build/
 !.env.example
 infra/environments/image-generation.env
 coverage/
+artifacts/
+output/
+test-results/
+tmp/
+/generated/
+deploy-stage-*/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies

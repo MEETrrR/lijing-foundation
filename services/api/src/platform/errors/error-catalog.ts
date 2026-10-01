@@ -11,6 +11,7 @@ const ERROR_CATALOG = Object.freeze({
   FORBIDDEN: Object.freeze({ publicCode: "forbidden", publicMessage: "你没有权限执行这项操作。", retryable: false, httpStatus: 403 }),
   NOT_FOUND: Object.freeze({ publicCode: "not_found", publicMessage: "没有找到这项内容。", retryable: false, httpStatus: 404 }),
   CONFLICT: Object.freeze({ publicCode: "conflict", publicMessage: "内容已经发生变化，请刷新后再试。", retryable: false, httpStatus: 409 }),
+  AI_OUTPUT_INVALID: Object.freeze({ publicCode: "ai_output_invalid", publicMessage: "AI 已返回结果，但路线草案未通过校验；请调整条件后重新生成。", retryable: true, httpStatus: 502 }),
   ACTION_VERSION_CONFLICT: Object.freeze({ publicCode: "action_version_conflict", publicMessage: "这条学习行动已经更新，请刷新后继续。", retryable: false, httpStatus: 409 }),
   RATE_LIMITED: Object.freeze({ publicCode: "rate_limited", publicMessage: "操作太频繁，请稍后再试。", retryable: true, httpStatus: 429 }),
   DEPENDENCY_UNAVAILABLE: Object.freeze({ publicCode: "dependency_unavailable", publicMessage: "AI 服务暂时不可用，请稍后再试。", retryable: true, httpStatus: 503 }),

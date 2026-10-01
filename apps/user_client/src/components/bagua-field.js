@@ -11,30 +11,25 @@ const DIRECTIONS = [
   { key: "northwest", label: "西北", gua: "乾", symbol: "☰", element: "天", meaning: "自强不息" },
 ];
 
-export function renderBaguaField({ active = "坎", compact = false, label = "八方方位", directoryItems = null } = {}) {
-  if (directoryItems && directoryItems.length > DIRECTIONS.length) {
-    console.warn("[bagua] 传入 " + directoryItems.length + " 项但只有 " + DIRECTIONS.length + " 个方位，多余项不会渲染");
-  }
-  const directionKeys = directoryItems?.map((item) => item.direction);
-  if (directionKeys && new Set(directionKeys).size !== directionKeys.length) {
-    console.warn("[bagua] 存在重复的 direction，会导致项被静默丢弃", directionKeys);
+export function renderBaguaField({ active = "", label = "功能目录", directoryItems } = {}) {
+  if (!Array.isArray(directoryItems) || directoryItems.length === 0) return "";
+  if (directoryItems.length > DIRECTIONS.length) throw new RangeError(`八方视图最多接受 ${DIRECTIONS.length} 项`);
+  const directionKeys = directoryItems.map((item) => item.direction);
+  const supportedDirections = new Set(DIRECTIONS.map((direction) => direction.key));
+  if (directionKeys.some((key) => !supportedDirections.has(key))) throw new Error("八方视图包含未知方位");
+  if (new Set(directionKeys).size !== directionKeys.length) {
+    throw new Error("八方视图包含重复方位");
   }
   const nodes = DIRECTIONS.map((direction) => {
-    const selected = direction.gua === active;
     const item = directoryItems?.find((entry) => entry.direction === direction.key);
-    const copy = item
-      ? `<b>${direction.label}</b><strong>${item.label}</strong><small>${item.detail}</small>`
-      : `<b>${direction.label}</b><strong>${direction.gua}${direction.element}</strong><small>${direction.meaning}</small>`;
-    if (item) {
-      return `<a class="bagua-node bagua-node--${direction.key} bagua-node--directory ${selected ? "is-active" : ""}" href="${item.href}" data-route="${item.href}" title="进入${item.label} · ${item.detail}">
-        <span class="bagua-node__symbol">${direction.symbol}</span><span class="bagua-node__copy">${copy}</span>
-      </a>`;
-    }
-    return `<button class="bagua-node bagua-node--${direction.key} ${selected ? "is-active" : ""}" type="button" data-action="bagua-node" data-bagua="${direction.gua}" aria-pressed="${selected}" title="${direction.label} · ${direction.gua}${direction.element}">
+    if (!item) return "";
+    const selected = direction.gua === active;
+    const copy = `<b>${direction.label}</b><strong>${item.label}</strong><small>${item.detail}</small>`;
+    return `<a class="bagua-node bagua-node--${direction.key} bagua-node--directory ${selected ? "is-active" : ""}" href="${item.href}" data-route="${item.href}" title="进入${item.label} · ${item.detail}">
       <span class="bagua-node__symbol">${direction.symbol}</span><span class="bagua-node__copy">${copy}</span>
-    </button>`;
+    </a>`;
   }).join("");
-  return `<section class="bagua-field ${compact ? "bagua-field--compact" : ""}" aria-label="${label}">
+  return `<section class="bagua-field" aria-label="${label}">
     <div class="bagua-field__paper" style="--bagua-image:url('${assetUrl("bagua-ink-compass-v1")}')">
       <div class="bagua-field__image"></div><div class="bagua-field__wash"></div>
       <div class="bagua-field__ring bagua-field__ring--outer"></div><div class="bagua-field__ring bagua-field__ring--middle"></div><div class="bagua-field__ring bagua-field__ring--inner"></div>

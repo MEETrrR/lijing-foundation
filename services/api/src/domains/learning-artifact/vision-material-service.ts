@@ -1,7 +1,8 @@
 const crypto = require("node:crypto");
 const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_SIZE_MB = 20;
+const MAX_IMAGE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024;
 const IMAGE_TYPES = new Map([
   ["image/jpeg", "jpeg"],
   ["image/png", "png"],
@@ -63,7 +64,7 @@ class VisionMaterialService {
     const normalizedType = normalizeContentType(contentType);
     const format = IMAGE_TYPES.get(normalizedType);
     if (!format) throw new PlatformError("VALIDATION_ERROR", "only JPEG, PNG, and GIF learning images are supported");
-    if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new PlatformError("VALIDATION_ERROR", "learning image must be between 1 byte and 5 MB");
+    if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new PlatformError("VALIDATION_ERROR", `learning image must be between 1 byte and ${MAX_IMAGE_SIZE_MB} MB`);
     if (!matchesImageSignature(bytes, format)) throw new PlatformError("VALIDATION_ERROR", "learning image content does not match its declared format");
     const imageHash = crypto.createHash("sha256").update(bytes).digest("hex");
     const aiResponse = await this.ai.submitWithImages(actorId, {
@@ -94,6 +95,7 @@ class VisionMaterialService {
 }
 
 module.exports = {
+  MAX_IMAGE_SIZE_MB,
   MAX_IMAGE_BYTES,
   VisionMaterialService,
   matchesImageSignature,

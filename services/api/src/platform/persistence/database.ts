@@ -11,6 +11,8 @@ export type DatabaseTransactionWork<T> = (database: Database) => Promise<T> | T;
 
 export interface Database {
   get<T>(key: string): Promise<T | undefined>;
+  countKeys(prefix: string): Promise<number>;
+  countDistinctKeySuffixes(prefixes: string[]): Promise<number>;
   set<T>(key: string, value: T): Promise<void>;
   setIfAbsent<T>(key: string, value: T): Promise<boolean>;
   delete(key: string): Promise<boolean>;
@@ -58,6 +60,22 @@ class InMemoryDatabase implements Database {
 
   async get<T>(key: string): Promise<T | undefined> {
     return cloneValue(this.values.get(key) as T | undefined);
+  }
+
+  async countKeys(prefix: string): Promise<number> {
+    let count = 0;
+    for (const key of this.values.keys()) if (key.startsWith(prefix)) count += 1;
+    return count;
+  }
+
+  async countDistinctKeySuffixes(prefixes: string[]): Promise<number> {
+    const normalized = [...new Set(prefixes)].sort((left, right) => right.length - left.length);
+    const suffixes = new Set<string>();
+    for (const key of this.values.keys()) {
+      const prefix = normalized.find((candidate) => key.startsWith(candidate));
+      if (prefix) suffixes.add(key.slice(prefix.length));
+    }
+    return suffixes.size;
   }
 
   async set<T>(key: string, value: T): Promise<void> {

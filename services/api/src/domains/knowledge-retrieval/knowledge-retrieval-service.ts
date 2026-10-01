@@ -2,11 +2,12 @@ const { PlatformError } = require("../../platform/errors/error-catalog.ts");
 const { OFFICIAL_KNOWLEDGE_CHUNKS, OFFICIAL_SOURCE_REGISTRY } = require("./knowledge-catalog.ts");
 
 const KNOWLEDGE_INDEX_KEY = "rag:official:knowledge-base:v1";
-const KNOWLEDGE_INDEX_VERSION = "2026-09-06.rag-v4";
+const KNOWLEDGE_INDEX_VERSION = "2026-09-27.rag-v9";
 const DEFAULT_LIMIT = 6;
 const MAX_LIMIT = 12;
 const SUPPORTED_GOAL_TYPES = new Set([
   "postgraduate_entrance_exam",
+  "college_english_exam",
   "civil_service_exam",
   "employment",
   "professional_certificate",
@@ -130,6 +131,9 @@ class KnowledgeRetrievalService {
           region_scope: chunk.region_scope,
           claim_status: chunk.metadata?.claim_status ?? "reviewed",
           review_note: chunk.metadata?.review_note ?? "审核知识片段",
+          source_tier: chunk.metadata?.source_tier ?? null,
+          as_of: chunk.metadata?.as_of ?? null,
+          status: chunk.metadata?.status ?? null,
         },
       }));
 

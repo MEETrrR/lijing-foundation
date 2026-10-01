@@ -1,7 +1,12 @@
 import { DEMO_STATE } from "./data/demo-data.js";
-import { normalizeRoute } from "./data/routes.js";
+import { getRouteMeta, normalizeRoute } from "./data/routes.js";
 import { renderPage } from "./pages/index.js";
 import { renderShell } from "./components/shell.js";
+import { hydrateKnowledgeNodes, persistEvidenceKnowledge, serializeKnowledgeNodes } from "./data/knowledge-evidence.js";
+
+const MAX_LEARNING_IMAGE_SIZE_MB = 20;
+const MAX_LEARNING_IMAGE_BYTES = MAX_LEARNING_IMAGE_SIZE_MB * 1024 * 1024;
+const ROUTE_GENERATION_TIMEOUT_MS = 90000;
 
 function newRequestId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -39,78 +44,37 @@ function waitForRetry(milliseconds) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
 }
 
-function baselineForRouteAssessment(assessment) {
-  if (assessment.study_stage === "not_started") return "starting";
-  if (assessment.study_stage === "practiced" && assessment.recent_result === "above_70") return "advanced";
-  return "foundation";
-}
-
-const DIAGNOSTIC_OUTCOMES = new Set(["correct", "incorrect", "unverified"]);
-const DIAGNOSTIC_OUTCOME_TEXT = { correct: "正确", incorrect: "错误", unverified: "待核对" };
-
-function diagnosticNextAction(summary) {
-  if (summary.unverified > 0) return "先用原题答案核对尚未核对的题；在核对前，不把这次记录当作能力结论。";
-  if (summary.incorrect >= 2) return "下一段只选其中一个错因，用两道同类基础题重做；每题先写判断条件，再看答案。";
-  if (summary.incorrect === 1) return "下一段围绕这道错题补一个判断条件，再做一道同类题验证能否独立迁移。";
-  return "下一段先不看资料，用一道同范围题复现关键判断；复测前不把三题正确当作掌握。";
-}
-
-function collectInitialDiagnostic(root) {
-  const panel = root.querySelector("[data-initial-diagnostic]");
-  if (!panel) return null;
-  const subject = panel.dataset.diagnosticSubject?.trim() || "当前科目";
-  const items = [1, 2, 3].map((index) => {
-    const source = panel.querySelector(`[data-diagnostic-source="${index}"]`)?.value.trim() ?? "";
-    const outcome = panel.querySelector(`[data-diagnostic-outcome="${index}"]`)?.value ?? "";
-    const minutes = Number(panel.querySelector(`[data-diagnostic-minutes="${index}"]`)?.value);
-    const note = panel.querySelector(`[data-diagnostic-note="${index}"]`)?.value.trim() ?? "";
-    if (source.length < 6 || source.length > 120 || note.length < 4 || note.length > 180 || !DIAGNOSTIC_OUTCOMES.has(outcome) || !Number.isInteger(minutes) || minutes < 1 || minutes > 180) {
-      throw new Error(`请完整填写第 ${index} 道题的来源、对照结果、用时和判断依据`);
-    }
-    return { source, outcome, minutes, note };
-  });
-  const summary = {
-    subject,
-    correct: items.filter((item) => item.outcome === "correct").length,
-    incorrect: items.filter((item) => item.outcome === "incorrect").length,
-    unverified: items.filter((item) => item.outcome === "unverified").length,
-    totalMinutes: items.reduce((total, item) => total + item.minutes, 0),
-  };
-  summary.nextAction = diagnosticNextAction(summary);
-  summary.completedAt = new Date().toISOString();
-  const evidence = [
-    `起点独立诊断（${subject}；学习者按已有题目与答案自行核对，非系统评分）`,
-    ...items.map((item, index) => `题${index + 1}：${item.source}；${DIAGNOSTIC_OUTCOME_TEXT[item.outcome]}；${item.minutes} 分钟；${item.note}`),
-    `汇总：正确 ${summary.correct}，错误 ${summary.incorrect}，待核对 ${summary.unverified}，总用时 ${summary.totalMinutes} 分钟。`,
-  ].join("\n");
-  return { items, summary, evidence };
-}
-
-function initialDiagnosticReview(summary, evidence) {
-  return {
-    evidenceUsed: evidence,
-    problem: summary.unverified > 0
-      ? `三道题中有 ${summary.unverified} 道尚未核对，当前还不能判断起点。`
-      : summary.incorrect > 0
-        ? `三道题中有 ${summary.incorrect} 道对照为错误，需要先缩小到一个具体错因。`
-        : "三道题均由学习者自行对照为正确，但样本太小，不能据此宣称掌握。",
-    reason: `只根据三道独立作答的自核对记录和 ${summary.totalMinutes} 分钟用时安排下一步，不生成分数或掌握结论。`,
-    nextAction: summary.nextAction,
-  };
-}
-
 const AI_POLL_ATTEMPTS = 30;
 const PUBLIC_ROUTES = new Set(["/auth", "/404", "/privacy", "/terms", "/contact"]);
+const LEGACY_ROUTE_REDIRECTS = new Map([
+  ["/plan", "/"],
+  ["/study", "/"],
+  ["/assistant", "/"],
+  ["/features", "/"],
+  ["/goals", "/route"],
+  ["/map", "/route"],
+  ["/growth", "/"],
+  ["/profile", "/settings"],
+]);
 
-async function requestAi(path, payload) {
+function aiSafetyRejectionMessage(reasonCode) {
+  if (reasonCode === "safety_sexual_minors") return "涉及未成年人的性内容不能处理。可以改问儿童保护、法律边界或安全教育。";
+  if (reasonCode === "safety_sexual_explicit") return "这类露骨内容不能由学习助手生成。可以改问性健康、同意或安全教育。";
+  if (reasonCode === "safety_actionable_violence") return "我不能提供武器、爆炸物、袭击或伤害他人的操作步骤。可以改问历史背景、风险预防或应急处置。";
+  if (reasonCode === "safety_targeted_hate_or_political_violence") return "我不能生成针对群体的仇恨、暴力或政治煽动内容。可以改问中立事实、历史背景或来源核验。";
+  if (reasonCode === "safety_self_harm") return "我不能提供自伤方法。如果你正处于危险中，请马上联系身边可信任的人和当地紧急或危机支持；也可以先写下接下来十分钟的安全行动。";
+  return "";
+}
+
+export async function requestAi(path, payload) {
   const feature = path.endsWith("/review") ? "wrong_answer_hint" : "concept_explanation";
   const input = path.endsWith("/review")
-    ? JSON.stringify({ task: payload.task, answer: payload.answer, evidence_level: payload.evidence_level, evidence: payload.evidence })
+    ? JSON.stringify({ task: payload.task, answer: payload.answer, evidence_level: payload.evidence_level, evidence: payload.evidence, response_format: "lijing_evidence_review_v1", ...(payload.context ? { context: payload.context } : {}) })
     : JSON.stringify({ companion_id: payload.companion_id, prompt: payload.prompt, context: payload.context });
+  const requestId = newRequestId();
   let response;
   let body = {};
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const requestId = newRequestId();
     try {
       response = await fetch("/api/v1/ai/requests", {
         method: "POST",
@@ -132,13 +96,19 @@ async function requestAi(path, payload) {
   if (!response.ok) {
     if (response.status === 401) throw apiError(response, body, "请先登录后再使用 AI");
     const reasonCode = body.reason_code ?? body.code;
+    const safetyMessage = aiSafetyRejectionMessage(reasonCode);
+    if (safetyMessage) throw new Error(safetyMessage);
     if (reasonCode === "daily_quota_exhausted" || reasonCode === "feature_quota_exhausted") throw new Error("今天的 AI 使用次数已用完，请明天再试");
     if (reasonCode === "burst_limit_exhausted") throw new Error("AI 请求过于频繁，请稍等一分钟再试");
     if (reasonCode === "concurrency_limit_exhausted") throw new Error("上一条 AI 请求还在处理中，请稍等再试");
     if (isTransientAiFailure(response, body)) throw new Error("AI 暂时没有响应，系统已自动重试一次，请稍后重新提交");
     throw new Error(body.message || body.error || `AI 服务暂时不可用（${response.status}）`);
   }
-  if (body.status === "rejected") throw new Error(body.reason_code === "input_too_long" ? "这段内容太长，请缩短后再试" : "这条 AI 请求未通过服务策略");
+  if (body.status === "rejected") {
+    const safetyMessage = aiSafetyRejectionMessage(body.reason_code);
+    if (safetyMessage) throw new Error(safetyMessage);
+    throw new Error(body.reason_code === "input_too_long" ? "这段内容太长，请缩短后再试" : "这条 AI 请求未通过服务策略");
+  }
   let resultBody = body;
   if (body.status === "accepted" || body.status === "processing") {
     for (let attempt = 0; attempt < AI_POLL_ATTEMPTS; attempt += 1) {
@@ -155,16 +125,18 @@ async function requestAi(path, payload) {
   if (resultBody.status === "degraded") throw new Error("AI 还在恢复或服务商没有返回结果。先按页面给出的即时动作开始，稍后可重新提问。");
   if (resultBody.status !== "completed" || !resultBody.result?.text) throw new Error("AI 已受理，但生成时间比平时长；请稍后刷新助手页面查看，不要重复提交");
   if (path.endsWith("/review")) {
-    const candidate = resultBody.result.text.match(/\{[\s\S]*\}/)?.[0];
+    let parsed;
     try {
-      const parsed = JSON.parse(candidate || "{}");
-      if (["evidence_used", "problem", "reason", "next_action"].every((key) => typeof parsed[key] === "string" && parsed[key].trim())) {
-        return { review: { evidenceUsed: parsed.evidence_used, problem: parsed.problem, reason: parsed.reason, nextAction: parsed.next_action } };
-      }
+      parsed = JSON.parse(resultBody.result.text.trim());
     } catch {
-      // Keep the explicit fallback below when the provider returns plain text.
+      parsed = null;
     }
-    return { review: { evidenceUsed: payload.evidence, problem: "模型返回了非结构化复盘，需要人工确认重点。", reason: "本次结果未能解析为标准复盘字段，因此不自动推断掌握状态。", nextAction: resultBody.result.text } };
+    if (parsed && ["evidence_used", "problem", "reason", "next_action"].every((key) => typeof parsed[key] === "string" && parsed[key].trim())) {
+      return { review: { evidenceUsed: parsed.evidence_used, problem: parsed.problem, reason: parsed.reason, nextAction: parsed.next_action } };
+    }
+    const error = new Error("AI 复盘没有按要求返回完整结构，已切换到规则复盘");
+    error.code = "AI_REVIEW_FORMAT_INVALID";
+    throw error;
   }
   try {
     const parsed = JSON.parse(resultBody.result.text);
@@ -247,6 +219,14 @@ async function requestRegistrationPolicy() {
   return body;
 }
 
+async function requestAdminOverview(date) {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  const response = await fetch(`/api/v1/admin/overview${query}`, { credentials: "same-origin", cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw apiError(response, body, response.status === 403 ? "只有管理员可以查看运营后台" : "运营数据暂时无法读取");
+  return body;
+}
+
 async function requestLearningArtifact(payload) {
   const requestId = newRequestId();
   const response = await fetch("/api/v1/learning-artifacts", {
@@ -263,7 +243,7 @@ async function requestLearningArtifact(payload) {
 async function requestMaterialImageExtraction(file) {
   const allowedTypes = new Set(["image/jpeg", "image/png", "image/gif"]);
   if (!file || !allowedTypes.has(file.type)) throw new Error("请拍摄或选择 JPEG、PNG、GIF 格式的图片");
-  if (file.size > 5 * 1024 * 1024) throw new Error("图片不能超过 5 MB");
+  if (file.size > MAX_LEARNING_IMAGE_BYTES) throw new Error(`图片不能超过 ${MAX_LEARNING_IMAGE_SIZE_MB} MB`);
   const requestId = newRequestId();
   const response = await fetch("/api/v1/learning-image-extractions", {
     method: "POST",
@@ -330,18 +310,6 @@ async function requestMaterialEvidence(actionId, payload) {
   return body;
 }
 
-async function requestLearningAttempt(payload) {
-  const response = await fetch("/api/v1/learning/attempts", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
-    body: JSON.stringify({ request_id: newRequestId(), ...payload }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw apiError(response, body, "学习结果暂时没有写入");
-  return body;
-}
-
 async function requestUserState(state) {
   const response = await fetch("/api/v1/me/state", {
     method: "PUT",
@@ -366,32 +334,39 @@ async function requestFeedback(payload) {
   return body;
 }
 
-async function requestLearningRoute(payload) {
+export async function requestLearningRoute(payload) {
   let response;
   let body = {};
-  let retriedTransient = false;
+  const requestId = newRequestId();
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const requestId = newRequestId();
     try {
-      response = await fetch("/api/v1/learning-routes", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
-        body: JSON.stringify({ request_id: requestId, ...payload }),
-      });
+      const controller = new AbortController();
+      const timeout = globalThis.setTimeout(() => controller.abort(), ROUTE_GENERATION_TIMEOUT_MS);
+      try {
+        response = await fetch("/api/v1/learning-routes", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": requestId },
+          body: JSON.stringify({ request_id: requestId, ...payload }),
+          signal: controller.signal,
+        });
+      } finally {
+        globalThis.clearTimeout(timeout);
+      }
       body = await response.json().catch(() => ({}));
-    } catch {
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error("路线超过 90 秒仍未返回。系统会继续完成已收到的请求；稍后重新打开“路线”即可检查是否已保存。");
+        timeoutError.code = "route_generation_pending";
+        throw timeoutError;
+      }
       if (attempt === 0) {
-        retriedTransient = true;
         await waitForRetry(900);
         continue;
       }
       throw new Error("网络暂时不稳定，路线没有生成成功，请检查网络后重新生成");
     }
-    const shouldRetry = isTransientAiFailure(response, body);
-    if (!shouldRetry || attempt === 1) break;
-    retriedTransient = true;
-    await waitForRetry(900);
+    break;
   }
   if (!response.ok) {
     if (response.status === 401) throw apiError(response, body, "学习路线暂时没有生成成功");
@@ -399,13 +374,83 @@ async function requestLearningRoute(payload) {
     if (reasonCode === "daily_quota_exhausted" || reasonCode === "feature_quota_exhausted") throw new Error("今天的 AI 路线生成次数已用完，请明天再试");
     if (reasonCode === "burst_limit_exhausted") throw new Error("请求过于频繁，请稍等一分钟再试");
     if (reasonCode === "concurrency_limit_exhausted") throw new Error("上一条路线还在处理中，请稍等再试");
-    if (isTransientAiFailure(response, body)) throw new Error("AI 暂时没有返回可校验路线，系统已自动重试一次，请点击“重新生成”再试");
-    throw new Error(body.message || "学习路线暂时没有生成成功");
+    if (reasonCode === "ai_output_invalid") throw apiError(response, body, "AI 已返回，但路线草案未通过校验，请调整条件后重新生成");
+    const error = apiError(response, body, isTransientAiFailure(response, body)
+      ? "AI 服务暂时不可用，请稍后重新生成"
+      : "学习路线暂时没有生成成功");
+    if (isTransientAiFailure(response, body)) error.retryable = true;
+    throw error;
   }
-  if (body.status === "degraded") throw new Error(retriedTransient ? "AI 暂时没有返回可校验路线，系统已自动重试一次，请点击“重新生成”再试" : "AI 服务暂时无法生成可校验草案，请点击“重新生成”再试");
+  if (body.status === "degraded") {
+    const error = new Error("AI 服务暂时无法生成可校验草案，请点击“重新生成”再试");
+    error.code = body.reason_code ?? "ai_unavailable";
+    error.retryable = true;
+    throw error;
+  }
   if (body.status === "clarification_required") return body;
   if (body.status !== "draft" || !body.route) throw new Error("学习路线返回格式不完整，请稍后再试");
-  return body.route;
+  return { ...body.route, generation_quota: body.generation_quota ?? null };
+}
+
+function routePayloadFromDraft(route, overrides = {}) {
+  const goal = route?.goal ?? {};
+  const dailyMinutes = Number(overrides.daily_minutes ?? goal.requested_daily_minutes ?? goal.daily_minutes ?? DEMO_STATE.user.dailyMinutes ?? 25) || 25;
+  const weeklyHours = Number(overrides.weekly_hours ?? goal.weekly_hours ?? DEMO_STATE.user.weeklyHours ?? 8) || 8;
+  return {
+    goal_type: goal.type ?? "postgraduate_entrance_exam",
+    goal_name: goal.name ?? "考研备考",
+    target_date: overrides.target_date ?? goal.target_date ?? "",
+    daily_minutes: dailyMinutes,
+    weekly_hours: weeklyHours,
+    baseline: goal.baseline ?? "starting",
+    ...(goal.baseline_assessment ? { baseline_assessment: goal.baseline_assessment } : {}),
+    region: goal.region ?? DEMO_STATE.user.region ?? "",
+    focus_areas: Array.isArray(goal.focus_areas) ? goal.focus_areas : [],
+    constraints: Array.isArray(goal.constraints) ? goal.constraints : [],
+  };
+}
+
+function selectedClientGoal() {
+  return DEMO_STATE.goals.find((goal) => goal.selected) ?? DEMO_STATE.goals[0];
+}
+
+function routeTypeForGoal(goal) {
+  return ["goal-cet4", "goal-cet6"].includes(goal?.id) ? "college_english_exam" : "postgraduate_entrance_exam";
+}
+
+function startRouteGenerationProgress(element, mode = "initial") {
+  const startedAt = Date.now();
+  const messages = mode === "initial"
+    ? [
+      "正在核对你的时间安排…",
+      "正在匹配当前目标的起点与阶段…",
+      "正在生成可执行的长期路线和今天这一条…",
+      "路线仍在生成，通常需要 30 到 60 秒；请保持当前页面。",
+      "仍在等待 AI 返回；完成后会自动进入今天。超过 90 秒会给出可恢复提示。",
+    ]
+    : mode === "profile"
+      ? [
+        "正在保存个人信息…",
+        "正在把新的学习节律带入路线…",
+        "正在重新生成阶段安排和今天这一条…",
+        "路线仍在生成，通常需要 30 到 60 秒；当前路线会继续保留。",
+        "仍在等待 AI 返回；完成后会同步更新路线。超过 90 秒会给出可恢复提示。",
+      ]
+      : [
+        "正在核对新的时间条件…",
+        "正在重新安排阶段与今天的行动…",
+        "正在生成新的可执行路线…",
+        "新路线仍在生成，通常需要 30 到 60 秒；当前路线会继续保留。",
+        "仍在等待 AI 返回；确认完成后会更新路线。超过 90 秒会给出可恢复提示。",
+      ];
+  const update = () => {
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+    const phase = elapsedSeconds < 5 ? 0 : elapsedSeconds < 15 ? 1 : elapsedSeconds < 35 ? 2 : elapsedSeconds < 70 ? 3 : 4;
+    element.textContent = messages[phase];
+  };
+  update();
+  const timer = globalThis.setInterval(update, 1000);
+  return () => globalThis.clearInterval(timer);
 }
 
 async function confirmLearningRoute(routeId, expectedVersion) {
@@ -420,12 +465,12 @@ async function confirmLearningRoute(routeId, expectedVersion) {
   return body.route;
 }
 
-async function refreshLearningPlan(routeId, expectedVersion, completedTaskIds = [], skippedTaskIds = [], availableMinutes) {
+async function refreshLearningPlan(routeId, expectedVersion, completedTaskIds = [], skippedTaskIds = [], availableMinutes, taskFeedbacks = [], advanceWeek = false) {
   const response = await fetch(`/api/v1/learning-routes/${encodeURIComponent(routeId)}/refresh`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", "Idempotency-Key": newRequestId() },
-    body: JSON.stringify({ request_id: newRequestId(), expected_version: expectedVersion, completed_task_ids: completedTaskIds, skipped_task_ids: skippedTaskIds, ...(availableMinutes === undefined ? {} : { available_minutes: availableMinutes }) }),
+    body: JSON.stringify({ request_id: newRequestId(), expected_version: expectedVersion, completed_task_ids: completedTaskIds, skipped_task_ids: skippedTaskIds, task_feedbacks: taskFeedbacks, advance_week: advanceWeek, ...(availableMinutes === undefined ? {} : { available_minutes: availableMinutes }) }),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw apiError(response, body, "今日记录已保存，但计划暂时没有更新");
@@ -445,6 +490,27 @@ function localReview(evidence, evidenceLevel) {
   };
 }
 
+export async function requestMaterialReview({ task, evidence, evidenceLevel, context }, reviewRequest = requestAi) {
+  try {
+    const result = await reviewRequest("/api/v1/ai/review", {
+      task,
+      answer: evidence,
+      evidence_level: evidenceLevel,
+      evidence,
+      context,
+    });
+    return { review: result.review, reviewReady: true, reviewError: "" };
+  } catch (error) {
+    return {
+      review: localReview(evidence, evidenceLevel),
+      reviewReady: false,
+      reviewError: error.code === "AI_REVIEW_FORMAT_INVALID"
+        ? "AI 结果未通过复盘格式校验，当前显示规则复盘。"
+        : error.message,
+    };
+  }
+}
+
 function routeTasksForToday(route) {
   const tasks = route?.plan?.today?.tasks;
   if (!Array.isArray(tasks)) return null;
@@ -452,7 +518,7 @@ function routeTasksForToday(route) {
     id: task.id,
     type: task.type,
     title: task.title,
-    meta: `${task.planned_minutes ?? 25} 分钟 · ${task.action || task.review_prompt || "按计划完成本段"}${task.expected_output ? ` · 产出：${task.expected_output}` : ""}`,
+    meta: `${task.planned_minutes ?? 25} 分钟 · ${task.action || task.review_prompt || "按计划完成本段"}${task.expected_output ? ` · 产出：${task.expected_output}` : ""}`.slice(0, 160),
     status: task.completion_status === "active" ? "active" : task.completion_status === "done" ? "done" : "locked",
     gua: task.type === "复盘" ? "☵" : "☲",
   }));
@@ -473,40 +539,40 @@ function activeMemoryContext() {
     .map((memory) => ({ kind: memory.kind, scope: memory.scope, content: memory.content, confidence: memory.confidence }));
 }
 
-function userStatePayload() {
-  const selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected) ?? DEMO_STATE.goals[0];
-  const profile = DEMO_STATE.onboarding?.profile ?? {};
-  const pilot = DEMO_STATE.pilot ?? {};
+export function userStatePayload(state = DEMO_STATE) {
+  const selectedGoal = state.goals.find((goal) => goal.selected) ?? state.goals[0];
+  const profile = state.onboarding?.profile ?? {};
+  const pilot = state.pilot ?? {};
   return {
     version: 1,
     profile: {
-      name: DEMO_STATE.user.name,
-      stage: DEMO_STATE.user.stage,
-      school: DEMO_STATE.user.school,
-      major: DEMO_STATE.user.major,
-      age: String(DEMO_STATE.user.age ?? profile.age ?? ""),
-      region: DEMO_STATE.user.region ?? profile.region ?? "",
-      notes: DEMO_STATE.user.notes ?? profile.notes ?? "",
-      daily_minutes: String(DEMO_STATE.user.dailyMinutes ?? profile.dailyMinutes ?? "25"),
-      weekly_hours: String(DEMO_STATE.user.weeklyHours ?? profile.weeklyHours ?? ""),
-      reminder_enabled: DEMO_STATE.user.reminderEnabled !== false,
-      reminder_time: DEMO_STATE.user.reminderTime ?? "20:00",
-      timezone: DEMO_STATE.user.timezone ?? "Asia/Shanghai",
+      name: state.user.name,
+      stage: state.user.stage,
+      school: state.user.school,
+      major: state.user.major,
+      age: String(state.user.age ?? profile.age ?? ""),
+      region: state.user.region ?? profile.region ?? "",
+      notes: state.user.notes ?? profile.notes ?? "",
+      daily_minutes: String(state.user.dailyMinutes ?? profile.dailyMinutes ?? "25"),
+      weekly_hours: String(state.user.weeklyHours ?? profile.weeklyHours ?? ""),
+      reminder_enabled: state.user.reminderEnabled !== false,
+      reminder_time: state.user.reminderTime ?? "20:00",
+      timezone: state.user.timezone ?? "Asia/Shanghai",
     },
     goal_id: selectedGoal?.id ?? profile.target ?? "goal-exam",
-    guide_asset_id: DEMO_STATE.guide.selectedAssetId,
-    onboarding_completed: Boolean(DEMO_STATE.onboarding?.completed),
+    guide_asset_id: state.guide.selectedAssetId,
+    onboarding_completed: Boolean(state.onboarding?.completed),
     today: {
-      completed: DEMO_STATE.today.completed,
-      total: DEMO_STATE.today.total,
-      streak: DEMO_STATE.today.streak,
-      minutes: DEMO_STATE.today.minutes,
-      tasks: DEMO_STATE.today.tasks.map((task) => ({ id: task.id, type: task.type, title: task.title, meta: task.meta, status: task.status, gua: task.gua })),
+      completed: state.today.completed,
+      total: state.today.total,
+      streak: state.today.streak,
+      minutes: state.today.minutes,
+      tasks: state.today.tasks.map((task) => ({ id: task.id, type: task.type, title: task.title, meta: String(task.meta ?? "").slice(0, 160), status: task.status, gua: task.gua })),
     },
     pilot: {
       selected_evidence_level: pilot.selectedEvidenceLevel,
       submitted_evidence: pilot.submittedEvidence,
-      selected_answer: pilot.selectedAnswer,
+      selected_answer: pilot.selectedAnswer ?? "",
       review: pilot.review ? {
         evidence_used: pilot.review.evidenceUsed,
         problem: pilot.review.problem,
@@ -514,33 +580,8 @@ function userStatePayload() {
         next_action: pilot.review.nextAction,
       } : null,
       review_ready: Boolean(pilot.reviewReady),
-      initial_diagnostic: pilot.initialDiagnostic ? {
-        subject: pilot.initialDiagnostic.subject,
-        correct: pilot.initialDiagnostic.correct,
-        incorrect: pilot.initialDiagnostic.incorrect,
-        unverified: pilot.initialDiagnostic.unverified,
-        total_minutes: pilot.initialDiagnostic.totalMinutes,
-        next_action: pilot.initialDiagnostic.nextAction,
-        completed_at: pilot.initialDiagnostic.completedAt,
-      } : null,
     },
-    knowledge: DEMO_STATE.knowledge.map((item) => ({
-      id: item.id,
-      title: item.title,
-      domain: item.domain,
-      strand: item.strand,
-      mastery: item.mastery,
-      state: item.state,
-      gua: item.gua,
-      color: item.color,
-      source: item.source,
-      updated: item.updated,
-      summary: item.summary,
-      note: item.note,
-      related_ids: item.relatedIds ?? [],
-      position: item.position ?? "",
-      ...(item.evidenceLevel === undefined ? {} : { evidence_level: item.evidenceLevel }),
-    })),
+    knowledge: serializeKnowledgeNodes(state.knowledge),
   };
 }
 
@@ -598,31 +639,18 @@ function applyUserState(state) {
       ...DEMO_STATE.pilot,
       selectedEvidenceLevel: state.pilot.selected_evidence_level ?? DEMO_STATE.pilot.selectedEvidenceLevel,
       submittedEvidence: state.pilot.submitted_evidence ?? DEMO_STATE.pilot.submittedEvidence,
-      selectedAnswer: state.pilot.selected_answer ?? DEMO_STATE.pilot.selectedAnswer,
+      selectedAnswer: state.pilot.selected_answer ?? DEMO_STATE.pilot.selectedAnswer ?? "",
       review: state.pilot.review ? {
         evidenceUsed: state.pilot.review.evidence_used,
         problem: state.pilot.review.problem,
         reason: state.pilot.review.reason,
         nextAction: state.pilot.review.next_action,
-      } : DEMO_STATE.pilot.review,
-      reviewReady: state.pilot.review_ready ?? DEMO_STATE.pilot.reviewReady,
-      initialDiagnostic: state.pilot.initial_diagnostic ? {
-        subject: state.pilot.initial_diagnostic.subject,
-        correct: state.pilot.initial_diagnostic.correct,
-        incorrect: state.pilot.initial_diagnostic.incorrect,
-        unverified: state.pilot.initial_diagnostic.unverified,
-        totalMinutes: state.pilot.initial_diagnostic.total_minutes,
-        nextAction: state.pilot.initial_diagnostic.next_action,
-        completedAt: state.pilot.initial_diagnostic.completed_at,
       } : null,
+      reviewReady: state.pilot.review_ready ?? DEMO_STATE.pilot.reviewReady,
     };
   }
   if (Array.isArray(state.knowledge)) {
-    DEMO_STATE.knowledge = state.knowledge.map((item) => ({
-      ...item,
-      relatedIds: Array.isArray(item.related_ids) ? item.related_ids : [],
-      ...(item.evidence_level === undefined ? {} : { evidenceLevel: item.evidence_level }),
-    }));
+    DEMO_STATE.knowledge = hydrateKnowledgeNodes(state.knowledge);
     if (!DEMO_STATE.knowledge.some((item) => item.id === DEMO_STATE.activeKnowledgeId)) DEMO_STATE.activeKnowledgeId = DEMO_STATE.knowledge[0]?.id;
   }
 }
@@ -663,6 +691,7 @@ export function createApp(root = document.querySelector("#app")) {
     state.learningArtifacts = [];
     state.preferences = { notifications: "important", motion: true };
     state.service = { api: "unknown", aiConfigured: null, aiAvailable: null, aiStatus: "unknown", aiReasonCode: "", persistence: "unknown", persistenceNotice: "" };
+    state.adminAnalytics = { status: "idle", data: null, error: "" };
     state.pilot = {
       ...state.pilot,
       selectedEvidenceLevel: 1,
@@ -671,11 +700,11 @@ export function createApp(root = document.querySelector("#app")) {
       assistantResponse: "",
       assistantError: "",
       assistantPending: false,
+      materialPending: false,
       assistantPrompt: "",
       reviewError: "",
       review: null,
       reviewReady: false,
-      initialDiagnostic: null,
     };
     state.mountain = {
       ...state.mountain,
@@ -691,7 +720,7 @@ export function createApp(root = document.querySelector("#app")) {
     state.knowledge = [];
     state.knowledgeComposerOpen = false;
     state.knowledgeCaptureDraft = null;
-    state.learningRoute = { draft: null, clarification: null, error: "" };
+    state.learningRoute = { draft: null, clarification: null, error: "", generationQuota: null, generationQuotaStatus: "loading" };
     state.today = { completed: 0, total: 0, streak: 0, minutes: 0, tasks: [] };
     state.achievements = [];
     state.map = [{ title: "山脚 · 初入", subtitle: "完成入山信息后开始", state: "current", height: "0 m" }];
@@ -703,10 +732,11 @@ export function createApp(root = document.querySelector("#app")) {
   let scrollFrame = 0;
   let transitionTimer = 0;
   let ascensionTimer = 0;
+  let sessionResolved = false;
   let renderedRoute = null;
   let revealObserver;
   if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
-  DEMO_STATE.auth ??= { user: null, mode: "login" };
+  DEMO_STATE.auth ??= { user: null, mode: "register" };
   DEMO_STATE.registrationPolicy ??= { invitationRequired: false, registrationOpen: true, loaded: false };
   DEMO_STATE.memory ??= { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] };
   DEMO_STATE.companion ??= { interactionCount: 0, promptVersion: "", firstSeenAt: null, lastSeenAt: null, companionId: DEMO_STATE.guide.selectedAssetId };
@@ -717,6 +747,7 @@ export function createApp(root = document.querySelector("#app")) {
   DEMO_STATE.service.persistenceNotice ??= "";
   DEMO_STATE.learningRoute ??= { draft: null, clarification: null, error: "" };
   DEMO_STATE.learningRoute.form ??= null;
+  DEMO_STATE.learningRoute.generationQuotaStatus ??= DEMO_STATE.isDemo ? "idle" : "loading";
 
   const applyMemoryResponse = (body) => {
     DEMO_STATE.memory.iterationCount = Number(body.iteration_count ?? DEMO_STATE.memory.iterationCount ?? 0);
@@ -755,8 +786,17 @@ export function createApp(root = document.querySelector("#app")) {
     };
   };
 
-  const applyLearningRoute = (route) => {
-    DEMO_STATE.learningRoute = { draft: route ?? null, clarification: null, error: "", form: null };
+  const hasGenerationQuota = (quota) => Number.isInteger(quota?.remaining) && Number.isInteger(quota?.limit);
+
+  const applyLearningRoute = (route, generationQuota = null) => {
+    const incomingQuota = generationQuota ?? route?.generation_quota ?? null;
+    const quota = incomingQuota ?? DEMO_STATE.learningRoute?.generationQuota ?? null;
+    const quotaStatus = hasGenerationQuota(incomingQuota)
+      ? "synced"
+      : DEMO_STATE.learningRoute?.generationQuotaStatus ?? "error";
+    const draft = route ? { ...route } : null;
+    if (draft) delete draft.generation_quota;
+    DEMO_STATE.learningRoute = { draft, clarification: null, error: "", form: null, generationQuota: quota, generationQuotaStatus: quotaStatus };
     const tasks = routeTasksForToday(route);
     const firstTask = route?.plan?.today?.tasks?.[0] ?? null;
     const firstMilestone = route?.milestones?.[0] ?? null;
@@ -780,12 +820,70 @@ export function createApp(root = document.querySelector("#app")) {
     }
   };
 
-  const syncAuthenticatedAccount = async () => {
-    await syncServiceHealth();
+  const recordEvidenceMemory = async (action, evidence, evidenceLevel, review) => {
+    if (!action?.id) return false;
+    DEMO_STATE.memory.syncStatus = "saving";
+    const previousIterationCount = Number(DEMO_STATE.memory.iterationCount ?? 0);
+    const payload = {
+      iteration_id: `iteration-${action.id}`,
+      goal_scope: "goal-exam",
+      goal_title: DEMO_STATE.learningRoute?.draft?.goal?.name || DEMO_STATE.user.target || "当前学习",
+      task_id: action.id,
+      evidence_level: evidenceLevel,
+      evidence,
+      review: { problem: review.problem, reason: review.reason, next_action: review.nextAction },
+    };
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await requestMemoryIteration(payload);
+        applyMemoryResponse(result);
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) await waitForRetry(450);
+      }
+    }
+    await syncMemories();
+    if (Number(DEMO_STATE.memory.iterationCount ?? 0) > previousIterationCount) {
+      return true;
+    }
+    DEMO_STATE.memory.syncStatus = "error";
+    DEMO_STATE.memory.syncError = lastError?.message || "memory iteration failed";
+    return false;
+  };
+
+  const syncAuthenticatedAccount = async ({ onPrimaryStateReady, onComplete, healthPromise = syncServiceHealth() } = {}) => {
     await syncUserState();
-    await Promise.all([syncMemories(), syncCompanion(), syncCompanionCycle(), syncLearningArtifacts()]);
-    await syncLearningRoute();
-    await syncReminders();
+    DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, syncStatus: "loading", error: "" };
+    onPrimaryStateReady?.();
+    await Promise.all([
+      healthPromise,
+      syncMemories(),
+      syncCompanion(),
+      syncCompanionCycle(),
+      syncLearningArtifacts(),
+      syncLearningRoute(),
+      syncReminders(),
+    ]);
+    onComplete?.();
+  };
+
+  const syncAdminOverview = async (date) => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    DEMO_STATE.adminAnalytics = { ...DEMO_STATE.adminAnalytics, status: "loading", error: "" };
+    if (renderedRoute === "/admin") render("/admin");
+    try {
+      const body = await requestAdminOverview(date);
+      DEMO_STATE.adminAnalytics = { status: "ready", data: body, error: "" };
+    } catch (error) {
+      DEMO_STATE.adminAnalytics = {
+        status: error.status === 403 ? "forbidden" : "error",
+        data: null,
+        error: error.message,
+      };
+    }
+    if (renderedRoute === "/admin") render("/admin");
   };
 
   const syncRegistrationPolicy = async () => {
@@ -807,10 +905,10 @@ export function createApp(root = document.querySelector("#app")) {
     selectedGoal = DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? DEMO_STATE.goals[0]?.id ?? "";
   };
 
-  const resetToDemoState = () => replaceState({
+  const resetToDemoState = (mode = "register") => replaceState({
     ...initialDemoState,
     isDemo: true,
-    auth: { user: null, mode: "login" },
+    auth: { user: null, mode },
     registrationPolicy: { ...DEMO_STATE.registrationPolicy },
     memory: { iterationCount: 0, syncStatus: "idle", lastIterationId: "", memories: [] },
   });
@@ -821,6 +919,41 @@ export function createApp(root = document.querySelector("#app")) {
     const result = await requestUserState(userStatePayload());
     applyUserState(result.state);
     selectedGoal = result.state?.goal_id ?? selectedGoal;
+  };
+
+  const applyRouteConstraintsToProfile = (routePayload) => {
+    const dailyMinutes = String(routePayload.daily_minutes);
+    const weeklyHours = String(routePayload.weekly_hours);
+    DEMO_STATE.user.dailyMinutes = dailyMinutes;
+    DEMO_STATE.user.weeklyHours = weeklyHours;
+    DEMO_STATE.onboarding.profile = {
+      ...DEMO_STATE.onboarding.profile,
+      dailyMinutes,
+      weeklyHours,
+    };
+  };
+
+  const recalculateAndConfirmRoute = async (routePayload, updateProgress) => {
+    const routeResult = await requestLearningRoute(routePayload);
+    if (routeResult.status === "clarification_required") {
+      throw new Error("新的路线条件还需要补充目标范围，请先调整目标方向");
+    }
+    if (!routeResult.id || !Number.isInteger(routeResult.version)) {
+      throw new Error("新路线缺少确认信息，请稍后重试");
+    }
+    DEMO_STATE.service.aiStatus = "available";
+    DEMO_STATE.service.aiAvailable = true;
+    if (!["feasible", "tight"].includes(routeResult.feasibility?.status)) {
+      const error = new Error("新条件下可用时间不足，请增加每周时间或延后目标日期。");
+      error.code = "route_needs_adjustment";
+      throw error;
+    }
+    updateProgress?.("正在确认新路线...");
+    return confirmLearningRoute(routeResult.id, routeResult.version).then((route) => {
+      applyLearningRoute(route);
+      DEMO_STATE.onboarding.completed = true;
+      return route;
+    });
   };
 
   const syncMemories = async () => {
@@ -916,18 +1049,41 @@ export function createApp(root = document.querySelector("#app")) {
 
   const syncLearningRoute = async () => {
     if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, syncStatus: "loading", error: "", generationQuota: null, generationQuotaStatus: "loading" };
     try {
       const response = await fetch("/api/v1/learning-routes", { credentials: "same-origin" });
       if (!response.ok) {
         if (response.status === 401) notifySessionExpired();
         DEMO_STATE.learningRoute.error = "路线暂时无法同步";
+        DEMO_STATE.learningRoute.syncStatus = "error";
+        DEMO_STATE.learningRoute.generationQuotaStatus = "error";
         return;
       }
       const body = await response.json();
-      applyLearningRoute(body.route ?? null);
+      applyLearningRoute(body.route ?? null, body.generation_quota);
+      DEMO_STATE.learningRoute.syncStatus = "synced";
+      DEMO_STATE.learningRoute.generationQuotaStatus = hasGenerationQuota(body.generation_quota) ? "synced" : "error";
     } catch {
       DEMO_STATE.learningRoute.error = "路线暂时无法同步";
+      DEMO_STATE.learningRoute.syncStatus = "error";
+      DEMO_STATE.learningRoute.generationQuota = null;
+      DEMO_STATE.learningRoute.generationQuotaStatus = "error";
     }
+  };
+
+  const refreshGenerationQuota = async () => {
+    if (DEMO_STATE.isDemo || !DEMO_STATE.auth?.user) return;
+    DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, generationQuota: null, generationQuotaStatus: "loading" };
+    try {
+      const response = await fetch("/api/v1/learning-routes", { credentials: "same-origin" });
+      if (!response.ok) throw new Error("quota refresh failed");
+      const body = await response.json();
+      if (!hasGenerationQuota(body.generation_quota)) throw new Error("quota unavailable");
+      DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, generationQuota: body.generation_quota, generationQuotaStatus: "synced" };
+    } catch {
+      DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, generationQuota: null, generationQuotaStatus: "error" };
+    }
+    if (renderedRoute === "/route") render("/route");
   };
 
   const syncReminders = async () => {
@@ -951,40 +1107,122 @@ export function createApp(root = document.querySelector("#app")) {
   };
 
   const syncSession = async () => {
-    try {
-      const response = await fetch("/api/v1/auth/me", { credentials: "same-origin" });
-      if (!response.ok) {
-        if (response.status === 401) resetToDemoState();
+    const healthPromise = syncServiceHealth();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch("/api/v1/auth/me", { credentials: "same-origin", cache: "no-store" });
+        if (response.status === 401) {
+          resetToDemoState();
+          void healthPromise.then(() => render());
+          return;
+        }
+        if (!response.ok) {
+          if (attempt === 0 && response.status >= 500) {
+            await waitForRetry(350);
+            continue;
+          }
+          DEMO_STATE.service.syncStatus = "degraded";
+          return;
+        }
+        const body = await response.json();
+        if (body.user) {
+          resetToRealState(body.user);
+          await syncAuthenticatedAccount({
+            healthPromise,
+            onPrimaryStateReady: () => {
+              sessionResolved = true;
+              render();
+            },
+            onComplete: () => render(window.location.pathname),
+          });
+        } else {
+          void healthPromise.then(() => render());
+        }
         return;
+      } catch {
+        if (attempt === 0) {
+          await waitForRetry(350);
+          continue;
+        }
+        DEMO_STATE.service.syncStatus = "degraded";
       }
-      const body = await response.json();
-      if (body.user) {
-        resetToRealState(body.user);
-        await syncAuthenticatedAccount();
-      }
-    } catch {
-      DEMO_STATE.service.syncStatus = "degraded";
     }
   };
 
   const render = (requestedRoute = normalizeRoute(window.location.pathname)) => {
     const authenticated = Boolean(DEMO_STATE.auth?.user) && DEMO_STATE.isDemo === false;
-    const isNotFound = requestedRoute === "/404";
+    const isAdmin = authenticated && DEMO_STATE.auth?.user?.is_admin === true;
+    const canonicalRoute = LEGACY_ROUTE_REDIRECTS.get(requestedRoute) ?? requestedRoute;
+    const isNotFound = canonicalRoute === "/404";
+    const sessionPending = !sessionResolved && !authenticated && !PUBLIC_ROUTES.has(canonicalRoute);
     const route = isNotFound
       ? "/404"
-      : authenticated && requestedRoute === "/auth"
+      : authenticated && canonicalRoute === "/auth"
       ? "/"
-        : !authenticated && !PUBLIC_ROUTES.has(requestedRoute)
+        : authenticated && canonicalRoute === "/admin" && !isAdmin
+          ? "/"
+        : sessionPending
+          ? "/state/loading"
+        : !authenticated && !PUBLIC_ROUTES.has(canonicalRoute)
           ? "/auth"
-          : requestedRoute;
+          : canonicalRoute;
     const routeChanged = renderedRoute !== route;
     if (routeChanged) window.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
     renderedRoute = route;
-    if (authenticated && requestedRoute === "/auth" && window.location.pathname !== "/") {
+    if (canonicalRoute !== requestedRoute && window.location.pathname !== canonicalRoute) {
+      window.history.replaceState({}, "", canonicalRoute);
+    }
+    if (authenticated && canonicalRoute === "/auth" && window.location.pathname !== "/") {
       window.history.replaceState({}, "", "/");
     }
-    document.title = `砺境 · ${route === "/" ? "向山顶而行" : route === "/404" ? "页面不存在" : "云海登山"}`;
+    if (!sessionPending && !authenticated && !PUBLIC_ROUTES.has(canonicalRoute) && window.location.pathname !== "/auth") {
+      window.history.replaceState({}, "", "/auth");
+    }
+    document.title = `砺境 · ${getRouteMeta(route)?.label ?? "页面不存在"}`;
+    const previousAuthForm = root.querySelector('form[data-demo-form="auth"]');
+    const activeAuthControl = previousAuthForm?.contains(document.activeElement) ? document.activeElement : null;
+    const authFormSnapshot = previousAuthForm ? {
+      mode: previousAuthForm.dataset.authMode,
+      values: [...new FormData(previousAuthForm).entries()],
+      submitting: previousAuthForm.dataset.submitting === "true",
+      errorText: previousAuthForm.querySelector("[data-auth-error]")?.textContent ?? "",
+      focusedName: activeAuthControl?.name ?? "",
+      selection: Number.isInteger(activeAuthControl?.selectionStart)
+        ? [activeAuthControl.selectionStart, activeAuthControl.selectionEnd]
+        : null,
+    } : null;
     root.innerHTML = renderShell(route, DEMO_STATE, renderPage(route, DEMO_STATE));
+    let restoredAuthFocus = false;
+    const currentAuthForm = root.querySelector('form[data-demo-form="auth"]');
+    if (route === "/auth" && currentAuthForm && authFormSnapshot?.mode === currentAuthForm.dataset.authMode) {
+      for (const [name, value] of authFormSnapshot.values) {
+        const field = currentAuthForm.elements.namedItem(name);
+        if (field && "value" in field) field.value = value;
+      }
+      const errorRegion = currentAuthForm.querySelector("[data-auth-error]");
+      if (errorRegion && authFormSnapshot.errorText) {
+        errorRegion.textContent = authFormSnapshot.errorText;
+        errorRegion.hidden = false;
+      }
+      if (authFormSnapshot.submitting) {
+        currentAuthForm.dataset.submitting = "true";
+        currentAuthForm.querySelectorAll('button[type="submit"]').forEach((button) => { button.disabled = true; });
+      }
+      if (authFormSnapshot.focusedName) {
+        const field = currentAuthForm.elements.namedItem(authFormSnapshot.focusedName);
+        if (field?.focus) {
+          field.focus({ preventScroll: true });
+          if (authFormSnapshot.selection && field.setSelectionRange) field.setSelectionRange(...authFormSnapshot.selection);
+          restoredAuthFocus = true;
+        }
+      }
+    }
+    if (route === "/auth" && DEMO_STATE.auth?.mode === "register" && ["degraded", "down"].includes(DEMO_STATE.service?.api)) {
+      const form = root.querySelector('form[data-demo-form="auth"]');
+      const submit = form?.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = true;
+      form?.insertAdjacentHTML("beforebegin", '<p class="auth-service-notice" role="alert">账号服务暂时不可用。为避免你填写后失败，注册已暂停；请稍后重试。</p>');
+    }
     const appShell = root.querySelector(".app-shell");
     appShell?.setAttribute("data-motion", motionEnabled ? "on" : "off");
     if (DEMO_STATE.tour?.active && route === "/") {
@@ -999,6 +1237,7 @@ export function createApp(root = document.querySelector("#app")) {
       element.classList.add("reveal-item");
       element.style.setProperty("--reveal-delay", `${Math.min(index * 70, 280)}ms`);
     });
+    const revealItems = [...root.querySelectorAll(".reveal-item")];
     if (revealObserver) revealObserver.disconnect();
     if (motionEnabled && "IntersectionObserver" in window) {
       revealObserver = new IntersectionObserver((entries) => entries.forEach((entry) => {
@@ -1007,13 +1246,23 @@ export function createApp(root = document.querySelector("#app")) {
           revealObserver?.unobserve(entry.target);
         }
       }), { threshold: 0.12, rootMargin: "0px 0px -7%" });
-      root.querySelectorAll(".reveal-item").forEach((element) => revealObserver.observe(element));
+      revealItems.forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.top < window.innerHeight && rect.bottom > 0) {
+          element.classList.add("is-in-view");
+          return;
+        }
+        revealObserver.observe(element);
+      });
     } else {
-      root.querySelectorAll(".reveal-item").forEach((element) => element.classList.add("is-in-view"));
+      revealItems.forEach((element) => element.classList.add("is-in-view"));
     }
     bindEvents();
+    if (route === "/admin" && authenticated && DEMO_STATE.adminAnalytics?.status === "idle") void syncAdminOverview();
     window.requestAnimationFrame(syncTourSpotlight);
-    requestAnimationFrame(() => root.querySelector("#main-content")?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => {
+      if (!restoredAuthFocus) root.querySelector("#main-content")?.focus({ preventScroll: true });
+    });
   };
 
   const syncTourSpotlight = () => {
@@ -1034,16 +1283,6 @@ export function createApp(root = document.querySelector("#app")) {
     spotlight.style.setProperty("--tour-y", `${Math.max(7, rect.top - pad)}px`);
     spotlight.style.setProperty("--tour-w", `${Math.min(window.innerWidth - 14, rect.width + pad * 2)}px`);
     spotlight.style.setProperty("--tour-h", `${Math.min(window.innerHeight - 14, rect.height + pad * 2)}px`);
-  };
-
-  const openFeatureNav = () => {
-    const overlay = root.querySelector("#feature-nav-overlay");
-    const trigger = root.querySelector('[data-action="toggle-feature-nav"]');
-    if (!overlay) return;
-    overlay.removeAttribute("hidden");
-    overlay.setAttribute("aria-hidden", "false");
-    trigger?.setAttribute("aria-expanded", "true");
-    window.requestAnimationFrame(() => overlay.classList.add("is-open"));
   };
 
   const navigate = (route, afterRender) => {
@@ -1068,27 +1307,15 @@ export function createApp(root = document.querySelector("#app")) {
 
   window.addEventListener("lijing-session-expired", () => {
     if (DEMO_STATE.isDemo) return;
-    resetToDemoState();
+    resetToDemoState("login");
     navigate("/auth");
     toast("登录已过期，请重新登录后继续");
   });
 
-  const closeFeatureNav = () => {
-    const overlay = root.querySelector("#feature-nav-overlay");
-    const trigger = root.querySelector('[data-action="toggle-feature-nav"]');
-    if (!overlay) return;
-    overlay.classList.remove("is-open");
-    overlay.setAttribute("aria-hidden", "true");
-    trigger?.setAttribute("aria-expanded", "false");
-    window.setTimeout(() => {
-      if (!overlay.classList.contains("is-open")) overlay.setAttribute("hidden", "");
-    }, 460);
-  };
-
-  const playAscensionIntro = (nextRoute = "/features") => {
+  const playAscensionIntro = (nextRoute = "/") => {
     const intro = root.querySelector("#ascension-intro");
     if (!intro || !motionEnabled) {
-      navigate(nextRoute, nextRoute === "/features" ? openFeatureNav : undefined);
+      navigate(nextRoute);
       return;
     }
     const video = intro.querySelector(".ascension-intro__video");
@@ -1097,7 +1324,7 @@ export function createApp(root = document.querySelector("#app")) {
       intro.dataset.finished = "true";
       window.clearTimeout(ascensionTimer);
       intro.classList.add("is-complete");
-      window.setTimeout(() => navigate(nextRoute, nextRoute === "/features" ? openFeatureNav : undefined), 520);
+      window.setTimeout(() => navigate(nextRoute), 520);
     };
     window.clearTimeout(ascensionTimer);
     intro.dataset.finished = "false";
@@ -1106,6 +1333,7 @@ export function createApp(root = document.querySelector("#app")) {
     void intro.offsetWidth;
     intro.classList.add("is-playing");
     if (video) {
+      if (!video.src) video.src = video.dataset.src || "";
       video.addEventListener("ended", finish, { once: true });
       video.addEventListener("error", finish, { once: true });
       video.load();
@@ -1119,20 +1347,17 @@ export function createApp(root = document.querySelector("#app")) {
     root.querySelectorAll("[data-route]").forEach((element) => element.addEventListener("click", (event) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
-      if (element.closest("#feature-nav-overlay")) closeFeatureNav();
       navigate(element.dataset.route);
     }));
-    root.querySelectorAll('[data-action="toggle-feature-nav"]').forEach((element) => element.addEventListener("click", () => {
-      const overlay = root.querySelector("#feature-nav-overlay");
-      if (!overlay) return;
-      const open = !overlay.classList.contains("is-open");
-      if (!open) {
-        closeFeatureNav();
-        return;
-      }
-      openFeatureNav();
+    root.querySelectorAll('[data-action="admin-refresh"]').forEach((element) => element.addEventListener("click", () => {
+      DEMO_STATE.adminAnalytics = { ...DEMO_STATE.adminAnalytics, status: "idle", error: "" };
+      render("/admin");
     }));
-    root.querySelectorAll('[data-action="close-feature-nav"]').forEach((element) => element.addEventListener("click", closeFeatureNav));
+    root.querySelectorAll("form[data-admin-date]").forEach((form) => form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const date = form.elements.date?.value || undefined;
+      void syncAdminOverview(date);
+    }));
     root.querySelectorAll('[data-action="toggle-motion"]').forEach((element) => element.addEventListener("click", () => {
       motionEnabled = !motionEnabled;
       DEMO_STATE.preferences.motion = motionEnabled;
@@ -1151,12 +1376,28 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.auth.mode = element.dataset.authMode === "register" ? "register" : "login";
       render("/auth");
     }));
+    root.querySelectorAll("[data-onboarding-minutes]").forEach((element) => element.addEventListener("input", () => {
+      const output = root.querySelector("[data-onboarding-minutes-output]");
+      if (output) output.textContent = element.value;
+    }));
+    root.querySelectorAll("[data-route-hours]").forEach((element) => element.addEventListener("input", () => {
+      const output = root.querySelector("[data-route-hours-output]");
+      if (output) output.textContent = element.value;
+    }));
     root.querySelectorAll("[data-goal]").forEach((element) => element.addEventListener("click", () => {
       selectedGoal = element.dataset.goal;
       DEMO_STATE.goals.forEach((goal) => { goal.selected = goal.id === selectedGoal; });
       if (DEMO_STATE.onboarding?.profile) DEMO_STATE.onboarding.profile.target = selectedGoal;
       const onboardingGoal = root.querySelector("[data-onboarding-goal]");
       if (onboardingGoal) onboardingGoal.value = selectedGoal;
+      const selectedGoalData = DEMO_STATE.goals.find((goal) => goal.id === selectedGoal);
+      const onboardingSelection = root.querySelector("[data-onboarding-selected-goal]");
+      if (onboardingSelection && selectedGoalData) {
+        onboardingSelection.setAttribute("aria-label", `当前目标：${selectedGoalData.title}`);
+        onboardingSelection.querySelector("[data-onboarding-selected-icon]").textContent = selectedGoalData.icon;
+        onboardingSelection.querySelector("[data-onboarding-selected-title]").textContent = selectedGoalData.title;
+        onboardingSelection.querySelector("[data-onboarding-selected-detail]").textContent = selectedGoalData.detail;
+      }
       root.querySelectorAll("[data-goal]").forEach((goal) => {
         const selected = goal.dataset.goal === selectedGoal;
         goal.classList.toggle("is-selected", selected);
@@ -1164,30 +1405,11 @@ export function createApp(root = document.querySelector("#app")) {
       });
       if (DEMO_STATE.isDemo) toast("方向已记录在你的山门印中");
       else void persistUserState().then(() => toast("方向已保存到你的山门印中")).catch((error) => toast(error.message));
-    }));
-    root.querySelectorAll('[data-action="bagua-node"]').forEach((element) => element.addEventListener("click", () => {
-      const active = element.dataset.bagua;
-      root.querySelectorAll('[data-action="bagua-node"]').forEach((node) => {
-        const selected = node.dataset.bagua === active;
-        node.classList.toggle("is-active", selected);
-        node.setAttribute("aria-pressed", String(selected));
-      });
-      toast(`${active}位已点亮，今天将沿此方向展开`);
+      if (["/cet", "/study", "/route"].includes(window.location.pathname)) render(window.location.pathname);
     }));
     root.querySelectorAll('[data-action="complete-onboarding"]').forEach((element) => element.addEventListener("click", (event) => {
       event.preventDefault();
       playAscensionIntro(element.getAttribute("href") || "/features");
-    }));
-    root.querySelectorAll('[data-action="onboarding-back"]').forEach((element) => element.addEventListener("click", () => {
-      if (DEMO_STATE.onboarding.step <= 1) {
-        navigate("/auth");
-        return;
-      }
-      DEMO_STATE.onboarding.step -= 1;
-      render("/onboarding");
-    }));
-    root.querySelectorAll('[data-action="onboarding-feature-next"]').forEach((element) => element.addEventListener("click", async () => {
-      navigate("/study", () => toast("先粘贴一道题、笔记或草稿，引路会据此准备第一条行动"));
     }));
     root.querySelectorAll('[data-action="tour-skip"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.tour.active = false;
@@ -1241,31 +1463,6 @@ export function createApp(root = document.querySelector("#app")) {
         element.disabled = false;
       }
     }));
-    root.querySelectorAll('[data-action="answer"]').forEach((element) => element.addEventListener("click", () => {
-      root.querySelectorAll('[data-action="answer"]').forEach((answer) => answer.classList.remove("is-selected"));
-      element.classList.add("is-selected");
-      DEMO_STATE.pilot.selectedAnswer = element.textContent.trim();
-    }));
-    root.querySelectorAll('[data-action="submit-answer"]').forEach((element) => element.addEventListener("click", async () => {
-      const answer = DEMO_STATE.pilot.selectedAnswer;
-      if (!answer) {
-        toast("请先选择一个答案");
-        return;
-      }
-      if (DEMO_STATE.isDemo) {
-        toast("演示答案已记下，登录后会由服务端确认");
-        return;
-      }
-      element.disabled = true;
-      try {
-        const result = await requestLearningAttempt({ attempt_id: `attempt-${Date.now()}`, question_id: "limits-continuity-001", answer, action: "submit" });
-        toast(result.evaluation?.correct ? "服务端已确认：这次判断正确" : "服务端已记下：这次需要回望");
-      } catch (error) {
-        toast(error.message);
-      } finally {
-        element.disabled = false;
-      }
-    }));
     root.querySelectorAll('[data-action="select-evidence"]').forEach((element) => element.addEventListener("click", () => {
       const level = Number(element.dataset.evidenceLevel);
       DEMO_STATE.pilot.selectedEvidenceLevel = level;
@@ -1279,25 +1476,14 @@ export function createApp(root = document.querySelector("#app")) {
     }));
     root.querySelectorAll('[data-action="submit-evidence"]').forEach((element) => element.addEventListener("click", async () => {
       const input = root.querySelector("[data-evidence-input]");
-      let diagnostic;
-      try {
-        diagnostic = collectInitialDiagnostic(root);
-      } catch (error) {
-        toast(error.message);
-        return;
-      }
-      const evidence = diagnostic?.evidence ?? input?.value.trim() ?? "";
-      const evidenceLevel = diagnostic ? 3 : DEMO_STATE.pilot.selectedEvidenceLevel;
+      const evidence = input?.value.trim() ?? "";
+      const evidenceLevel = DEMO_STATE.pilot.selectedEvidenceLevel;
       if (!evidence) {
-        toast("请先写一句你实际留下的证据");
+        toast("请写下一句真实的学习记录");
         input?.focus();
         return;
       }
       DEMO_STATE.pilot.submittedEvidence = evidence;
-      if (diagnostic) {
-        DEMO_STATE.pilot.selectedEvidenceLevel = evidenceLevel;
-        DEMO_STATE.pilot.initialDiagnostic = diagnostic.summary;
-      }
       element.disabled = true;
       const companionTaskId = element.dataset.taskId || DEMO_STATE.companionCycle?.task?.id;
       const activeTask = DEMO_STATE.today.tasks.find((task) => task.id === companionTaskId)
@@ -1319,30 +1505,25 @@ export function createApp(root = document.querySelector("#app")) {
       }
       const iterationId = `iteration-${Date.now()}`;
       let iterationReview;
-      if (diagnostic) {
-        iterationReview = initialDiagnosticReview(diagnostic.summary, evidence);
+      try {
+        const result = await requestAi("/api/v1/ai/review", {
+          task: activeTask?.title || "当前学习任务",
+          answer: evidence,
+          evidence_level: evidenceLevel,
+          evidence,
+          context: { goal_type: routeTypeForGoal(selectedClientGoal()), goal: selectedClientGoal()?.title ?? "当前学习目标" },
+        });
+        iterationReview = result.review;
+        DEMO_STATE.pilot.review = iterationReview;
+        DEMO_STATE.pilot.reviewReady = true;
+        DEMO_STATE.pilot.reviewError = "";
+      } catch (error) {
+        iterationReview = localReview(evidence, evidenceLevel);
         DEMO_STATE.pilot.review = iterationReview;
         DEMO_STATE.pilot.reviewReady = false;
-        DEMO_STATE.pilot.reviewError = "起点诊断使用确定性规则，避免把三道自核对题伪装成 AI 评分。";
-      } else {
-        try {
-          const result = await requestAi("/api/v1/ai/review", {
-            task: activeTask?.title || "当前学习任务",
-            answer: DEMO_STATE.pilot.selectedAnswer,
-            evidence_level: evidenceLevel,
-            evidence,
-          });
-          iterationReview = result.review;
-          DEMO_STATE.pilot.review = iterationReview;
-          DEMO_STATE.pilot.reviewReady = true;
-          DEMO_STATE.pilot.reviewError = "";
-        } catch (error) {
-          iterationReview = localReview(evidence, evidenceLevel);
-          DEMO_STATE.pilot.review = iterationReview;
-          DEMO_STATE.pilot.reviewReady = false;
-          DEMO_STATE.pilot.reviewError = error.message;
-          toast("证据已留下，AI 暂时不可用，已用规则复盘继续沉淀");
-        }
+        const invalidReviewFormat = error.code === "AI_REVIEW_FORMAT_INVALID";
+        DEMO_STATE.pilot.reviewError = invalidReviewFormat ? "AI 结果未通过复盘格式校验，当前显示规则复盘。" : error.message;
+        toast(invalidReviewFormat ? "AI 复盘格式不完整，已改用规则复盘；学习证据仍已保存" : "证据已留下，AI 暂时不可用，已用规则复盘继续沉淀");
       }
       if (activeTask) {
         const wasCompleted = activeTask.status === "done";
@@ -1351,10 +1532,6 @@ export function createApp(root = document.querySelector("#app")) {
         if (nextTask) nextTask.status = "active";
         if (!wasCompleted) {
           DEMO_STATE.today.completed = Math.min(DEMO_STATE.today.completed + 1, DEMO_STATE.today.total);
-          const diagnosticMinutes = Number(diagnostic?.summary?.totalMinutes ?? 0);
-          if (Number.isFinite(diagnosticMinutes) && diagnosticMinutes > 0) {
-            DEMO_STATE.today.minutes = Math.max(0, Number(DEMO_STATE.today.minutes) || 0) + diagnosticMinutes;
-          }
         }
         const knowledge = DEMO_STATE.knowledge.find((item) => activeTask.title.includes(item.title));
         if (knowledge) {
@@ -1365,8 +1542,8 @@ export function createApp(root = document.querySelector("#app")) {
       if (iterationReview) {
         const payload = {
           iteration_id: iterationId,
-          goal_scope: DEMO_STATE.goals.find((goal) => goal.selected)?.id ?? "global",
-          goal_title: DEMO_STATE.goals.find((goal) => goal.selected)?.title ?? "当前学习目标",
+          goal_scope: ["goal-cet4", "goal-cet6"].includes(selectedClientGoal()?.id) ? "goal-exam" : selectedClientGoal()?.id ?? "global",
+          goal_title: selectedClientGoal()?.title ?? "当前学习目标",
           task_id: activeTask?.id ?? "current-task",
           evidence_level: evidenceLevel,
           evidence,
@@ -1388,7 +1565,13 @@ export function createApp(root = document.querySelector("#app")) {
       element.disabled = false;
       if (!DEMO_STATE.isDemo) {
         try {
-          await persistUserState();
+          await persistEvidenceKnowledge({
+            state: DEMO_STATE,
+            action: activeTask ?? { id: companionTaskId, title: "当前学习任务" },
+            evidence,
+            evidenceLevel,
+            persist: persistUserState,
+          });
           const route = DEMO_STATE.learningRoute?.draft;
           const planTask = route?.plan?.today?.tasks?.find((task) => task.completion_status === "active") ?? route?.plan?.today?.tasks?.[0];
           if (route?.id && Number.isInteger(route.version) && planTask?.id) {
@@ -1398,6 +1581,13 @@ export function createApp(root = document.querySelector("#app")) {
         } catch (error) {
           toast(error.message);
         }
+      } else {
+        await persistEvidenceKnowledge({
+          state: DEMO_STATE,
+          action: activeTask ?? { id: companionTaskId, title: "当前学习任务" },
+          evidence,
+          evidenceLevel,
+        });
       }
       navigate("/review");
     }));
@@ -1435,12 +1625,6 @@ export function createApp(root = document.querySelector("#app")) {
       const input = root.querySelector(".assistant-composer input");
       if (input) { input.value = element.textContent; input.focus(); }
     }));
-    root.querySelectorAll('[data-action="select-guide"]').forEach((element) => element.addEventListener("click", () => {
-      DEMO_STATE.guide.selectedAssetId = element.dataset.guide;
-      render(window.location.pathname);
-      if (DEMO_STATE.isDemo) toast("引路灵器已换为你的选择");
-      else void persistUserState().then(() => toast("引路灵器选择已保存")).catch((error) => toast(error.message));
-    }));
     root.querySelectorAll('[data-action="select-knowledge"]').forEach((element) => element.addEventListener("click", () => {
       DEMO_STATE.activeKnowledgeId = element.dataset.knowledgeId;
       render(window.location.pathname);
@@ -1465,6 +1649,12 @@ export function createApp(root = document.querySelector("#app")) {
       DEMO_STATE.knowledgeCaptureDraft = null;
       render(window.location.pathname);
     }));
+    root.querySelectorAll('[data-action="retry-route-sync"]').forEach((element) => element.addEventListener("click", async () => {
+      DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, syncStatus: "loading", error: "" };
+      render(window.location.pathname);
+      await syncLearningRoute();
+      if (renderedRoute === "/route") render("/route");
+    }));
     root.querySelectorAll('[data-action="retry-learning-route"]').forEach((element) => element.addEventListener("click", () => {
       const form = root.querySelector('form[data-demo-form="learning-route"]');
       if (form?.requestSubmit) form.requestSubmit();
@@ -1484,7 +1674,30 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.onboarding.completed = true;
         await persistUserState();
         await syncCompanionCycle();
-        navigate("/plan", () => toast("路线已确认，已进入你的今日计划"));
+        navigate("/", () => toast("路线已确认，今天这一条已经准备好"));
+      } catch (error) {
+        toast(error.message);
+        element.disabled = false;
+      }
+    }));
+    root.querySelectorAll('[data-action="export-learning-plan"]').forEach((element) => element.addEventListener("click", () => {
+      if (DEMO_STATE.isDemo) {
+        toast("请先登录并生成自己的七日计划");
+        return;
+      }
+      window.print();
+    }));
+    root.querySelectorAll('[data-action="advance-learning-week"]').forEach((element) => element.addEventListener("click", async () => {
+      const route = DEMO_STATE.learningRoute?.draft;
+      if (DEMO_STATE.isDemo || !route?.id || route.id !== element.dataset.routeId) {
+        toast("请先登录并打开自己的学习路线");
+        return;
+      }
+      element.disabled = true;
+      try {
+        applyLearningRoute(await refreshLearningPlan(route.id, route.version, [], [], undefined, [], true));
+        render("/plan");
+        toast("下一周期计划已生成，并参考了你的自述反馈");
       } catch (error) {
         toast(error.message);
         element.disabled = false;
@@ -1508,20 +1721,63 @@ export function createApp(root = document.querySelector("#app")) {
         uncertainty.textContent = "";
       }
     }));
+    root.querySelectorAll("[data-material-subject]").forEach((select) => {
+      const form = select.closest('form[data-demo-form="learning-artifact"]');
+      const customField = form?.querySelector("[data-material-custom-subject-field]");
+      const customInput = form?.querySelector("[data-material-custom-subject]");
+      if (!customField || !customInput) return;
+      const sync = () => {
+        const custom = select.value === "其他主题";
+        customField.hidden = !custom;
+        customInput.required = custom;
+        if (!custom) customInput.value = "";
+      };
+      select.addEventListener("change", sync);
+      sync();
+    });
     root.querySelectorAll("form[data-demo-form]").forEach((form) => form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (form.dataset.submitting === "true") return;
       form.dataset.submitting = "true";
       form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = true; });
       try {
+      if (form.dataset.demoForm === "learning-plan-feedback") {
+        if (DEMO_STATE.isDemo) {
+          toast("请先登录并生成自己的学习计划");
+          return;
+        }
+        const route = DEMO_STATE.learningRoute?.draft;
+        if (!route?.id || !Number.isInteger(route.version) || route.status !== "confirmed") {
+          toast("请先确认学习路线，再记录执行反馈");
+          return;
+        }
+        const values = new FormData(form);
+        const actualMinutes = String(values.get("actual_minutes") ?? "").trim();
+        const feedback = {
+          task_id: form.dataset.taskId,
+          status: String(values.get("status") ?? "not_started"),
+          actual_minutes: actualMinutes === "" ? null : Number(actualMinutes),
+          note: String(values.get("note") ?? "").trim(),
+        };
+        applyLearningRoute(await refreshLearningPlan(route.id, route.version, [], [], undefined, [feedback]));
+        render("/plan");
+        toast("自述反馈已保存；平台不验证你是否真实学习");
+        return;
+      }
       if (form.dataset.demoForm === "learning-artifact") {
         if (DEMO_STATE.isDemo) {
           toast("请先登录真实账号，再把材料交给引路");
           return;
         }
+        if (DEMO_STATE.pilot.materialPending) {
+          toast("AI 引路正在思考，请稍候…");
+          return;
+        }
         const values = new FormData(form);
         const sourceTitle = String(values.get("source_title") ?? "").trim();
-        const subject = String(values.get("subject") ?? "数学").trim() || "数学";
+        const selectedSubject = String(values.get("subject") ?? "数学").trim() || "数学";
+        const customSubject = String(values.get("custom_subject") ?? "").trim();
+        const subject = selectedSubject === "其他主题" ? customSubject : selectedSubject;
         const kind = String(values.get("kind") ?? "question").trim() || "question";
         const contentText = String(values.get("content_text") ?? "").trim();
         const imageInput = form.querySelector("[data-material-image]");
@@ -1551,24 +1807,40 @@ export function createApp(root = document.querySelector("#app")) {
           toast("已提取可确认文字，请核对后再提交");
           return;
         }
-        if (!sourceTitle || contentText.length < 12) {
+        if (!sourceTitle || !subject || subject.length > 80 || contentText.length < 12) {
+          if (!subject) {
+            toast("请填写你要学习的主题，例如 Python、物理或英语口语");
+            return;
+          }
           toast("请至少填写材料标题，并粘贴 12 个字以上的内容");
           return;
         }
-        const artifactResult = await requestLearningArtifact({ kind, subject, source_title: sourceTitle, content_text: contentText });
-        if (artifactResult.artifact) DEMO_STATE.learningArtifacts = [artifactResult.artifact, ...(DEMO_STATE.learningArtifacts ?? []).filter((item) => item.id !== artifactResult.artifact.id)];
-        const diagnosisResult = await requestMaterialDiagnosis({ artifact_ids: [artifactResult.artifact.id], subject, focus: contentText.slice(0, 800) });
-        applyCompanionCycle(diagnosisResult);
-        if (diagnosisResult.status === "degraded") {
-          DEMO_STATE.service.aiStatus = "unavailable";
-          DEMO_STATE.service.aiAvailable = false;
-          toast("引路暂时没有完成模型诊断，已根据材料给你一条可执行动作");
-        } else {
-          DEMO_STATE.service.aiStatus = "available";
-          DEMO_STATE.service.aiAvailable = true;
-          toast("材料已读完，第一条行动已经准备好");
+        DEMO_STATE.pilot.materialPending = true;
+        render(window.location.pathname);
+        toast("AI 引路正在思考，请稍候…");
+        window.requestAnimationFrame(() => root.querySelector(".companion-thinking")?.scrollIntoView({ block: "center", behavior: motionEnabled ? "smooth" : "auto" }));
+        try {
+          const artifactResult = await requestLearningArtifact({ kind, subject, source_title: sourceTitle, content_text: contentText });
+          if (artifactResult.artifact) DEMO_STATE.learningArtifacts = [artifactResult.artifact, ...(DEMO_STATE.learningArtifacts ?? []).filter((item) => item.id !== artifactResult.artifact.id)];
+          const diagnosisResult = await requestMaterialDiagnosis({ artifact_ids: [artifactResult.artifact.id], subject, focus: contentText.slice(0, 800) });
+          applyCompanionCycle(diagnosisResult);
+          DEMO_STATE.pilot.materialPending = false;
+          if (diagnosisResult.status === "degraded") {
+            DEMO_STATE.service.aiStatus = "unavailable";
+            DEMO_STATE.service.aiAvailable = false;
+            toast("引路暂时没有完成模型诊断，已根据材料给你一条可执行动作");
+          } else {
+            DEMO_STATE.service.aiStatus = "available";
+            DEMO_STATE.service.aiAvailable = true;
+            toast("材料已读完，第一条行动已经准备好");
+          }
+          render(window.location.pathname);
+          window.requestAnimationFrame(() => root.querySelector(".companion-feedback")?.scrollIntoView({ block: "center", behavior: motionEnabled ? "smooth" : "auto" }));
+        } catch (error) {
+          DEMO_STATE.pilot.materialPending = false;
+          render(window.location.pathname);
+          throw error;
         }
-        render("/study");
         return;
       }
       if (form.dataset.demoForm === "material-evidence") {
@@ -1591,6 +1863,12 @@ export function createApp(root = document.querySelector("#app")) {
           return;
         }
         DEMO_STATE.pilot.selectedEvidenceLevel = evidenceLevel;
+        const pendingStatus = form.querySelector("[data-evidence-pending]");
+        if (pendingStatus) {
+          pendingStatus.hidden = false;
+          pendingStatus.textContent = "正在保存证据，并请 AI 器灵整理本轮复盘与下一步…";
+        }
+        form.setAttribute("aria-busy", "true");
         try {
           const attemptResult = await requestMaterialAttempt({
             artifact_ids: actionState.artifact_refs ?? [],
@@ -1607,14 +1885,50 @@ export function createApp(root = document.querySelector("#app")) {
             evidence,
             evidence_level: evidenceLevel,
           });
+          const completedAction = evidenceResult.action ?? actionState;
+          if (pendingStatus) pendingStatus.textContent = "证据已保存，AI 器灵正在思考复盘与下一步…";
+          const reviewResult = await requestMaterialReview({
+            task: completedAction.title ?? actionState.title,
+            evidence,
+            evidenceLevel,
+            context: {
+              goal_type: routeTypeForGoal(selectedClientGoal()),
+              goal: selectedClientGoal()?.title ?? "当前学习目标",
+              action_reason: completedAction.reason ?? actionState.reason,
+            },
+          });
+          DEMO_STATE.pilot.submittedEvidence = evidence;
+          DEMO_STATE.pilot.review = reviewResult.review;
+          DEMO_STATE.pilot.reviewReady = reviewResult.reviewReady;
+          DEMO_STATE.pilot.reviewError = reviewResult.reviewError;
+          let stateSaved = true;
+          try {
+            await persistEvidenceKnowledge({ state: DEMO_STATE, action: completedAction, evidence, evidenceLevel, persist: persistUserState });
+          } catch {
+            DEMO_STATE.service.persistenceNotice = "证据已保存，但复盘和知识账本暂未同步到可恢复状态。";
+            stateSaved = false;
+          }
+          const memorySaved = await recordEvidenceMemory(completedAction, evidence, evidenceLevel, reviewResult.review);
+          DEMO_STATE.pilot.inlineReview = {
+            completedTitle: evidenceResult.action?.title ?? actionState.title,
+            evidence,
+            nextTitle: evidenceResult.next_action?.title ?? "下一条行动已准备好",
+            nextReason: evidenceResult.next_action?.reason ?? "根据这次留下的证据继续向前。",
+          };
           applyCompanionCycle(evidenceResult);
           await syncCompanionCycle();
-          render("/study");
-          toast("证据已保存，下一条行动已经生成");
+          render(window.location.pathname);
+          toast(!stateSaved
+            ? "证据已保存，但复盘和知识账本暂未确认可跨重启恢复"
+            : !reviewResult.reviewReady
+              ? "证据已保存，AI 暂不可用，已明确标为规则复盘"
+              : memorySaved
+                ? "证据已保存，复盘、知识账本和下一条行动已经生成"
+                : "证据已保存，复盘和下一条行动已经生成；记忆账本稍后同步");
         } catch (error) {
           if (error.code === "action_version_conflict" || error.status === 409) {
             await syncCompanionCycle();
-            render("/study");
+            render(window.location.pathname);
             toast("这条行动已经更新，页面已刷新，请按最新版本继续");
             return;
           }
@@ -1662,8 +1976,24 @@ export function createApp(root = document.querySelector("#app")) {
           toast("行者名和当前阶段不能为空");
           return;
         }
+        const dailyMinutes = Number(String(values.get("dailyMinutes") ?? "25").trim());
+        const weeklyHours = Number(String(values.get("weeklyHours") ?? DEMO_STATE.user.weeklyHours ?? "8").trim());
+        if (!Number.isInteger(dailyMinutes) || dailyMinutes < 5 || dailyMinutes > 1440 || !Number.isInteger(weeklyHours) || weeklyHours < 1 || weeklyHours > 60) {
+          toast("每日投入需为 5–1440 分钟，每周投入需为 1–60 小时");
+          return;
+        }
         const previousUser = structuredClone(DEMO_STATE.user);
         const previousProfile = structuredClone(DEMO_STATE.onboarding.profile);
+        const previousRouteState = structuredClone(DEMO_STATE.learningRoute);
+        const currentRoute = DEMO_STATE.learningRoute?.draft;
+        const currentRouteDailyMinutes = Number(currentRoute?.goal?.requested_daily_minutes ?? currentRoute?.goal?.daily_minutes ?? DEMO_STATE.user.dailyMinutes);
+        const currentRouteWeeklyHours = Number(currentRoute?.goal?.weekly_hours ?? DEMO_STATE.user.weeklyHours);
+        const routeNeedsRecalculation = Boolean(currentRoute && (currentRouteDailyMinutes !== dailyMinutes || currentRouteWeeklyHours !== weeklyHours));
+        const submit = form.querySelector("button[type=submit]");
+        const submitLabel = submit?.innerHTML;
+        let routePayload = null;
+        let progressStop = null;
+        let routeCommitted = false;
         DEMO_STATE.user = {
           ...DEMO_STATE.user,
           name,
@@ -1674,8 +2004,8 @@ export function createApp(root = document.querySelector("#app")) {
           age: values.has("age") ? String(values.get("age") ?? "").trim() : DEMO_STATE.user.age,
           region: values.has("region") ? String(values.get("region") ?? "").trim() : DEMO_STATE.user.region,
           notes: values.has("notes") ? String(values.get("notes") ?? "").trim() : DEMO_STATE.user.notes,
-          dailyMinutes: String(values.get("dailyMinutes") ?? "25").trim(),
-          weeklyHours: values.has("weeklyHours") ? String(values.get("weeklyHours") ?? "").trim() : DEMO_STATE.user.weeklyHours,
+          dailyMinutes: String(dailyMinutes),
+          weeklyHours: String(weeklyHours),
           reminderEnabled: values.has("reminderEnabled"),
           reminderTime: values.has("reminderTime") ? String(values.get("reminderTime") ?? "20:00").trim() : DEMO_STATE.user.reminderTime,
           timezone: values.has("timezone") ? String(values.get("timezone") ?? "Asia/Shanghai").trim() : DEMO_STATE.user.timezone,
@@ -1696,13 +2026,47 @@ export function createApp(root = document.querySelector("#app")) {
           timezone: DEMO_STATE.user.timezone,
         };
         try {
+          if (routeNeedsRecalculation) {
+            routePayload = routePayloadFromDraft(currentRoute, { daily_minutes: dailyMinutes, weekly_hours: weeklyHours });
+            DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, error: "", form: routePayload };
+            const progress = document.createElement("p");
+            progress.className = "settings-route-status";
+            progress.setAttribute("role", "status");
+            progress.setAttribute("aria-live", "polite");
+            form.append(progress);
+            progressStop = startRouteGenerationProgress(progress, "profile");
+            if (submit) {
+              submit.disabled = true;
+              submit.textContent = "正在同步路线...";
+            }
+            await recalculateAndConfirmRoute(routePayload, (message) => { progress.textContent = message; });
+            routeCommitted = true;
+            applyRouteConstraintsToProfile(routePayload);
+          } else if (submit) {
+            submit.disabled = true;
+            submit.textContent = "正在保存个人信息...";
+          }
           await persistUserState();
           render("/settings");
-          toast("个人信息已保存到当前账户");
+          toast(routeNeedsRecalculation ? "个人信息已保存，路线也已按新节律重算" : "个人信息已保存到当前账户");
         } catch (error) {
-          DEMO_STATE.user = previousUser;
-          DEMO_STATE.onboarding.profile = previousProfile;
-          toast(error.message);
+          if (!routeCommitted) {
+            DEMO_STATE.user = previousUser;
+            DEMO_STATE.onboarding.profile = previousProfile;
+            DEMO_STATE.learningRoute = routeNeedsRecalculation && routePayload
+              ? { ...previousRouteState, error: error.message, form: routePayload }
+              : previousRouteState;
+            toast(error.message);
+          } else {
+            DEMO_STATE.learningRoute.error = "路线已更新，但个人信息暂时没有保存，请刷新后重试。";
+            toast("路线已更新，但个人信息暂时没有保存，请刷新后重试");
+          }
+        } finally {
+          progressStop?.();
+          if (submit?.isConnected) {
+            submit.disabled = false;
+            submit.innerHTML = submitLabel;
+          }
         }
         return;
       }
@@ -1737,6 +2101,65 @@ export function createApp(root = document.querySelector("#app")) {
         }
         return;
       }
+      if (form.dataset.demoForm === "learning-route-adjustment") {
+        if (DEMO_STATE.isDemo) {
+          toast("请先登录真实账号，再调整学习路线");
+          return;
+        }
+        const currentRoute = DEMO_STATE.learningRoute?.draft;
+        if (!currentRoute) {
+          toast("当前还没有可调整的路线，请先生成路线");
+          return;
+        }
+        const values = new FormData(form);
+        const targetDate = String(values.get("target_date") ?? "").trim();
+        const weeklyHours = Number(values.get("weekly_hours"));
+        if (!targetDate || !Number.isInteger(weeklyHours) || weeklyHours < 1 || weeklyHours > 60) {
+          toast("请填写有效的目标日期和每周时间");
+          return;
+        }
+        const routePayload = routePayloadFromDraft(currentRoute, { target_date: targetDate, weekly_hours: weeklyHours });
+        const previousRouteState = structuredClone(DEMO_STATE.learningRoute);
+        DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, error: "", form: routePayload };
+        const submit = form.querySelector("button[type=submit]");
+        const submitLabel = submit?.innerHTML;
+        const progress = document.createElement("p");
+        progress.className = "route-generation-status";
+        progress.setAttribute("role", "status");
+        progress.setAttribute("aria-live", "polite");
+        form.append(progress);
+        const progressStop = startRouteGenerationProgress(progress, "adjustment");
+        let routeCommitted = false;
+        if (submit) {
+          submit.disabled = true;
+          submit.textContent = "正在重新计算路线...";
+        }
+        try {
+          await recalculateAndConfirmRoute(routePayload, (message) => { progress.textContent = message; });
+          routeCommitted = true;
+          applyRouteConstraintsToProfile(routePayload);
+          await persistUserState();
+          await syncCompanionCycle();
+          render("/route");
+          toast("路线已按新条件重新计算");
+        } catch (error) {
+          if (!routeCommitted) {
+            DEMO_STATE.learningRoute = { ...previousRouteState, error: error.message, form: routePayload, generationQuota: null, generationQuotaStatus: "loading" };
+          } else {
+            DEMO_STATE.learningRoute.error = "路线已更新，但个人信息暂时没有保存，请刷新后重试。";
+          }
+          toast(error.message);
+          render("/route");
+          if (!routeCommitted) void refreshGenerationQuota();
+        } finally {
+          progressStop();
+          if (submit?.isConnected) {
+            submit.disabled = false;
+            submit.innerHTML = submitLabel;
+          }
+        }
+        return;
+      }
       if (form.dataset.demoForm === "learning-route") {
         if (DEMO_STATE.isDemo) {
           toast("请先登录真实账号，再生成学习路线");
@@ -1744,37 +2167,48 @@ export function createApp(root = document.querySelector("#app")) {
         }
         const values = new FormData(form);
         const splitEntries = (value, separator) => String(value ?? "").split(separator).map((entry) => entry.trim()).filter(Boolean);
+        const selectedGoal = selectedClientGoal();
         const submit = form.querySelector("button[type=submit]");
         const submitLabel = submit?.innerHTML;
+        const progress = document.createElement("p");
+        progress.className = "route-generation-status";
+        progress.setAttribute("role", "status");
+        progress.setAttribute("aria-live", "polite");
+        form.append(progress);
+        const progressStop = startRouteGenerationProgress(progress, "initial");
         if (submit) {
           submit.disabled = true;
           submit.textContent = "正在核算时间并生成今天的第一步...";
         }
         let routePayload = null;
         try {
-          const baselineAssessment = {
-            subject: String(values.get("assessment_subject") ?? "").trim(),
-            study_stage: String(values.get("assessment_study_stage") ?? ""),
-            recent_result: String(values.get("assessment_recent_result") ?? ""),
-            primary_blocker: String(values.get("assessment_primary_blocker") ?? ""),
-            evidence: String(values.get("assessment_evidence") ?? "").trim(),
-          };
           routePayload = {
-            goal_type: String(values.get("goal_type") ?? ""),
-            goal_name: String(values.get("goal_name") ?? "").trim(),
+            goal_type: routeTypeForGoal(selectedGoal),
+            goal_name: String(selectedGoal?.title ?? values.get("goal_name") ?? "").trim(),
             target_date: String(values.get("target_date") ?? ""),
             daily_minutes: Number(values.get("daily_minutes")),
             weekly_hours: Number(values.get("weekly_hours")),
-            baseline: baselineForRouteAssessment(baselineAssessment),
-            baseline_assessment: baselineAssessment,
+            baseline: "starting",
             region: String(values.get("region") ?? "").trim(),
-            focus_areas: splitEntries(values.get("focus_areas"), /[，,]/),
+            focus_areas: ["goal-cet4", "goal-cet6"].includes(selectedGoal?.id)
+              ? ["听力理解", "阅读理解", "写作", "汉译英段落"]
+              : splitEntries(values.get("focus_areas"), /[，,]/),
             constraints: splitEntries(values.get("constraints"), /\r?\n/),
           };
           DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, draft: null, clarification: null, error: "", form: routePayload };
           const routeResult = await requestLearningRoute(routePayload);
           if (routeResult.status === "clarification_required") {
-            DEMO_STATE.learningRoute = { draft: null, clarification: routeResult, error: "", form: routePayload };
+            DEMO_STATE.learningRoute = {
+              ...DEMO_STATE.learningRoute,
+              draft: null,
+              clarification: routeResult,
+              error: "",
+              form: routePayload,
+              generationQuota: routeResult.generation_quota ?? DEMO_STATE.learningRoute?.generationQuota ?? null,
+              generationQuotaStatus: hasGenerationQuota(routeResult.generation_quota)
+                ? "synced"
+                : DEMO_STATE.learningRoute?.generationQuotaStatus ?? "error",
+            };
             render("/route");
             toast("还需要补充目标范围和现实约束");
             return;
@@ -1783,18 +2217,24 @@ export function createApp(root = document.querySelector("#app")) {
           DEMO_STATE.service.aiStatus = "available";
           DEMO_STATE.service.aiAvailable = true;
           DEMO_STATE.learningRoute.error = "";
+          if (!routeResult.id || !Number.isInteger(routeResult.version)) {
+            throw new Error("路线草案缺少确认信息，请重新生成");
+          }
           render("/route");
-          toast("路线草案已生成，请先核对动态信息再确认");
+          toast("路线草案已生成，请核对后确认");
+          return;
         } catch (error) {
-          DEMO_STATE.learningRoute.error = error.message;
+          DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, error: error.message, generationQuota: null, generationQuotaStatus: "loading" };
           if (/服务商|AI 服务暂时|AI 还在恢复/.test(String(error.message))) {
             DEMO_STATE.service.aiStatus = "unavailable";
             DEMO_STATE.service.aiAvailable = false;
           }
-          toast(error.message);
           DEMO_STATE.learningRoute.form = routePayload;
           render("/route");
+          void refreshGenerationQuota();
+          toast(error.message);
         } finally {
+          progressStop();
           if (submit?.isConnected) {
             submit.disabled = false;
             submit.innerHTML = submitLabel;
@@ -1804,16 +2244,16 @@ export function createApp(root = document.querySelector("#app")) {
       }
       if (form.dataset.demoForm === "onboarding-profile") {
         const values = new FormData(form);
-        const name = String(values.get("name") ?? "").trim();
-        const stage = String(values.get("stage") ?? "").trim();
-        const school = String(values.get("school") ?? "").trim();
-        const major = String(values.get("major") ?? "").trim();
-        const age = String(values.get("age") ?? "").trim();
-        const region = String(values.get("region") ?? "").trim();
+        const name = String(values.get("name") ?? DEMO_STATE.user.name ?? DEMO_STATE.auth?.user?.display_name ?? "行者").trim();
+        const stage = String(values.get("stage") ?? "在校学习").trim();
+        const school = DEMO_STATE.user.school ?? "";
+        const major = DEMO_STATE.user.major ?? "";
+        const age = DEMO_STATE.user.age ?? "";
+        const region = DEMO_STATE.user.region ?? "";
         const goalId = String(values.get("goal") ?? "").trim();
         const dailyMinutes = String(values.get("dailyMinutes") ?? "25").trim();
-        if (!name || !stage || !goalId) {
-          toast("请先留下行者名、当前阶段和一个主方向");
+        if (!goalId) {
+          toast("请先选择当前目标");
           return;
         }
         const previousUser = structuredClone(DEMO_STATE.user);
@@ -1840,7 +2280,7 @@ export function createApp(root = document.querySelector("#app")) {
           await persistUserState();
           DEMO_STATE.onboarding.step = 1;
           await syncCompanionCycle();
-          navigate("/study", () => toast("先粘贴一道题、笔记或草稿，引路会据此准备第一条行动"));
+          navigate("/route", () => toast("再确认截止日期和每周时间，今天这一条就会生成"));
         } catch (error) {
           DEMO_STATE.user = previousUser;
           DEMO_STATE.onboarding.profile = previousProfile;
@@ -1860,6 +2300,7 @@ export function createApp(root = document.querySelector("#app")) {
         DEMO_STATE.pilot.assistantPending = true;
         DEMO_STATE.pilot.assistantError = "";
         render(window.location.pathname);
+        toast("AI 引路正在思考，请稍候…");
         try {
           const routePlan = DEMO_STATE.learningRoute?.draft?.plan;
           const routeTask = routePlan?.today?.tasks?.find((task) => task.completion_status === "active") ?? routePlan?.today?.tasks?.find((task) => task.completion_status !== "done");
@@ -1908,6 +2349,10 @@ export function createApp(root = document.querySelector("#app")) {
       if (form.dataset.demoForm === "auth") {
         const values = new FormData(form);
         const mode = form.dataset.authMode === "register" ? "register" : "login";
+        if (mode === "register" && ["degraded", "down"].includes(DEMO_STATE.service?.api)) {
+          toast("账号服务暂时不可用，请稍后再创建账号");
+          return;
+        }
         const endpoint = mode === "register" ? "/api/v1/auth/register" : "/api/v1/auth/login";
         const payload = { email: String(values.get("email") ?? "").trim(), password: String(values.get("password") ?? "") };
         if (mode === "register") {
@@ -1918,6 +2363,11 @@ export function createApp(root = document.querySelector("#app")) {
         }
         const submit = form.querySelector("button[type=submit]");
         if (submit) submit.disabled = true;
+        const authError = form.querySelector("[data-auth-error]");
+        if (authError) {
+          authError.textContent = "";
+          authError.hidden = true;
+        }
         try {
           const response = await fetch(endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
           const body = await response.json().catch(() => ({}));
@@ -1929,18 +2379,35 @@ export function createApp(root = document.querySelector("#app")) {
                 : response.status === 401 && mode === "login"
               ? "账号或密码不正确"
               : response.status === 409
-                  ? "这个邮箱已经注册过了"
+                  ? "该邮箱已注册，请直接登录。"
                   : response.status >= 500
                     ? "服务暂时不可用，请稍后重试"
                     : body.message || "账号信息不正确，请检查后再试";
             throw new Error(message);
           }
           resetToRealState(body.user);
-          await syncAuthenticatedAccount();
-          toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
-          navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/study");
+          let accountOpened = false;
+          const openAccount = () => {
+            if (accountOpened) return;
+            accountOpened = true;
+            navigate(mode === "register" || !DEMO_STATE.onboarding.completed ? "/onboarding" : "/", () => {
+              toast(mode === "register" ? "山门已立好，开始认识你的方向" : "欢迎回来，继续你的山路");
+            });
+          };
+          await syncAuthenticatedAccount({ onPrimaryStateReady: openAccount });
+          openAccount();
+          render(window.location.pathname);
         } catch (error) {
-          toast(error.message);
+          const currentForm = form.isConnected
+            ? form
+            : root.querySelector(`form[data-demo-form="auth"][data-auth-mode="${mode}"]`);
+          const errorRegion = currentForm?.querySelector("[data-auth-error]");
+          if (errorRegion) {
+            errorRegion.textContent = error.message;
+            errorRegion.hidden = false;
+          } else {
+            toast(error.message);
+          }
         } finally {
           if (submit) submit.disabled = false;
         }
@@ -1953,9 +2420,14 @@ export function createApp(root = document.querySelector("#app")) {
         }
         toast(error.message || "这次操作没有完成，请稍后重试");
       } finally {
-        if (form.isConnected) {
-          form.dataset.submitting = "false";
-          form.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = false; });
+        const currentForm = form.isConnected
+          ? form
+          : form.dataset.demoForm === "auth"
+            ? root.querySelector(`form[data-demo-form="auth"][data-auth-mode="${form.dataset.authMode}"]`)
+            : null;
+        if (currentForm) {
+          currentForm.dataset.submitting = "false";
+          currentForm.querySelectorAll("button[type=submit]").forEach((button) => { button.disabled = false; });
         }
       }
     }));
@@ -1966,12 +2438,9 @@ export function createApp(root = document.querySelector("#app")) {
       navigate("/auth");
       toast(DEMO_STATE.auth.mode === "register" ? "已退出当前账号，可以注册新账号" : "已退出当前账号，可以登录另一账号");
     }));
-    root.querySelectorAll('[data-action="forgot-password"]').forEach((element) => element.addEventListener("click", () => {
-      toast("密码找回暂未开放；当前试点请保留登录设备，邮件服务接入后再开放。");
-    }));
     root.querySelectorAll('[data-action="logout"]').forEach((element) => element.addEventListener("click", async () => {
       await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
-      resetToDemoState();
+      resetToDemoState("login");
       navigate("/auth");
       toast("已退出山门");
     }));
@@ -2002,7 +2471,12 @@ export function createApp(root = document.querySelector("#app")) {
   window.addEventListener("popstate", () => render());
   render();
   void syncRegistrationPolicy().then(() => render());
-  void syncSession().then(syncServiceHealth).then(() => render());
+  void syncSession().then(() => {
+    if (!sessionResolved) {
+      sessionResolved = true;
+      render();
+    }
+  });
   window.setInterval(() => { void syncReminders(); }, 60000);
   return { navigate, render, state: DEMO_STATE };
 }

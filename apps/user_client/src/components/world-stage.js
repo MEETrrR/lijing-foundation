@@ -19,7 +19,7 @@ const ROUTE_SCENES = {
 export function renderWorldStage(route, { compact = false } = {}) {
   const fallbackScene = ["/auth", "/goals"].includes(route)
     ? { assetId: "bagua-ink-compass-v1", key: "bagua" }
-    : { assetId: "starforged-frontier-scene-v1", key: "frontier" };
+    : { assetId: "lijing-horizon-ink-v1", key: "horizon" };
   const sceneConfig = ROUTE_SCENES[route] ?? fallbackScene;
   const scene = assetUrl(sceneConfig.assetId);
   const isInk = sceneConfig.key === "bagua";
@@ -37,7 +37,7 @@ export function renderWorldStage(route, { compact = false } = {}) {
     <div class="star-orbit star-orbit--two"></div>
     <div class="world-stage__sun"></div>
     <div class="world-stage__seal">砺<br><span>境</span></div>
-    <div class="world-stage__coordinates">东陆 · 星陨航线<br><span>STUDY / RPG SYSTEM</span></div>
+    <div class="world-stage__coordinates">砺境 · 学习证据账本<br><span>从今天这一条开始</span></div>
   </div>`;
 }
 
