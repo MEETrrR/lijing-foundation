@@ -89,16 +89,20 @@ test("local client server keeps AI disabled honest and protects the formal AI ro
     const faviconResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-favicon.svg`);
     assert.equal(faviconResponse.status, 200);
     assert.equal(faviconResponse.headers.get("content-type"), "image/svg+xml");
-    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`);
+    // 非内容哈希命名的资源只做协商缓存
+    assert.equal(faviconResponse.headers.get("cache-control"), "no-cache");
+    const assetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`);
     assert.equal(assetResponse.status, 200);
-    assert.equal(assetResponse.headers.get("content-type"), "image/png");
-    assert.equal(assetResponse.headers.get("cache-control"), "no-cache");
+    assert.equal(assetResponse.headers.get("content-type"), "image/webp");
+    // 带内容哈希命名的资源拿 immutable 长缓存：改用已存在的哈希 WebP 后，这张底图
+    // 从 2.82MB PNG 变成 60KB WebP，同时由 no-cache 升级为 immutable。
+    assert.equal(assetResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
     assert.match(assetResponse.headers.get("etag") ?? "", /^W\//);
-    const cachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`, {
+    const cachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`, {
       headers: { "If-None-Match": assetResponse.headers.get("etag") ?? "" },
     });
     assert.equal(cachedAssetResponse.status, 304);
-    const stronglyCachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.png`, {
+    const stronglyCachedAssetResponse = await fetch(`${baseUrl}/assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp`, {
       headers: { "If-None-Match": (assetResponse.headers.get("etag") ?? "").replace(/^W\//, "") },
     });
     assert.equal(stronglyCachedAssetResponse.status, 304);

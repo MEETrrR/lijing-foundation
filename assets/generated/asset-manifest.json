@@ -6,7 +6,7 @@
   "assets": [
     {
       "asset_id": "bagua-ink-compass-v1",
-      "path": "assets/generated/source/bagua-ink-compass-v1.png",
+      "path": "assets/generated/source/bagua-ink-compass-v1.d0aab454dc70.webp",
       "role": "runtime-candidate",
       "usage": ["bagua_orientation", "knowledge_axis", "review_scene", "chapter_scene"],
       "classification": "L2_until_reviewed",
@@ -79,7 +79,7 @@
     },
     {
       "asset_id": "lijing-horizon-ink-v1",
-      "path": "assets/generated/source/lijing-horizon-ink-v1.png",
+      "path": "assets/generated/source/lijing-horizon-ink-v1.9ae90710b4bb.webp",
       "role": "runtime-candidate",
       "usage": ["home_entrance", "horizon_background"],
       "classification": "L2_until_reviewed",
@@ -93,7 +93,7 @@
     },
     {
       "asset_id": "lijing-recall-ink-v1",
-      "path": "assets/generated/source/lijing-recall-ink-v1.png",
+      "path": "assets/generated/source/lijing-recall-ink-v1.c87ff09f0ecc.webp",
       "role": "runtime-candidate",
       "usage": ["review_background"],
       "classification": "L2_until_reviewed",
@@ -107,7 +107,7 @@
     },
     {
       "asset_id": "lijing-archive-ink-v2",
-      "path": "assets/generated/source/lijing-archive-ink-v2.png",
+      "path": "assets/generated/source/lijing-archive-ink-v2.b60a537519bc.webp",
       "role": "runtime-candidate",
       "usage": ["profile_background", "archive_background"],
       "classification": "L2_until_reviewed",
@@ -121,7 +121,7 @@
     },
     {
       "asset_id": "lijing-growth-journey-ink-v1",
-      "path": "assets/generated/source/lijing-growth-journey-ink-v1.png",
+      "path": "assets/generated/source/lijing-growth-journey-ink-v1.1efcfebe37dc.webp",
       "role": "runtime-candidate",
       "usage": ["plan_background", "growth_background"],
       "classification": "L2_until_reviewed",
@@ -135,7 +135,7 @@
     },
     {
       "asset_id": "lijing-summit-climb-ink-v2",
-      "path": "assets/generated/source/lijing-summit-climb-ink-v2.png",
+      "path": "assets/generated/source/lijing-summit-climb-ink-v2.70d2d55c7a8a.webp",
       "role": "runtime-candidate",
       "usage": ["study_background", "knowledge_background", "map_background"],
       "classification": "L2_until_reviewed",
@@ -149,7 +149,7 @@
     },
     {
       "asset_id": "lijing-guide-background-ink-v1",
-      "path": "assets/generated/source/guides/lijing-guide-background-ink-v1.png",
+      "path": "assets/generated/source/guides/lijing-guide-background-ink-v1.91af800a6c54.webp",
       "role": "runtime-candidate",
       "usage": ["assistant_background", "guide_sanctum"],
       "classification": "L2_until_reviewed",
@@ -163,7 +163,7 @@
     },
     {
       "asset_id": "lijing-auth-gate-v1",
-      "path": "assets/generated/source/auth/lijing-auth-gate-v1.png",
+      "path": "assets/generated/source/auth/lijing-auth-gate-v1.c44ade6c283e.webp",
       "role": "runtime-candidate",
       "usage": ["auth_background", "login_registration"],
       "classification": "L2_until_reviewed",
@@ -177,7 +177,7 @@
     },
     {
       "asset_id": "lijing-onboarding-background-v2",
-      "path": "assets/generated/source/onboarding/onboarding-background-v2.png",
+      "path": "assets/generated/source/onboarding/onboarding-background-v2.38f3c1adef81.webp",
       "role": "runtime-candidate",
       "usage": ["onboarding_background", "profile_goal_guidance", "companion_selection"],
       "classification": "L2_until_reviewed",
@@ -289,7 +289,7 @@
     },
     {
       "asset_id": "lijing-guide-heavenly-book-v2",
-      "path": "assets/generated/source/guides/lijing-guide-heavenly-book-v2.png",
+      "path": "assets/generated/source/guides/lijing-guide-heavenly-book-v2.071d0ea40dc3.webp",
       "role": "runtime-candidate",
       "usage": ["guide_relic", "assistant_guide_choice"],
       "classification": "L2_until_reviewed",
@@ -345,7 +345,7 @@
     },
     {
       "asset_id": "starforged-frontier-scene-v1",
-      "path": "assets/generated/source/starforged-frontier-scene-v1.png",
+      "path": "assets/generated/source/starforged-frontier-scene-v1.b48c8a6e4363.webp",
       "role": "runtime-candidate",
       "usage": ["world_map_scene", "chapter_scene", "mountain_stage"],
       "classification": "L2_until_reviewed",
