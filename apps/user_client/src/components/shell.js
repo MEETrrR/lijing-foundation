@@ -41,6 +41,7 @@ export function renderShell(currentRoute, state, content = "") {
     ? ` style="--onboarding-image: url('${assetUrl("lijing-onboarding-background-v2")}')"`
     : "";
   return `<div class="app-shell app-shell--${shellMode}"${onboardingStyle} data-motion="on" data-current-route="${currentRoute}" data-route-phase="in">
+    ${isAuth || isOnboarding || isLoading ? "" : '<a class="skip-link" href="#main-content">跳到主内容</a>'}
     ${isAuth || isLoading ? "" : renderWorldStage(currentRoute)}
     ${isAuth || isOnboarding || isLoading ? "" : renderNavigation(currentRoute, state)}
     <div class="app-frame">

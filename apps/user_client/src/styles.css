@@ -36,7 +36,13 @@ button { border: 0; cursor: pointer; }
 /* 键盘焦点：基础规则原先只覆盖 button/a/input，select 与 textarea 从未被覆盖；
    另有 9 处类选择器用 outline: 0 把焦点指示直接抹掉（已从源头移除那些抑制）。
    这里补齐元素类型，保证任何可交互元素在键盘聚焦时都有可见焦点环。 */
-:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--gold-on-ink); outline-offset: 2px; }
+:is(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid var(--gold-on-ink); outline-offset: 2px; }
+
+/* 跳转链接：键盘用户每页都要穿过顶栏与五个导航项才能到正文。
+   常驻视觉隐藏（用 translateY 移出视口，而不是 display:none 或 clip，
+   否则部分读屏器会忽略它），键盘聚焦时滑入左上角。 */
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 30; padding: 10px 16px; color: var(--ink); background: var(--gold-light); border: 1px solid var(--gold); font-size: var(--type-small); font-weight: 500; transform: translateY(calc(-100% - 16px)); transition: transform var(--fast) ease; }
+.skip-link:focus { transform: translateY(0); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: 0px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* The world is a persistent stage. Content moves through it like chapters in a scroll. */
