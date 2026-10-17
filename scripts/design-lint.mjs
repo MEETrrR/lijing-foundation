@@ -3,17 +3,18 @@
 //   --strict 时把"档位过多"这类目标项也当作失败（收敛完成后再开）
 //
 // 错误（阻断）:
-//   1. 正文/标签字号 < 12px      —— 中文在这个尺寸下不可读
-//   2. 表单控件字号 < 16px       —— iOS 聚焦会自动放大页面
-//   3. 文字色 alpha < .55        —— 深底上不足 4.5:1（装饰性选择器豁免）
+//   1. 任何裸 px 字号        —— 字号必须走 --type-* 令牌（tokens.css）
+//   2. 表单控件字号 < 16px   —— iOS 聚焦会自动放大页面
+//   3. 文字色 alpha < .55    —— 深底上不足 4.5:1（装饰性选择器豁免）
 // 警告（目标）:
-//   4. 字号档位 > 8
+//   4. 使用的字号令牌 > 10
 //   5. 间距取值 > 12
 import fs from "node:fs";
 import path from "node:path";
 
-const file = process.argv[2] ?? path.join("apps", "user_client", "src", "styles.css");
-const strict = process.argv.includes("--strict");
+const args = process.argv.slice(2);
+const strict = args.includes("--strict");
+const file = args.find((a) => !a.startsWith("--")) ?? path.join("apps", "user_client", "src", "styles.css");
 
 // 装饰性元素：允许低透明度（水印、印章、光环、云纹、伪元素装饰）
 const DECOR_ALLOW = [
@@ -29,7 +30,6 @@ const DECOR_ALLOW = [
 
 const raw = fs.readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
-// 逐条规则解析（保留选择器），以便豁免装饰性元素
 function eachRule(css, fn) {
   let i = 0;
   function readUntil(stops) {
@@ -57,7 +57,7 @@ function eachRule(css, fn) {
     i++;
     if (prelude.startsWith("@")) {
       if (/^@(keyframes|font-face|page)/i.test(prelude)) { readUntil(["}" ]); i++; continue; }
-      continue; // 继续深入 @media 内部
+      continue;
     }
     const body = readUntil(["}"]);
     i++;
@@ -67,7 +67,7 @@ function eachRule(css, fn) {
 
 const errors = [];
 const warnings = [];
-const sizes = new Set();
+const tokens = new Set();
 const spacing = new Set();
 
 eachRule(raw, (selector, body) => {
@@ -76,9 +76,14 @@ eachRule(raw, (selector, body) => {
 
   for (const m of body.matchAll(/font-size\s*:\s*([\d.]+)px/g)) {
     const px = parseFloat(m[1]);
-    sizes.add(px);
-    if (isControl && px < 16) errors.push(`表单控件字号 ${px}px < 16px：${selector}`);
-    else if (!isControl && px < 12) errors.push(`字号 ${px}px < 12px：${selector}`);
+    if (px < 12) errors.push(`字号 ${px}px 低于 12px 地板：${selector}`);
+    else errors.push(`裸 px 字号（应改用 --type-* 令牌）：font-size: ${px}px @ ${selector}`);
+  }
+  for (const m of body.matchAll(/font-size\s*:\s*var\((--type-[a-z-]+)\)/g)) {
+    tokens.add(m[1]);
+    if (isControl && m[1] !== "--type-input" && m[1] !== "--type-body") {
+      errors.push(`表单控件应用 --type-input 或 --type-body：${m[1]} @ ${selector}`);
+    }
   }
 
   if (!decor) {
@@ -88,16 +93,21 @@ eachRule(raw, (selector, body) => {
     }
   }
 
-  for (const m of body.matchAll(/(?:padding|gap|margin)(?:-[a-z]+)?\s*:\s*([^;}]+)/g)) {
-    for (const v of m[1].matchAll(/\d+(?:\.\d+)?px/g)) spacing.add(v[0]);
+  // 统计间距时排除 clamp()/calc() 内部的 px —— 那是函数参数，不属于刻度
+  const spaceless = body.replace(/clamp\([^)]*\)|calc\([^)]*\)/g, "");
+  for (const m of spaceless.matchAll(/(?:padding|gap|margin)(?:-[a-z]+)?\s*:\s*([^;}]+)/g)) {
+    for (const v of m[1].matchAll(/\d+(?:\.\d+)?px/g)) {
+      const n = parseFloat(v[0]);
+      if (n <= 64) spacing.add(v[0]); // 只考核组件级间距；>64px 是页面级布局常量
+    }
   }
 });
 
-if (sizes.size > 8) warnings.push(`字号档位 ${sizes.size} 档 > 8（目标：收敛到 7 档，见 tokens.css）`);
+if (tokens.size > 10) warnings.push(`字号令牌 ${tokens.size} 个 > 10`);
 if (spacing.size > 12) warnings.push(`间距取值 ${spacing.size} 个 > 12（目标：吸附到 4/8 网格 8 档）`);
 
 for (const w of warnings) console.log(`  ! ${w}`);
-console.log(`  度量：字号档位 ${sizes.size} · 间距取值 ${spacing.size}`);
+console.log(`  度量：字号令牌 ${tokens.size} · 间距取值 ${spacing.size}`);
 
 for (const e of errors.slice(0, 20)) console.error(`  x ${e}`);
 if (errors.length > 20) console.error(`  ... 另有 ${errors.length - 20} 条`);
