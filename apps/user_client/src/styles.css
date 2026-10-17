@@ -103,7 +103,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .gua-mark { display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-serif-kai); }
 
 /* top bar and pages */
-.topbar { height: 82px; display: flex; align-items: center; justify-content: space-between; padding: 0 48px 0 110px; color: rgba(238, 234, 224, .82); border-bottom: 1px solid rgba(238, 234, 224, .14); }
+/* 左基线：与 .page-view 的「居中限宽 + gutter」用同一个算式，
+   所以从 390px 到超宽屏，顶栏品牌与页面标题始终在同一条竖线上。
+   原先写死的 110px 是早期左侧边栏的遗留（.app-frame 的 margin-left 早已归零）。 */
+.topbar { height: 82px; display: flex; align-items: center; justify-content: space-between; padding: 0 48px 0 calc(max(0px, (100% - var(--shell-max)) / 2) + var(--gutter)); color: rgba(238, 234, 224, .82); border-bottom: 1px solid rgba(238, 234, 224, .14); }
 .topbar__chapter { display: flex; align-items: center; gap: 12px; }
 .topbar__chapter-mark { display: grid; place-items: center; width: 30px; height: 30px; color: var(--gold-light); border: 1px solid rgba(228, 189, 112, .4); font-family: var(--font-reading); font-size: var(--type-body); }
 .topbar__chapter > div { display: grid; gap: 4px; }
@@ -127,7 +130,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .avatar-dot { display: inline-grid; place-items: center; width: 27px; height: 27px; color: var(--ink); background: var(--gold-light); font-family: var(--font-reading); border-radius: 50%; }
 .mobile-nav-bar, .mobile-nav-panel { display: none; }
 main { min-height: calc(100vh - 82px); }
-.page-view { width: min(1440px, 100%); min-height: calc(100vh - 82px); margin: 0 auto; padding: 82px 56px 120px; padding-right: 272px; }
+.page-view { width: min(var(--shell-max), 100%); min-height: calc(100vh - 82px); margin: 0 auto; padding: 82px var(--gutter) 120px; padding-right: 272px; }
 .page { position: relative; max-width: 100%; min-width: 0; animation: page-in var(--medium) var(--ease) both; }
 .page[data-demo-state="true"]::before { content: "DEMO STATE"; position: absolute; top: -45px; right: 0; color: rgba(238, 234, 224, .35); font-family: var(--font-mono); font-size: var(--type-meta); letter-spacing: .16em; }
 .page-intro { position: relative; max-width: 760px; margin-bottom: 56px; color: var(--paper); }
@@ -836,7 +839,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .not-found-panel p { max-width: 420px; margin: 16px auto 0; color: var(--rock); font-size: var(--type-meta); line-height: 1.8; }
 .not-found-panel__actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px; margin-top: 24px; }
 .page--legal { padding-bottom: 80px; }
-.legal-document { width: min(820px, 100%); margin: 0 auto; padding: clamp(25px, 5vw, 58px); color: var(--ink); background: rgba(238, 234, 224, .96); border-top: 3px solid var(--red); box-shadow: var(--shadow-paper); }
+.legal-document { width: min(var(--content-max), 100%); margin: 0; padding: clamp(25px, 5vw, 58px); color: var(--ink); background: rgba(238, 234, 224, .96); border-top: 3px solid var(--red); box-shadow: var(--shadow-paper); }
 .legal-document__meta { margin-bottom: 24px; color: var(--red); font-family: var(--font-mono); font-size: var(--type-meta); letter-spacing: .06em; }
 .legal-document section { padding: 20px 0; border-top: 1px solid var(--line-dark); }
 .legal-document section h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: var(--type-heading); font-weight: 500; }
@@ -949,7 +952,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 
 @media (max-width: 1180px) {
   .status-axis { right: 18px; bottom: 18px; }
-  .page-view { padding-left: 40px; padding-right: 230px; }
+  .page-view { padding-right: 230px; }
   .page--home { margin-left: -40px; margin-right: -230px; }
   .home-hero { padding-left: 56px; padding-right: 56px; }
   .home-overview__lead, .home-route, .quote-panel, .home-next { padding-left: 56px; padding-right: 56px; }
@@ -976,7 +979,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
   .topbar__right { gap: 12px; }
   .connection, .topbar__profile > span:last-of-type, .topbar__profile .icon { display: none; }
   main { min-height: calc(100vh - 64px); }
-  .page-view { min-height: calc(100vh - 64px); padding: 70px 24px 90px; }
+  .page-view { min-height: calc(100vh - 64px); padding: 70px var(--gutter) 90px; }
   .page--home { margin-top: -64px; margin-left: -24px; margin-right: -24px; }
   .status-axis { display: none; }
   .home-hero { min-height: 760px; padding-top: 145px; }
@@ -1015,7 +1018,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
   .mist-layer--middle { width: 120vw; left: -35vw; }
   .star-orbit { width: 100vw; height: 100vw; right: -50vw; top: -26vw; }
   .world-stage__coordinates { display: none; }
-  .page-view { padding: 48px 16px 70px; }
+  .page-view { padding: 48px var(--gutter) 70px; }
   .page--home { margin: -64px -16px -70px; }
   .page-intro { width: 100%; max-width: 100%; margin-bottom: 40px; }
   .page-intro__gua { top: -14px; right: 0; font-size: var(--type-hero-md); }
