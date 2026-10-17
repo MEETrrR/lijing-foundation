@@ -76,3 +76,20 @@
   --content-max: 1056px;
   --inset: calc(var(--gutter) + 32px);
 }
+
+/* ── 7. 字体：4 族 ────────────────────────────────────────────
+   全部是系统字体，没有自托管 webfont——所以品牌字形是"随环境变化"的：
+   Windows 走楷体、macOS 走 STKaiti、Android 没有中文衬线会掉到无衬线。
+   要锁住气质必须自托管子集化字体（见 docs 里的落地步骤）。 */
+:root {
+  /* 品牌展示：楷体优先。FZKai-Z03 是商业字体，几乎无人安装，保留仅为命中安装者 */
+  --font-display: "FZKai-Z03", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
+  /* 正文衬线：宋体 */
+  --font-reading: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  /* 印章/栏目标题：宋优先，macOS 回落楷体（保持原设计意图） */
+  --font-serif-kai: "Noto Serif SC", "STKaiti", serif;
+  /* 界面与表单：无衬线 */
+  --font-interface: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* 代码、数字、坐标 */
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+}
