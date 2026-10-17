@@ -12,6 +12,9 @@
     <meta property="og:description" content="把目标、今天的行动、学习证据和下一步连成一条可回看的路线。">
     <meta property="og:image" content="https://ljing.space/assets/generated/source/lijing-horizon-ink-v1.png">
     <meta name="twitter:card" content="summary_large_image">
+    <!-- 两份子集都在首屏出现：宋体承担正文，楷体承担标题/引文/印章。
+         预先声明可以让字体与 CSS 并行下载，而不是等 CSS 解析完才发现要字体。 -->
+    <link rel="preload" href="/assets/generated/source/fonts/notoserifsc-subset.4df1fd35dea6.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/generated/source/fonts/lxgw-wenkai-subset.77408fcacff2.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/apps/user_client/src/tokens.css">
     <link rel="stylesheet" href="/apps/user_client/src/styles.css">
