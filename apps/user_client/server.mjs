@@ -16,7 +16,7 @@ const CLIENT_SOURCE_ROOT = path.join(CLIENT_ROOT, "src");
 const ASSET_SOURCE_ROOT = path.join(ROOT, "assets", "generated", "source");
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4187);
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".mp4": "video/mp4", ".woff2": "font/woff2", ".woff": "font/woff" };
 const KNOWN_CLIENT_ROUTES = new Set(["/", "/404", "/features", "/auth", "/privacy", "/terms", "/contact", "/onboarding", "/goals", "/route", "/cet", "/plan", "/study", "/review", "/knowledge", "/assistant", "/growth", "/map", "/profile", "/settings", "/admin", "/state/loading", "/state/empty", "/state/error", "/state/review", "/state/permission"]);
 
 function normalizedEntityTag(value) {
@@ -121,7 +121,7 @@ async function handler(request, response) {
   const isExtensionlessRoute = !pathname.startsWith("/assets/") && !path.extname(pathname);
   const status = isExtensionlessRoute && !KNOWN_CLIENT_ROUTES.has(normalizedPath) ? 404 : 200;
   const contentType = MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream";
-  const isHashedAsset = /\/assets\/.*\.[a-f0-9]{12}\.(?:webp|png|jpe?g|svg|mp4)$/i.test(pathname);
+  const isHashedAsset = /\/assets\/.*\.[a-f0-9]{12}\.(?:webp|png|jpe?g|svg|mp4|woff2?)$/i.test(pathname);
   const isVideo = contentType === "video/mp4";
   const etag = `W/"${fileStats.size.toString(16)}-${Math.trunc(fileStats.mtimeMs).toString(16)}"`;
   const headers = {
