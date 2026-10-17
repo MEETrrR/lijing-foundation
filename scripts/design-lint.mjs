@@ -113,6 +113,15 @@ if (fs.existsSync(tokensPath)) {
   const tk = fs.readFileSync(tokensPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const defined = [...new Set([...tk.matchAll(/(?:[{;])\s*(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]))];
   const referenced = new Set([...raw.matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((m) => m[1]));
+
+  // 重名检查：tokens.css 先加载，同名令牌会被 styles.css 里的定义静默覆盖，
+  // 于是迁移后的引用指向了另一个语义的值。本次 --paper 就踩过这个坑：
+  // styles.css 已有 `--paper: #eeeae0`（实心纸色，用于深底浅字），
+  // 若在 tokens.css 里再定义 --paper 为半透明纸面，两边会互相顶掉。
+  const inStyles = [...new Set([...raw.matchAll(/(?:[{;])\s*(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]))];
+  for (const c of defined.filter((d) => inStyles.includes(d))) {
+    errors.push(`令牌重名：${c} 在 tokens.css 与 styles.css 都有定义，tokens.css 的值会被静默覆盖`);
+  }
   const unused = defined.filter((d) => !referenced.has(d));
   const pct = defined.length ? Math.round(((defined.length - unused.length) / defined.length) * 100) : 100;
   console.log(`  令牌采用率 ${pct}%（${defined.length - unused.length}/${defined.length}）`);
