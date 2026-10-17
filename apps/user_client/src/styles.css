@@ -33,7 +33,10 @@ button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
 button { border: 0; cursor: pointer; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 4px; }
+/* 键盘焦点：基础规则原先只覆盖 button/a/input，select 与 textarea 从未被覆盖；
+   另有 9 处类选择器用 outline: 0 把焦点指示直接抹掉（已从源头移除那些抑制）。
+   这里补齐元素类型，保证任何可交互元素在键盘聚焦时都有可见焦点环。 */
+:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--gold-on-ink); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: 0px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* The world is a persistent stage. Content moves through it like chapters in a scroll. */
@@ -455,7 +458,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .evidence-level small { margin-top: 4px; color: var(--rock); font-size: var(--type-meta); line-height: 1.4; }
 .evidence-level > .icon { color: var(--red); }
 .evidence-submit__field { display: grid; gap: 8px; margin: 20px 0 16px; color: var(--rock); font-size: var(--type-meta); }
-.evidence-submit__field textarea { min-height: 98px; padding: 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid transparent; outline: 0; resize: vertical; font: inherit; line-height: 1.7; }
+.evidence-submit__field textarea { min-height: 98px; padding: 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid transparent; resize: vertical; font: inherit; line-height: 1.7; }
 .evidence-submit__field textarea:focus { border-color: var(--gold); background: var(--paper-light); }
 .study-knowledge-capture { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px dashed rgba(13, 23, 26, .2); }
 .study-knowledge-capture__copy { display: grid; gap: 4px; min-width: 0; }
@@ -471,7 +474,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .material-intake__form, .material-evidence { display: grid; gap: 16px; }
 .material-intake__grid { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(130px, .75fr)); gap: 12px; }
 .material-intake label, .material-evidence__field { display: grid; gap: 8px; color: var(--rock); font-size: var(--type-meta); }
-.material-intake input, .material-intake select, .material-intake textarea, .material-evidence textarea { width: 100%; padding: 12px 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid rgba(13, 23, 26, .16); outline: 0; font: inherit; font-size: var(--type-body); line-height: 1.65; }
+.material-intake input, .material-intake select, .material-intake textarea, .material-evidence textarea { width: 100%; padding: 12px 12px; color: var(--ink); background: rgba(217, 211, 198, .42); border: 1px solid rgba(13, 23, 26, .16); font: inherit; font-size: var(--type-body); line-height: 1.65; }
 .material-intake input:focus, .material-intake select:focus, .material-intake textarea:focus, .material-evidence textarea:focus { border-color: var(--gold); background: var(--paper-light); }
 .material-intake textarea { min-height: 180px; resize: vertical; }
 .material-photo { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 12px 12px; background: rgba(217, 211, 198, .28); border: 1px dashed rgba(13, 23, 26, .28); }
@@ -604,7 +607,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .knowledge-add-button .icon { width: 14px; height: 14px; }
 .knowledge-search { display: flex; align-items: center; gap: 8px; width: min(245px, 100%); padding: 8px 0px; color: var(--ink-3); border-bottom: 1px solid rgba(238, 234, 224, .28); }
 .knowledge-search .icon { width: 14px; height: 14px; flex: 0 0 auto; }
-.knowledge-search input { min-width: 0; flex: 1; color: var(--paper); background: transparent; border: 0; outline: 0; font-size: var(--type-body); }
+.knowledge-search input { min-width: 0; flex: 1; color: var(--paper); background: transparent; border: 0; font-size: var(--type-body); }
 .knowledge-search input::placeholder { color: var(--ink-3); }
 .knowledge-capture { margin-top: 16px; padding: 20px; color: var(--paper); background: rgba(13, 23, 26, .72); border: 1px solid rgba(228, 189, 112, .34); }
 .knowledge-capture__heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -651,7 +654,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .suggestion-list button { padding: 12px 12px; color: var(--rock); text-align: left; background: transparent; border: 1px solid rgba(13, 23, 26, .15); font-size: var(--type-meta); transition: color var(--fast) ease, border-color var(--fast) ease, transform var(--fast) var(--ease); }
 .suggestion-list button:hover { color: var(--red); border-color: rgba(169, 75, 64, .46); transform: translateX(4px); }
 .assistant-composer { display: flex; gap: 8px; padding: 12px 16px; background: var(--paper-light); border-top: 1px solid var(--line-dark); }
-.assistant-composer input { min-width: 0; flex: 1; padding: 0 4px; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: var(--type-body); }
+.assistant-composer input { min-width: 0; flex: 1; padding: 0 4px; color: var(--ink); background: transparent; border: 0; font-size: var(--type-body); }
 .icon-button--dark { color: var(--paper); background: var(--ink); border-color: var(--ink); }
 .icon-button--dark:hover { color: var(--ink); background: var(--gold-light); border-color: var(--gold-light); }
 .assistant-aside { display: grid; gap: 16px; }
@@ -778,7 +781,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .settings-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-form label { display: grid; gap: 8px; color: var(--rock); font-size: var(--type-meta); }
 .settings-form label small { display: inline; color: var(--rock); }
-.settings-form input, .settings-form select, .settings-form textarea { width: 100%; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; border-radius: 0; outline: 0; font-size: var(--type-body); }
+.settings-form input, .settings-form select, .settings-form textarea { width: 100%; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; border-radius: 0; font-size: var(--type-body); }
 .settings-form input, .settings-form select { min-height: 44px; padding: 0 12px; }
 .settings-form textarea { min-height: 130px; padding: 12px; resize: vertical; line-height: 1.7; }
 .settings-form input:focus, .settings-form select:focus, .settings-form textarea:focus { border-color: var(--gold); }
@@ -788,7 +791,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .settings-form__footer .button { flex: 0 0 auto; }
 .settings-panel--preferences .setting-row { padding: 12px 0; }
 .setting-row--select { cursor: default; }
-.setting-row--select select { width: auto; min-width: 112px; min-height: 32px; padding: 0 8px; color: var(--ink); background: var(--paper-dark); border: 1px solid rgba(13, 23, 26, .12); outline: 0; font-size: var(--type-body); }
+.setting-row--select select { width: auto; min-width: 112px; min-height: 32px; padding: 0 8px; color: var(--ink); background: var(--paper-dark); border: 1px solid rgba(13, 23, 26, .12); font-size: var(--type-body); }
 .setting-row--select select:focus { border-color: var(--gold); }
 
 /* Auth and system states */
@@ -819,7 +822,7 @@ em { color: var(--gold-light); font-family: var(--font-serif-kai); font-style: n
 .auth-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--gold); }
 .auth-form { display: grid; gap: 16px; }
 .auth-form label { display: grid; gap: 8px; color: var(--rock); font-size: var(--type-meta); }
-.auth-form input { min-height: 46px; padding: 0 12px; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; outline: 0; font-size: var(--type-body); }
+.auth-form input { min-height: 46px; padding: 0 12px; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; font-size: var(--type-body); }
 .auth-form input:focus { border-color: var(--gold); }
 .auth-form .button { margin-top: 8px; }
 .form-footnote { margin: 20px 0 0; color: var(--rock); font-size: var(--type-meta); text-align: center; }
@@ -1341,7 +1344,7 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .onboarding-form { display: grid; gap: 24px; }
 .onboarding-form label { display: grid; gap: 8px; color: var(--rock); font-size: var(--type-meta); }
 .onboarding-form label small { display: inline; color: rgba(87, 95, 92, .62); font-size: var(--type-meta); }
-.onboarding-form input, .onboarding-form select { width: 100%; min-height: 45px; padding: 0 12px; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; outline: 0; font-size: var(--type-body); }
+.onboarding-form input, .onboarding-form select { width: 100%; min-height: 45px; padding: 0 12px; color: var(--ink); background: var(--paper-dark); border: 1px solid transparent; font-size: var(--type-body); }
 .onboarding-form input:focus, .onboarding-form select:focus { border-color: var(--gold); }
 .onboarding-form__label { color: var(--rock); font-size: var(--type-meta); }
 .onboarding-form__footer { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding-top: 4px; }
@@ -1391,7 +1394,7 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .knowledge-view-tabs button:hover, .knowledge-view-tabs button[aria-selected="true"] { color: var(--ink); background: var(--gold-light); border-color: var(--gold-light); }
 .knowledge-workbench__toolbar .knowledge-search { display: flex; align-items: center; gap: 8px; width: min(310px, 32vw); min-height: 36px; margin-left: auto; padding: 0 8px; color: var(--ink-3); background: var(--wash-ink-soft); border: 1px solid var(--rule-ink); }
 .knowledge-workbench__toolbar .knowledge-search .icon { width: 14px; height: 14px; }
-.knowledge-workbench__toolbar .knowledge-search input { width: 100%; min-width: 0; padding: 0; color: var(--paper); background: transparent; border: 0; outline: 0; font: inherit; font-size: var(--type-body); }
+.knowledge-workbench__toolbar .knowledge-search input { width: 100%; min-width: 0; padding: 0; color: var(--paper); background: transparent; border: 0; font: inherit; font-size: var(--type-body); }
 .knowledge-workbench__toolbar .knowledge-search input::placeholder { color: var(--ink-3); }
 .knowledge-workbench__toolbar .knowledge-add-button { min-height: 36px; }
 .knowledge-workbench__body { display: grid; grid-template-columns: 188px minmax(0, 1fr) 286px; gap: 0px; background: var(--wash-ink); }
@@ -1712,7 +1715,7 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .primary-nav { position: fixed; z-index: 4; top: 50%; right: 28px; display: grid; gap: 4px; width: 174px; padding: 8px; background: linear-gradient(90deg, rgba(8, 18, 21, .78), rgba(8, 18, 21, .48)); border: 1px solid var(--rule-ink-strong); border-left-color: rgba(228, 189, 112, .4); box-shadow: 0 16px 36px rgba(0, 0, 0, .2); backdrop-filter: blur(10px) saturate(.9); transform: translateY(-50%); }
 .primary-nav__link { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px; color: rgba(247, 244, 237, .86); border-left: 2px solid rgba(238, 234, 224, .34); font-size: var(--type-meta); font-weight: 500; text-decoration: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .58); transition: color var(--fast), background var(--fast), border-color var(--fast), box-shadow var(--fast); }
 .primary-nav__link .icon { flex: 0 0 auto; width: 17px; height: 17px; color: rgba(247, 244, 237, .82); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5)); }
-.primary-nav__link:hover, .primary-nav__link:focus-visible { color: var(--paper); background: var(--wash-ink); border-color: var(--gold-light); box-shadow: inset 0 0 0 1px rgba(228, 189, 112, .12); outline: none; }
+.primary-nav__link:hover, .primary-nav__link:focus-visible { color: var(--paper); background: var(--wash-ink); border-color: var(--gold-light); box-shadow: inset 0 0 0 1px rgba(228, 189, 112, .12); }
 .primary-nav__link.is-active { color: #f6d79a; background: linear-gradient(90deg, rgba(189, 141, 67, .36), rgba(189, 141, 67, .14)); border-color: var(--gold-light); box-shadow: inset 0 0 0 1px rgba(228, 189, 112, .18), 0 7px 18px rgba(0, 0, 0, .14); font-weight: 600; text-shadow: 0 1px 3px rgba(0, 0, 0, .72); }
 .primary-nav__link.is-active .icon { color: var(--gold-light); }
 .mobile-primary-nav { display: none; }
@@ -1953,4 +1956,13 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
     .route-adjustment-panel) .button--outline {
   color: var(--paper-1);
   border-color: var(--paper-4);
+}
+
+/* 纸面上的焦点环：深底用的浅金在纸面上只有 1.37:1，键盘用户看不出焦点在哪 */
+:is(.settings-account, .settings-panel, .settings-list,
+    .legal-document, .goal-selection, .study-focus, .assistant-dialog, .profile-card,
+    .bagua-field__center, .plan-day, .plan-empty, .memory-loop, .map-node,
+    .not-found-panel, .knowledge-network__core, .knowledge-inspector,
+    .route-adjustment-panel) :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline-color: var(--gold-on-paper);
 }
