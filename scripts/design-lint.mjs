@@ -106,6 +106,21 @@ eachRule(raw, (selector, body) => {
 if (tokens.size > 10) warnings.push(`字号令牌 ${tokens.size} 个 > 10`);
 if (spacing.size > 12) warnings.push(`间距取值 ${spacing.size} 个 > 12（目标：吸附到 4/8 网格 8 档）`);
 
+// 令牌采用率：tokens.css 里定义了却没人用的令牌。
+// 这不是错误——它是"目标刻度已定义、规则尚未迁移"的进度条，必须一直可见。
+const tokensPath = path.join(path.dirname(file), "tokens.css");
+if (fs.existsSync(tokensPath)) {
+  const tk = fs.readFileSync(tokensPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const defined = [...new Set([...tk.matchAll(/(?:[{;])\s*(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]))];
+  const referenced = new Set([...raw.matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map((m) => m[1]));
+  const unused = defined.filter((d) => !referenced.has(d));
+  const pct = defined.length ? Math.round(((defined.length - unused.length) / defined.length) * 100) : 100;
+  console.log(`  令牌采用率 ${pct}%（${defined.length - unused.length}/${defined.length}）`);
+  if (unused.length) {
+    warnings.push(`tokens.css 有 ${unused.length} 个未采用令牌：${unused.join(", ").slice(0, 150)}`);
+  }
+}
+
 for (const w of warnings) console.log(`  ! ${w}`);
 console.log(`  度量：字号令牌 ${tokens.size} · 间距取值 ${spacing.size}`);
 
