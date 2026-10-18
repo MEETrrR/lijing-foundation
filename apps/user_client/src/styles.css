@@ -1972,3 +1972,58 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
     .route-adjustment-panel) :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline-color: var(--gold-on-paper);
 }
+
+/* ── 右栏两个面板改纸面 ─────────────────────────────────────────
+   原先：水墨底 + 纸面主卡 + 两个深色玻璃面板 + 纹理 = 4 种表面语言。
+   现在：水墨底 + 纸面 = 2 种。
+
+   为什么不是把整站翻转成纸面当底：那样确实可读性更高，但会失去水墨这个身份，
+   而且有 58 处写死的深色背景会一并压坏（设置页的「服务状态」面板就是活例子，
+   文字会变成深字压深底、完全读不出来）。「纸面压在墨底上」本来就是这套设计
+   已有的做法 —— 主卡就是纸面 —— 所以这里只需要把右栏纳入同一套语言。
+
+   实测收益：行者状态面板与背景的对比度从 1.03:1 提升到约 13:1
+   （纸面在墨底上天然高对比，不再依赖半透明填充去"勉强分离"）。
+
+   代价：面板内部必须自带纸面文字阶 —— 因为 --ink-2 这类令牌在墨底主题下
+   是"深底上的浅字"，直接放进纸面会不可读。所以这个块显式给定面板内的文字色。 */
+.primary-nav, .status-axis {
+  background: linear-gradient(180deg, rgba(244, 240, 232, .97), rgba(238, 234, 224, .94));
+  border: 1px solid rgba(27, 37, 40, .18);
+  border-left: 2px solid rgba(125, 90, 28, .55);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .34);
+  backdrop-filter: none;
+  color: var(--paper-1);
+}
+.primary-nav__link { color: rgba(27, 37, 40, .82); border-left-color: transparent; }
+.primary-nav__link .icon { color: rgba(27, 37, 40, .6); filter: none; }
+.primary-nav__link[aria-current="page"], .primary-nav__link.is-active {
+  color: var(--paper-1);
+  background: rgba(125, 90, 28, .12);
+  border-left-color: rgba(125, 90, 28, .7);
+}
+/* 面板内文字阶：整体切到纸面用的深色系，金色也换成纸面上的金（5.22:1） */
+.status-axis, .status-axis span, .status-axis b, .status-axis strong,
+.status-axis i, .status-axis div, .status-axis p, .status-axis small { color: var(--paper-2); }
+.status-axis__topline, .status-axis__legend { color: var(--paper-3); }
+.status-axis__height strong, .status-axis__lines b, .status-axis__demo,
+.status-axis__lines .gua-mark, .status-axis__next span { color: var(--gold-on-paper); }
+.status-axis__track, .status-axis__lines i { background: rgba(27, 37, 40, .14); }
+.status-axis__fill, .status-axis__lines i::after { background: var(--gold-on-paper); }
+.status-axis__pin { background: var(--gold-on-paper); box-shadow: 0 0 0 2px rgba(125, 90, 28, .2); }
+.status-axis__balance, .status-axis__next { border-top-color: rgba(27, 37, 40, .16); }
+.status-axis .balance-wheel, .status-axis .balance-wheel b { color: var(--gold-on-paper); }
+
+/* ── 首页 hero：去掉 screen 双重曝光 ───────────────────────────
+   .home-hero__image 原先是「第二张插画 + mix-blend-mode: screen + opacity .78」，
+   叠在 .world-stage 的全幅水墨之上。screen 是提亮混合，等于给画面加了一层奶白，
+   画面因此发浑 —— 这也是首页比其它页都"脏"的原因。
+   去掉双重曝光后插画本身的结构（右侧那座塔）才真正看得清。 */
+.home-hero__image {
+  mix-blend-mode: normal;
+  opacity: 1;
+  background-image: var(--image);
+}
+.home-hero::before {
+  background: linear-gradient(90deg, rgba(7, 17, 20, .82), rgba(7, 17, 20, .18) 58%, transparent 78%);
+}
