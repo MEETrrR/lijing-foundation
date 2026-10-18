@@ -894,7 +894,7 @@ em { color: var(--gold-light); font-family: var(--font-kai); font-style: normal;
 .material-evidence__status { margin: 0; padding: 12px 12px; border-left: 2px solid var(--gold-light); color: var(--paper); background: rgba(228, 189, 112, .08); font-size: var(--type-meta); line-height: 1.7; }
 
 /* Persistent state axis */
-.status-axis { position: fixed; right: 25px; bottom: 25px; z-index: 4; width: 232px; padding: 16px 16px; color: var(--ink-2); background: rgba(8, 18, 21, .74); border: 1px solid var(--rule-ink); }
+.status-axis { position: fixed; right: 25px; bottom: 25px; z-index: 4; width: 232px; padding: 16px 16px; color: var(--ink-2); background: linear-gradient(90deg, rgba(8, 18, 21, .82), rgba(8, 18, 21, .6)); border: 1px solid var(--rule-ink-strong); border-left-color: rgba(228, 189, 112, .4); box-shadow: 0 16px 36px rgba(0, 0, 0, .2); backdrop-filter: blur(10px) saturate(.9); }
 /* 12px 下限之后，182px 装不下「行者状态 + 可恢复记录 · 尚未建立」(需要 188px)，会折成两行；加宽并禁止折行。 */
 .status-axis__topline, .status-axis__legend { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-3); font-size: var(--type-meta); white-space: nowrap; }
 .status-axis__demo { color: var(--gold-light); text-align: right; }
@@ -1718,7 +1718,7 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 }
 
 /* Primary loop navigation: a readable ink band over light scenes. */
-.primary-nav { position: fixed; z-index: 4; top: 50%; right: 28px; display: grid; gap: 4px; width: 174px; padding: 8px; background: linear-gradient(90deg, rgba(8, 18, 21, .78), rgba(8, 18, 21, .48)); border: 1px solid var(--rule-ink-strong); border-left-color: rgba(228, 189, 112, .4); box-shadow: 0 16px 36px rgba(0, 0, 0, .2); backdrop-filter: blur(10px) saturate(.9); transform: translateY(-50%); }
+.primary-nav { position: fixed; z-index: 4; top: 50%; right: 25px; display: grid; gap: 4px; width: 232px; padding: 8px; background: linear-gradient(90deg, rgba(8, 18, 21, .82), rgba(8, 18, 21, .6)); border: 1px solid var(--rule-ink-strong); border-left-color: rgba(228, 189, 112, .4); box-shadow: 0 16px 36px rgba(0, 0, 0, .2); backdrop-filter: blur(10px) saturate(.9); transform: translateY(-50%); }
 .primary-nav__link { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px; color: rgba(247, 244, 237, .86); border-left: 2px solid rgba(238, 234, 224, .34); font-size: var(--type-meta); font-weight: 500; text-decoration: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .58); transition: color var(--fast), background var(--fast), border-color var(--fast), box-shadow var(--fast); }
 .primary-nav__link .icon { flex: 0 0 auto; width: 17px; height: 17px; color: rgba(247, 244, 237, .82); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5)); }
 .primary-nav__link:hover, .primary-nav__link:focus-visible { color: var(--paper); background: var(--wash-ink); border-color: var(--gold-light); box-shadow: inset 0 0 0 1px rgba(228, 189, 112, .12); }
