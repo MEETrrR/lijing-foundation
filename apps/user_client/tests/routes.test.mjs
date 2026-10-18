@@ -485,8 +485,10 @@ test("onboarding selection and mobile action controls meet contrast and target-s
   assert.match(css, /\.onboarding-goal\.is-selected\s*\{[^}]*color:\s*var\(--ink\)[^}]*background:\s*var\(--gold-light\)/s);
   assert.match(css, /@media\s*\(pointer:\s*coarse\)[\s\S]*?min-height:\s*44px[\s\S]*?min-width:\s*44px/);
   assert.match(css, /\.auth-legal-links a\s*\{[^}]*min-height:\s*44px/);
-  assert.match(css, /\.study-action__controls\s+\.button--outline[^}]*color:\s*var\(--ink\)/);
-  assert.match(css, /\.study-action__controls\s+\.button--outline\s*\{[^}]*background:\s*var\(--paper\)/);
+  // 这个按钮的前景/底色改成了一对反色令牌：翻转极性时两者必须整体互换，
+  // 否则纸面主题下会变成深字压深底。
+  assert.match(css, /\.study-action__controls\s+\.button--outline[^}]*color:\s*var\(--invert-fg\)/);
+  assert.match(css, /\.study-action__controls\s+\.button--outline\s*\{[^}]*background:\s*var\(--invert-bg\)/);
   assert.match(css, /@media\s*\(pointer:\s*coarse\)[\s\S]*?\.study-aside__tip a\s*\{[^}]*min-height:\s*44px/);
 });
 
