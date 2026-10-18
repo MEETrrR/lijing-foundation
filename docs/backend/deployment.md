@@ -34,6 +34,17 @@ AI_MODEL=<已批准且有预算的模型名>
 # 可选：用于记录单用户估算成本，不写入 Prompt 或模型响应。
 # AI_INPUT_COST_PER_1K_USD=0
 # AI_OUTPUT_COST_PER_1K_USD=0
+# 可选：回望提醒的邮件通道。全部留空时该通道保持惰性——不影响启动，也不影响其它功能。
+# SMTP_HOST 与 SMTP_FROM_ADDRESS 同时存在才算"已配置"；只填其一视为未配置。
+# SMTP_HOST=smtp.example.com
+# SMTP_PORT=465                       # 不填时按 465（隐式 TLS）/ 587（STARTTLS）推断
+# SMTP_SECURE=true                    # 465 用 true；587 用 false 并依赖 STARTTLS
+# SMTP_REQUIRE_STARTTLS=true          # 非隐式 TLS 时默认为 true，避免在明文连接上发送凭据
+# SMTP_USER=reminder@example.com
+# SMTP_PASS=<仅服务器 Secret，建议用服务商生成的授权码而非登录密码>
+# SMTP_FROM_NAME=砺境
+# SMTP_FROM_ADDRESS=reminder@example.com
+# REMINDER_EMAIL_ENABLED=true         # 配好但暂时不想发时设为 false，可一键停
 # 公开版不要设置 PILOT_INVITE_CODES，注册无需邀请码。
 # 只有需要封闭试点时才设置 15-20 个高熵邀请码，以逗号分隔；每个码只能注册一个账号。
 # PILOT_INVITE_CODES=<仅服务器 Secret，不要写入公开文案>
@@ -89,7 +100,36 @@ Invoke-RestMethod https://<你的域名>/api/v1/ai/requests -Method Post -Conten
 
 `/api/v1/auth/register`、`/api/v1/auth/login` 和 `/api/v1/auth/me` 返回的用户对象不包含密码哈希。AI 请求先快速返回 `accepted`，再通过 request state 查询最终结果；AI Provider 失败时返回 `degraded` 模板状态，不伪装成模型成功。
 
-## 5. 管理员运营后台
+## 5. 回望提醒的邮件通道
+
+这条通道是**可选**的：没配 `SMTP_HOST` 与 `SMTP_FROM_ADDRESS` 时完全惰性，不影响启动与其它功能。配置项见第 2 节的 `SMTP_*`。
+
+配好之后，用任意已登录账号调一次测试发信，确认真的能投出去：
+
+```powershell
+$register = @{ email = 'smtp-test@example.com'; password = 'change-this-password'; display_name = '邮件测试' } | ConvertTo-Json
+$session = Invoke-WebRequest https://<你的域名>/api/v1/auth/register -Method Post -ContentType 'application/json' -Body $register -SessionVariable webSession
+
+# 发一封测试信；返回 sent:true 且 status:sent 才算通
+Invoke-RestMethod https://<你的域名>/api/v1/me/reminders/test -Method Post -WebSession $webSession
+```
+
+判定口径：
+
+- `status: "sent"` + `sent: true` → 通道可用
+- `status: "not_configured"` → 环境变量没生效，检查 `SMTP_HOST` 与 `SMTP_FROM_ADDRESS` 是否都填了
+- `status: "disabled"` → `REMINDER_EMAIL_ENABLED=false`
+- HTTP **502** + `error_code` → SMTP 拒绝投递，接口刻意不用 200 掩盖失败
+  - `SMTP_PERMANENT`（5xx）：地址或凭据问题，重试无用
+  - `SMTP_TRANSIENT`（4xx）：对方暂时不可用，可重试
+  - `SMTP_STARTTLS_UNAVAILABLE`：服务器不支持 STARTTLS，而配置要求了它
+  - `SMTP_CONNECT_FAILED` / `SMTP_CONNECT_TIMEOUT`：网络或端口不通
+
+登录后读 `GET /api/v1/me/reminders`，其中的 `email` 字段会如实告诉前端通道是否可用（只返回 `configured` / `enabled` / `from_address`，不含主机、端口与账号）。
+
+**注意**：目前实现的是"发信通路"本身。**按用户设定的时间自动群发尚未接入**——数据库抽象当前没有遍历 key 的能力，调度需要先补索引，属于下一步。所以现在这条通道能验证、能手动发，但还不会自己到点发信。
+
+## 6. 管理员运营后台
 
 后台不是靠隐藏前端链接保护，而是由 API 在服务端校验管理员身份。普通用户即使手动访问页面或调用接口，也会收到 `403 Forbidden`。
 
@@ -103,7 +143,7 @@ Invoke-RestMethod https://<你的域名>/api/v1/ai/requests -Method Post -Conten
 
 `ADMIN_EMAILS` 只适合封闭部署或本地测试。公开注册时优先使用 `ADMIN_ACTOR_IDS`，避免仅凭邮箱字符串决定管理员身份。统计从启用后台后开始累计；现有代码此前没有保存活跃标记，因此不能自动补回启用前的历史 DAU。
 
-## 6. 上线前检查
+## 7. 上线前检查
 
 - Supabase 已执行迁移，连接串来自生产 Secret，数据库备份和恢复演练已完成。
 - Provider 项目、模型、日/月预算、告警和停用开关已确认，先用小范围试点。

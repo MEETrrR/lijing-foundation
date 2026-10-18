@@ -25,6 +25,7 @@ const { LearnerSnapshotService } = require("../domains/companion-cycle/learner-s
 const { LearningArtifactService } = require("../domains/learning-artifact/learning-artifact-service.ts");
 const { VisionMaterialService, MAX_IMAGE_BYTES } = require("../domains/learning-artifact/vision-material-service.ts");
 const { AdminAnalyticsService } = require("../domains/analytics/admin-analytics-service.ts");
+const { ReminderNotifier } = require("../domains/notification/reminder-notifier.ts");
 
 const BODY_LIMIT_BYTES = 96 * 1024;
 
@@ -169,7 +170,9 @@ function createDefaultServices(options = {}) {
   if (!options.snapshots) snapshots.diagnosis = diagnosis;
   const companionCycle = options.companionCycle ?? new CompanionCycleService({ database, learningRoutes, userState, actions, diagnosis, artifacts, examKnowledge, clock });
   const health = options.health ?? new PlatformHealthChecker({ database, cache, queue, objectStorage });
-  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, snapshots, ai, visionMaterials, knowledge, examKnowledge, learningRoutes, health, analytics };
+  // 可选通道：没配 SMTP 时 ReminderNotifier 自身保持惰性，不影响启动与其它功能。
+  const notifier = options.notifier ?? new ReminderNotifier({ env, clock });
+  return { env, clock, database, persistence, cache, queue, objectStorage, identity, learning, memory, userState, feedback, companion, artifacts, actions, diagnosis, companionCycle, snapshots, ai, visionMaterials, knowledge, examKnowledge, learningRoutes, health, analytics, notifier };
 }
 
 function createBackendHandler(services) {
@@ -390,6 +393,16 @@ function createBackendHandler(services) {
         return;
       }
 
+      if (url.pathname === "/api/v1/me/reminders/test" && request.method === "POST") {
+        // 用来验证 SMTP 配置是否真的通：失败时返回 502 而不是 200 带 sent:false，
+        // 后者容易被客户端读成"成功了"。
+        const user = await services.identity.getUser(actor.actorId);
+        const outcome = await services.notifier.sendTest({ email: user?.email, displayName: user?.display_name });
+        const status = outcome.status === "failed" ? 502 : 200;
+        sendJson(response, status, { ...outcome, channel: "email", request_id: actorContext.requestId }, actorContext);
+        return;
+      }
+
       if (url.pathname === "/api/v1/me/reminders" && request.method === "GET") {
         const state = (await services.userState.getState(actor.actorId, actorContext.requestId)).state;
         const route = (await services.learningRoutes.getLatest(actor.actorId)).route;
@@ -419,6 +432,8 @@ function createBackendHandler(services) {
           reminder_time: reminderTime,
           due: enabled && localTime >= reminderTime && hasOpenTask,
           reminder_key: `${localDate}:${reminderTime}`,
+          // 让客户端能如实告诉用户"提醒会不会发到邮箱"，而不是让用户以为设了就会收到。
+          email: services.notifier.describe(),
           tasks: tasks.slice(0, 8),
         }, actorContext);
         return;
