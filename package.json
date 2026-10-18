@@ -16,9 +16,9 @@
     "image:config:check": "node --no-warnings tools/image-generation/cli.mjs config:check",
     "image:generate": "node --no-warnings tools/image-generation/cli.mjs generate",
     "image:test": "node --no-warnings --test tests/tools/image-generation.test.mjs",
-    "client:test": "node --no-warnings --test apps/user_client/tests/routes.test.mjs apps/user_client/tests/server.test.mjs apps/user_client/tests/request-ai.test.mjs apps/user_client/tests/knowledge-evidence.test.mjs",
+    "client:test": "node --no-warnings --test apps/user_client/tests/routes.test.mjs apps/user_client/tests/server.test.mjs apps/user_client/tests/request-ai.test.mjs apps/user_client/tests/knowledge-evidence.test.mjs tests/integration/database-tunnel-preflight.test.mjs",
     "client:ai:test": "node --no-warnings --test tests/integration/user-client-ai.test.mjs",
-    "client:serve": "node --env-file-if-exists=.env.local --env-file-if-exists=.env.ai.local --env-file-if-exists=.env.pilot.local apps/user_client/server.mjs"
+    "client:serve": "node --env-file-if-exists=.env.local --env-file-if-exists=.env.ai.local --env-file-if-exists=.env.pilot.local scripts/start-client.mjs"
   },
   "devDependencies": {
     "@redocly/openapi-core": "2.49.0",

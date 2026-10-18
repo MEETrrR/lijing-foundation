@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$serverScript = Join-Path $projectRoot "apps\user_client\server.mjs"
+$serverScript = Join-Path $projectRoot "scripts\start-client.mjs"
 $apiScript = Join-Path $projectRoot "services\api\src\server.ts"
 
 Set-Location $projectRoot
@@ -38,6 +38,8 @@ function Stop-PreviousProjectProcesses {
     [IO.Path]::GetFullPath($apiScript),
     "apps/user_client/server.mjs",
     "apps\user_client\server.mjs",
+    "scripts/start-client.mjs",
+    "scripts\start-client.mjs",
     "services/api/src/server.ts",
     "services\api\src\server.ts"
   )

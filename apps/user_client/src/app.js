@@ -857,7 +857,7 @@ export function createApp(root = document.querySelector("#app")) {
     await syncUserState();
     DEMO_STATE.learningRoute = { ...DEMO_STATE.learningRoute, syncStatus: "loading", error: "" };
     onPrimaryStateReady?.();
-    await Promise.all([
+    await Promise.allSettled([
       healthPromise,
       syncMemories(),
       syncCompanion(),
@@ -1107,12 +1107,12 @@ export function createApp(root = document.querySelector("#app")) {
   };
 
   const syncSession = async () => {
-    const healthPromise = syncServiceHealth();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const response = await fetch("/api/v1/auth/me", { credentials: "same-origin", cache: "no-store" });
         if (response.status === 401) {
           resetToDemoState();
+          const healthPromise = syncServiceHealth();
           void healthPromise.then(() => render());
           return;
         }
@@ -1127,6 +1127,7 @@ export function createApp(root = document.querySelector("#app")) {
         const body = await response.json();
         if (body.user) {
           resetToRealState(body.user);
+          const healthPromise = syncServiceHealth();
           await syncAuthenticatedAccount({
             healthPromise,
             onPrimaryStateReady: () => {
@@ -1136,6 +1137,7 @@ export function createApp(root = document.querySelector("#app")) {
             onComplete: () => render(window.location.pathname),
           });
         } else {
+          const healthPromise = syncServiceHealth();
           void healthPromise.then(() => render());
         }
         return;

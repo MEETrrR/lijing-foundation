@@ -17,7 +17,7 @@
 
 ## 快速运行
 
-环境要求：Node.js `>=22.18.0`、pnpm。
+环境要求：Node.js `>=22.18.0`、pnpm。若 `.env.local` 配置了 `SUPABASE_DATABASE_TUNNEL_PORT`，启动时会先检查本地数据库隧道；隧道不存在时会尝试自动启动，启动失败会直接报错，不会静默回退到内存数据库。
 
 ```powershell
 pnpm install

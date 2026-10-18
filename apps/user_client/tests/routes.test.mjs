@@ -171,7 +171,7 @@ test("account bootstrap renders after user state and restores secondary data in 
   const bootstrap = source.slice(start, end);
   assert.ok(start >= 0 && end > start);
   assert.ok(bootstrap.indexOf("await syncUserState()") < bootstrap.indexOf("onPrimaryStateReady?.()"));
-  assert.ok(bootstrap.indexOf("onPrimaryStateReady?.()") < bootstrap.indexOf("await Promise.all(["));
+  assert.ok(bootstrap.indexOf("onPrimaryStateReady?.()") < bootstrap.indexOf("await Promise.allSettled(["));
   assert.match(bootstrap, /syncLearningRoute\(\)/);
   assert.match(source, /syncStatus:\s*"loading"/);
 });
