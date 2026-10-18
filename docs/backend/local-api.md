@@ -32,6 +32,8 @@ pnpm backend:serve
 
 本地没有设置 `SUPABASE_DATABASE_URL` 时，接口仍可用但使用测试用 `InMemoryDatabase`，重启后会丢失；要验证真实跨重启持久化，必须执行迁移并在 API 服务环境设置 Supabase PostgreSQL 连接串。
 
+如果通过 SSH 隧道连接本地 PostgreSQL，客户端启动还需要设置 `SUPABASE_DATABASE_TUNNEL_PORT`。`pnpm client:serve` 会先检查该端口，并在本机存在 `ssh-skill` 隧道工具时尝试启动配置的隧道；端口不可用时服务会直接停止并提示原因，不会把数据库故障伪装成内存持久化。
+
 ## 注册、登录和会话
 
 注册和登录会通过 `HttpOnly; SameSite=Lax` 的 `lijing_session` cookie 建立会话，服务端只保存密码哈希和 session token 哈希，不保存明文密码或明文 session。浏览器端使用同源 cookie；脚本客户端也可以把 cookie 或服务端签发的 bearer token 放入请求头。

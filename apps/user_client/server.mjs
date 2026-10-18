@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { brotliCompressSync, gzipSync } from "node:zlib";
+import { ensureDatabaseTunnel } from "../../scripts/ensure-database-tunnel.mjs";
 
 const require = createRequire(import.meta.url);
 const { createBackendHandler, createDefaultServices } = require("../../services/api/src/bootstrap/http-api.ts");
@@ -78,6 +79,7 @@ function configureDatabaseTunnel(env) {
   }
 }
 
+await ensureDatabaseTunnel({ autoStart: false });
 configureDatabaseTunnel(process.env);
 const FORMAL_BACKEND_SERVICES = createDefaultServices({ env: process.env });
 const formalBackendHandler = createBackendHandler(FORMAL_BACKEND_SERVICES);
