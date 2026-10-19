@@ -1756,7 +1756,12 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .route-hours > strong { color: var(--gold-light); font-family: var(--font-display); font-size: var(--type-heading); font-weight: 400; }
 
 @media (min-width: 701px) {
-  .page-view { padding-right: 200px; }
+  /* 右栏是 fixed，width 232 + right 25 = 占掉右侧 257px。
+     这里原先写 200px，于是每个桌面宽度下内容都被压掉 57px ——
+     实测 .knowledge-inspector 右边缘 1225、.primary-nav 左边缘 1168，
+     重叠 57px，"当前节点"卡片的右侧被导航面板盖住。
+     用 calc 把 232 + 25 显式写出来，再留 24px 呼吸；改右栏宽度时这里会自动跟上。 */
+  .page-view { padding-right: calc(232px + 25px + 24px); }
 }
 
 @media (max-width: 700px) {
@@ -2254,4 +2259,48 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 /* 深墨底上的朱红：--red #a94b40 在墨底上只有约 3.4:1，12px 不够用 */
 .cet-sections__list span {
   color: var(--red-on-ink);
+}
+
+/* ── 中文排版的基础能力 ─────────────────────────────────────────
+   此前本站一条都没有：line-break / text-autospace / text-spacing-trim
+   在这个文件里搜索均为 0 处。对一个中文产品，这是专业读者能看出来的缺口。
+
+   依据 W3C《中文排版需求》(CLReq) 与 CSS Text Level 4。这里其实是三件
+   不同的事，不能用一个属性混过去：
+
+     避头尾   line-break: strict     不让 ，。）」】 落到行首
+     混排间距 text-autospace         汉字与拉丁字母/数字之间自动留白
+     标点挤压 text-spacing-trim      相邻标点的空隙按语言习惯修整
+
+   三者都只影响排版渲染，不向 DOM 插入字符 —— 复制文本、搜索、字数统计
+   都与改动前完全一致。这一点很重要：手插空格或用负 margin 假装挤压，
+   会把可复制文本和换行计算一起弄坏。
+
+   本站混排极多（CET-4 / 8,848m / 25 分钟 / JPEG、PNG / AI 引路），
+   所以 text-autospace 的实际收益很明显。 */
+
+:lang(zh), :lang(zh-CN), :lang(zh-Hans) {
+  line-break: strict;
+  word-break: normal;
+}
+
+/* 中西文混排间距。
+   注意：@supports 里写的是 ideograph-alpha，而不是 normal —— 因为本机
+   Edge/Chromium 155 的实测结果是只接受 normal / no-autospace，
+   ideograph-alpha 与 ideograph-numeric 都返回不支持（CSS.supports 逐值验证过）。
+   写 normal 会让条件永远成立、声明却什么也不做，看起来像生效了。
+   这样写则在支持该值的引擎上才启用，其余保持现状。 */
+@supports (text-autospace: ideograph-alpha) {
+  :lang(zh), :lang(zh-CN), :lang(zh-Hans) {
+    text-autospace: ideograph-alpha ideograph-numeric;
+  }
+}
+
+/* 标点挤压只作用在成段文本上。不放到代码、标识符和按钮上 ——
+   那些地方的标点是内容的一部分，不该被挤。
+   值用 space-first 而不是 trim-auto：实测本机引擎两者分别返回可用/不可用。 */
+@supports (text-spacing-trim: space-first) {
+  :is(p, li, blockquote, dd, figcaption) {
+    text-spacing-trim: space-first;
+  }
 }
