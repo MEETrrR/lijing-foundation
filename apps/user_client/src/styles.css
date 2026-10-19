@@ -2027,3 +2027,70 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .home-hero::before {
   background: linear-gradient(90deg, rgba(7, 17, 20, .82), rgba(7, 17, 20, .18) 58%, transparent 78%);
 }
+
+/* ── 排版微调 ───────────────────────────────────────────────────
+   三个都是可测的问题，不是感觉：
+
+   1) 正文用 --type-meta（12px）。这一档的本意是"时间/状态"的绝对下限，
+      却被拿去排段落。12px 中文持续阅读偏小，且与 14px 的副标题几乎无差别，
+      层级因此塌掉。
+   2) 行长越界。实测 17 个正文段落里 14 个不在 30–40 字区间，
+      最宽的一句是复盘页的空状态文案：92 字/行（1102px）。超过 40 字时
+      眼睛回行找不到下一行开头，这是可测的阅读代价。
+   3) <small> 没有基线规则。CSS 里一个 10px 都没有，但设置页表单里
+      3 个 <small> 渲染成 10px —— 因为没有任何规则覆盖它们，
+      于是吃到了浏览器默认的 font-size: smaller（12 × 0.833 = 10px）。
+
+   行长用 em 而不是 px：em 随字号缩放，所以同一套规则在 12/14/16px 下
+   都是同样的字数/行，不会因为某处字号变了就失衡。 */
+
+/* 1. <small> 基线 —— 兜住所有没有专门规则的 <small>。
+      已有的类作用域规则（.goal-option small 等）优先级更高，不受影响；
+      打印样式里的 9pt 也因为是更具体的选择器而保留。 */
+.app-shell small {
+  font-size: var(--type-meta);
+  line-height: 1.6;
+}
+
+/* 2. 正文从 meta(12px) 提到 small(14px)，同时把行长收到 36 字 */
+.study-focus__title p,
+.study-action__heading p,
+.memory-loop__empty p {
+  max-width: 36em;
+  font-size: var(--type-small);
+  line-height: var(--lh-body);
+}
+
+/* 3. 页首副标题：600px 固定宽改成 36 字；行高 1.9 对 14px 太松，收到 1.75 */
+.page-intro p {
+  max-width: 36em;
+  line-height: 1.75;
+}
+
+/* 4. 表单里的助手文案：保持 meta 档（它确实是状态说明），只收行长与行高 */
+.material-photo__notice,
+.material-photo__uncertain {
+  max-width: 32em;
+  line-height: 1.6;
+}
+
+/* 5. 两处漏网的宽正文。
+      它们的 12px 来自某个分组选择器（形如 a p, b p, c p { ... }），
+      与其继续追查是哪一条命中，不如按元素显式给定 —— 追加在文件末尾，
+      层叠上必然生效，也便于以后一眼看到这里有例外。
+      实测：隐私条款 57 字/行、知识库说明 52 字/行，都超出 30–40 区间。 */
+/* 注意：必须写成 .legal-document section p。既有的 .legal-document section p
+   优先级是 (0,1,2)，只写 .legal-document p (0,1,1) 会被它压过 —— 这就是
+   上一版改了却看不出效果的原因。同优先级 + 位置更靠后 才生效。 */
+.legal-document p,
+.legal-document section p,
+.legal-document li {
+  max-width: 36em;
+  font-size: var(--type-small);
+  line-height: var(--lh-body);
+}
+.knowledge-workbench__head p {
+  max-width: 36em;
+  font-size: var(--type-small);
+  line-height: 1.7;
+}
