@@ -2094,3 +2094,47 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
   font-size: var(--type-small);
   line-height: 1.7;
 }
+
+/* ── 空状态：行者状态面板不再摆读数 ─────────────────────────────
+   新用户在首屏看到的是「0m / 阴阳平衡 0 / 0 / 专注线 0% / 回息线 0% /
+   下一处营地 · 待建立」—— 十个零铺成一面墙。零不是信息，是打击。
+   没有进度时改为说明"这里将来会记录什么"，并给一个下一步入口。 */
+.status-axis--empty {
+  display: grid;
+  gap: 12px;
+}
+.status-axis--empty .status-axis__empty-copy {
+  max-width: 26em;
+  margin: 0;
+  color: var(--paper-2);
+  font-size: var(--type-meta);
+  line-height: 1.7;
+}
+.status-axis--empty .status-axis__empty-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--gold-on-paper);
+  font-size: var(--type-meta);
+}
+.status-axis--empty .status-axis__empty-link .icon,
+.status-axis--empty .status-axis__empty-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── 工作页的页首标题收一档 ───────────────────────────────────
+   实测 .page-intro h1 是 72px，而它下面紧跟的正文是 14px —— 5.1 倍的字号落差，
+   于是用户先看到口号，再看到要做的事。工作页的标题是"页面标签"，不是 hero，
+   收到 --type-hero(56px) 更合比例，也让卡片更早进入首屏。
+
+   只覆盖 .page-intro，不动 --type-hero-md 令牌本身 —— 登录页和首页 hero
+   也用这个令牌，那两处的 72px 是对的。 */
+.page-intro h1 {
+  font-size: var(--type-hero);
+  margin: 12px 0 10px;
+}
+.page-intro {
+  margin-bottom: 36px;
+}

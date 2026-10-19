@@ -10,6 +10,21 @@ export function renderStatusAxis(state) {
       : state.service?.persistence === "ephemeral"
         ? "临时会话记录"
         : "保存方式待确认";
+
+  // 还没有任何进度时不展示读数。
+  // 原先新用户在首屏看到的是「0m / 阴阳平衡 0 / 0 / 专注线 0% / 回息线 0% /
+  // 下一处营地 · 待建立」—— 十个零铺成一面墙，传达的是"你什么都没有"，
+  // 而不是"这里会记录你的进展"。零不是信息，是打击。
+  const hasProgress = currentHeight > 0 || focus > 0 || recovery > 0 || energy > 0;
+
+  if (!hasProgress) {
+    return `<section class="status-axis status-axis--empty" data-tour-target="status-axis" aria-label="登山状态">
+    <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">${recordLabel}</span></div>
+    <p class="status-axis__empty-copy">还没有登山记录。留下第一条证据后，这里开始记你的高度与回息节奏。</p>
+    <a class="status-axis__empty-link" href="/" data-route="/">从今天这一条开始 ${mark("→")}</a>
+  </section>`;
+  }
+
   return `<section class="status-axis" data-tour-target="status-axis" aria-label="登山状态">
     <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">${recordLabel} · ${state.mountain.weather}</span></div>
     <div class="status-axis__height"><strong>${currentHeight.toLocaleString("zh-CN")}m</strong><span>当前高度</span></div>
