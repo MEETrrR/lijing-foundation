@@ -2138,3 +2138,120 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .page-intro {
   margin-bottom: 36px;
 }
+
+/* ── 引导页：纸色底上的颜色必须换到纸面梯度 ─────────────────────
+   /onboarding 是全站唯一把世界底冲淡成米色的页面，所以它的组件实际落在
+   纸色底上，但仍然引用深底调色板。实测 10 个元素不达标，其中 4 个低到
+   几乎不可见：
+
+     滑杆刻度「10 分钟」      1.05:1   暖白 .58 压在纸上，等于看不见
+     「入山引导 · 15 秒」     1.61:1   深底金当文字
+     「25 分钟」当前值        1.61:1   同上
+     滑杆数值 output          1.61:1   同上
+     表单标签 / 说明文字      3.09 / 3.71:1
+     导航注记                 3.73:1
+     右上状态                 4.08:1
+     页首红题                 4.21:1
+
+   成因与此前"纸面作用域"完全相同：极深与极浅两种底上不存在同一支颜色，
+   必须按底换梯度。这里按引导页作用域整体换，而不是逐条打补丁。
+
+   注意 --gold-light 不在这里重绑定 —— 它同时被当按钮底色用（28 处），
+   remap 会把底色一起改掉，所以只单独修"作文字"的这几处。 */
+.page--onboarding {
+  --rock: var(--paper-3);
+  --rock-light: var(--paper-2);
+  --teal: #2f625e;
+  --red: #9c4034;
+}
+
+/* 金色作文字：纸底上用纸面金 5.22:1 */
+.page--onboarding :is(.section-kicker, .onboarding-time strong, .onboarding-time output) {
+  color: var(--gold-on-paper);
+}
+
+/* 滑杆两端的刻度：原为暖白 .58，纸面上只有 1.05:1 */
+.page--onboarding .onboarding-time__scale span {
+  color: var(--paper-3);
+}
+
+/* 右上角连接状态与页首导航注记：alpha 太浅（4.08 / 3.73:1） */
+.page--onboarding .connection {
+  color: var(--paper-2);
+}
+.page--onboarding .onboarding-nav-note {
+  color: var(--paper-3);
+}
+
+/* 目标卡片的说明（深色底）：暖白 .58 在中深灰上只有 3.53:1，提到 .78 */
+.page--onboarding .onboarding-goal small,
+.page--onboarding .goal-option small {
+  color: rgba(238, 234, 224, .78);
+}
+
+/* 引导页修正的两处收尾（上面那一版自己带出来的问题） */
+
+/* 1) 选中的目标卡片是金色底，文字必须是深色。
+      上一版把 .onboarding-goal small 统一提到暖白 .78，在未选中的深色卡上是对的，
+      但选中的卡是 rgb(228,189,112) 金色底 —— 暖白压金只有 1.36:1。 */
+.page--onboarding .onboarding-goal.is-selected small,
+.page--onboarding .onboarding-goal.is-selected strong,
+.page--onboarding .goal-option.is-selected small,
+.page--onboarding .goal-option.is-selected strong {
+  color: rgba(13, 23, 26, .78);
+}
+
+/* 2) .connection 在顶栏里，不在 .page--onboarding 之内，上一版的作用域没覆盖到。
+      它落在 app-shell 的纸色底上，实测 4.08:1。 */
+.app-shell--onboarding .connection {
+  color: var(--paper-2);
+}
+
+/* ── 纸面作用域补漏：三处没被覆盖到的纸面容器 ───────────────────
+   这是"两种底上不存在同一支颜色"的第三批实例。
+   判定依据是实测的合成背景（alpha 为实色，不是渐变，所以这些是真实不达标）：
+
+     .memory-loop em        1.37:1   深底金 #e4bd70 当文字压在浅纸上
+     .review-chain 内部     3.44:1   --rock #74807e 在 rgb(238,235,229) 上
+     .evidence-review__note 3.73:1   同上
+
+   .memory-loop 本身已在作用域清单里，但 em 用的是 --gold-light（未重绑，
+   因为它同时是按钮底色），所以金色文字要单独修。
+   .review-chain 与 .evidence-review 则是整个容器都漏在清单外。 */
+.review-chain,
+.evidence-review {
+  --rock: var(--paper-3);
+  --rock-light: var(--paper-2);
+  --teal: #2f625e;
+  --red: #9c4034;
+}
+
+:is(.memory-loop, .review-chain, .evidence-review) :is(em, .section-kicker) {
+  color: var(--gold-on-paper);
+}
+
+/* ── /cet 的三处 ────────────────────────────────────────────────
+   1) .cet-sections__list span 引用了一个从未定义的令牌 --red-light。
+      声明失效后色值回落到继承的 #0d171a，正好压在墨底上 —— 实测 1:1，
+      也就是那行「01 / 听力理解」完全不可见。全站扫描过：10 个未定义令牌里
+      9 个是有意由 JS 内联设置的（--image / --progress 等），只有这个是实打实的错。
+   2) .cet-today 是浅色卡（--surface-card），但没进纸面作用域清单，
+      所以 --rock 还是深底值：说明文字 3.41:1。
+   3) .cet-today__copy > .section-kicker 与深底的 .cet-facts span 写在同一条规则里，
+      金色被一起带进了浅卡：1.48:1。 */
+.cet-today,
+.cet-practice {
+  --rock: var(--paper-3);
+  --rock-light: var(--paper-2);
+  --teal: #2f625e;
+  --red: #9c4034;
+}
+
+.cet-today__copy > .section-kicker {
+  color: var(--gold-on-paper);
+}
+
+/* 深墨底上的朱红：--red #a94b40 在墨底上只有约 3.4:1，12px 不够用 */
+.cet-sections__list span {
+  color: var(--red-on-ink);
+}
