@@ -2304,3 +2304,18 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
     text-spacing-trim: space-first;
   }
 }
+
+/* ── 最后一处对比度 0.1 的缺口 ─────────────────────────────────
+   /route 上 12px 的 small 用 --rock (#74807e) 压在墨底 (#0c181c) 上，
+   实测 4.4:1，门槛 4.5:1 —— 只差 0.1。
+
+   选择器必须是 .route-form label small：那个 small 位于周计划时长滑杆的
+   label 里，而 .route-form 并不在 .page--route 的子树下，所以先写的
+   .page--route small 一条都没命中（用 CSS.getMatchedStylesForNode 问出来的）。
+
+   修法没有动 --rock 本身：那个值被引用 110 次，纸面作用域里还要靠它，
+   为一个 12px 的次要标签改全局调色板不划算。这里只把这一处抬到
+   --rock-light，局部解决。 */
+.route-form label small {
+  color: var(--rock-light);
+}
