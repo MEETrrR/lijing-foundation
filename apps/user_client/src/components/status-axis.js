@@ -1,4 +1,4 @@
-import { mark } from "./icons.js";
+import { mark, icon } from "./icons.js";
 
 export function renderStatusAxis(state) {
   const { currentHeight, summitHeight, visiblePercent, nextCamp } = state.mountain;
@@ -21,7 +21,7 @@ export function renderStatusAxis(state) {
     return `<section class="status-axis status-axis--empty" data-tour-target="status-axis" aria-label="登山状态">
     <div class="status-axis__topline"><span>行者状态</span><span class="status-axis__demo">${recordLabel}</span></div>
     <p class="status-axis__empty-copy">还没有登山记录。留下第一条证据后，这里开始记你的高度与回息节奏。</p>
-    <a class="status-axis__empty-link" href="/" data-route="/">从今天这一条开始 ${mark("→")}</a>
+    <a class="status-axis__empty-link" href="/" data-route="/">从今天这一条开始 ${icon("arrow")}</a>
   </section>`;
   }
 

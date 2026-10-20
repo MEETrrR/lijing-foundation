@@ -151,10 +151,16 @@
 
 
 :root {
-  /* 品牌展示：先用子集保证一致，再逐级回落系统字体 */
-  --font-display: "LXGW WenKai Subset", "FZKai-Z03", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
+  /* 品牌展示：先用子集保证一致，再逐级回落系统字体。
+     注意 2026-10-20 移除了原先栈里的 "FZKai-Z03"（方正楷体）——
+     那是需要付费授权的商用字体。在 CSS 里写字体名本身不构成侵权
+     （浏览器只会在用户本机已安装时才使用），但公开产品里没必要留这种引用，
+     而且它也起不到作用：子集排第一，静态文案 993 个字全部命中，
+     方正只在子集外的动态字上才可能被用到。
+     现在的回落链全部是开源字体或操作系统自带字体，没有任何商用依赖。 */
+  --font-display: "LXGW WenKai Subset", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
   /* 正文衬线：同上。若想保留系统宋体正文，把 "LXGW WenKai Subset" 从这行删掉即可 */
-  --font-kai: "LXGW WenKai Subset", "FZKai-Z03", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
+  --font-kai: "LXGW WenKai Subset", "KaiTi", "STKaiti", "Noto Serif SC", "Songti SC", serif;
   /* 印章/栏目标题：宋优先，macOS 回落楷体（保持原设计意图） */
   --font-prose: "Noto Serif SC Subset", "Source Han Serif SC", "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
   /* 界面与表单：无衬线，保持系统字体（界面字不需要书法气质，且省一次加载） */
