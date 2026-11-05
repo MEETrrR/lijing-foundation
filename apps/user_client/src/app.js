@@ -48,7 +48,6 @@ const AI_POLL_ATTEMPTS = 30;
 const PUBLIC_ROUTES = new Set(["/auth", "/404", "/privacy", "/terms", "/contact"]);
 const LEGACY_ROUTE_REDIRECTS = new Map([
   ["/plan", "/"],
-  ["/study", "/"],
   ["/assistant", "/"],
   ["/features", "/"],
   ["/goals", "/route"],
@@ -1032,14 +1031,18 @@ export function createApp(root = document.querySelector("#app")) {
       const response = await fetch("/api/v1/health", { credentials: "same-origin" });
       if (!response.ok) throw new Error("health request failed");
       const body = await response.json();
+      // health.status 是整体状态：AI 探活失败也会把它拉成 degraded。
+      // 账号与学习记录能不能写，只取决于持久化模式。把 AI 掉线当成"账号服务不可用"
+      // 会直接关掉注册入口——线上就是这样被误关的。
+      const durability = body.persistence === "durable" || body.persistence === "ephemeral" ? body.persistence : "unknown";
       DEMO_STATE.service = {
-        api: body.status === "ok" ? "up" : "degraded",
+        api: durability === "unknown" ? "degraded" : "up",
         aiConfigured: body.ai_configured === true,
         aiAvailable: body.ai_available === true,
         aiStatus: body.ai_status ?? (body.ai_configured === true ? "unknown" : "disabled"),
         aiReasonCode: body.ai_reason_code ?? "",
-        persistence: body.status === "ok" && (body.persistence === "durable" || body.persistence === "ephemeral") ? body.persistence : "unknown",
-        persistenceNotice: body.status === "ok" && body.persistence === "durable" ? "" : DEMO_STATE.service?.persistenceNotice ?? "数据服务暂时未恢复，新的学习记录不会被当作已保存。",
+        persistence: durability,
+        persistenceNotice: durability === "durable" ? "" : DEMO_STATE.service?.persistenceNotice ?? "数据服务暂时未恢复，新的学习记录不会被当作已保存。",
         syncStatus: DEMO_STATE.service?.syncStatus ?? "unknown",
       };
     } catch {
@@ -2282,7 +2285,9 @@ export function createApp(root = document.querySelector("#app")) {
           await persistUserState();
           DEMO_STATE.onboarding.step = 1;
           await syncCompanionCycle();
-          navigate("/route", () => toast("再确认截止日期和每周时间，今天这一条就会生成"));
+          // 路线不是第一天的前置条件：先把今天这件事交出去，
+          // 想调整长期路线随时从「路线」进。
+          navigate("/", () => toast("今天就做这一件事。想调整长期路线，随时去「路线」"));
         } catch (error) {
           DEMO_STATE.user = previousUser;
           DEMO_STATE.onboarding.profile = previousProfile;

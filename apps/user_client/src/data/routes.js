@@ -9,13 +9,13 @@ export const ROUTES = {
     description: "选择一个方向，进入对应的功能章节。",
   },
   "/": {
-    label: "山脚",
-    chapter: "遥望",
+    label: "今天",
+    chapter: "今天",
     direction: "中宫",
     gua: "☷",
-    eyebrow: "第零章 · 山门",
-    title: "向山顶而行",
-    description: "每一次自律，都会让云海退开一点。",
+    eyebrow: "今天 · 只做这一件事",
+    title: "今天只做这一件事",
+    description: "把一个目标折成今天走得完的一小段。",
   },
   "/auth": {
     label: "入山",

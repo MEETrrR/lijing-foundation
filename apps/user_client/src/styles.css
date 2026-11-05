@@ -2319,3 +2319,69 @@ body, button, input, textarea, select { font-family: var(--font-interface); }
 .route-form label small {
   color: var(--rock-light);
 }
+
+/* --- Today: the first screen a real learner sees -------------------------
+   目的：登录后第一眼看到「今天这一件事」，而不是一张提交材料的表单。
+   深底用 ink 系列，纸卡用 paper 系列（两套梯度不可互换，见审计 2.3）。 */
+.page--today { display: grid; gap: 40px; padding: 72px 0 96px; max-width: var(--shell-max); margin: 0 auto; }
+.today-hero { max-width: 760px; }
+.today-hero__kicker { display: block; color: var(--gold-on-ink); font-size: var(--type-meta); letter-spacing: .16em; }
+.today-hero h1 { margin: 20px 0 0; color: var(--ink-1); font-family: var(--font-display); font-size: clamp(44px, 5.4vw, var(--type-hero-md)); font-weight: 400; line-height: 1.14; }
+.today-hero h1 em { color: var(--gold-on-ink); font-style: normal; }
+.today-hero__note { margin: 18px 0 0; color: var(--ink-2); font-size: var(--type-small); line-height: 1.75; }
+
+.today-card { position: relative; padding: 40px 44px 36px; background: var(--surface-card); box-shadow: var(--shadow-paper); border-left: 3px solid var(--gold-line); }
+.today-card__top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.today-card__top .section-kicker { color: var(--gold-on-paper); }
+.today-card__minutes { color: var(--paper-3); font-size: var(--type-meta); letter-spacing: .1em; }
+.today-card h2 { margin: 18px 0 0; color: var(--paper-1); font-family: var(--font-kai); font-size: clamp(26px, 2.6vw, var(--type-display)); font-weight: 400; line-height: 1.36; }
+.today-card__why { margin: 14px 0 0; color: var(--paper-2); font-size: var(--type-body); line-height: 1.8; }
+.today-card__actions { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-top: 30px; }
+
+.today-alts { display: grid; gap: 14px; }
+.today-alts > .section-kicker { color: var(--ink-3); }
+.today-alts__list { display: grid; gap: 8px; }
+.today-alt { display: grid; gap: 4px; padding: 14px 18px; color: var(--ink-1); border: 1px solid var(--rule-ink); transition: border-color var(--fast) ease, background var(--fast) ease; }
+.today-alt:hover, .today-alt:focus-visible { border-color: var(--gold-line); background: rgba(238, 234, 224, .04); }
+.today-alt__title { font-family: var(--font-kai); font-size: var(--type-subhead); }
+.today-alt__meta { color: var(--ink-3); font-size: var(--type-meta); line-height: 1.6; }
+
+.today-next { display: grid; gap: 8px; padding-top: 22px; border-top: 1px solid var(--rule-ink); max-width: 720px; }
+.today-next .section-kicker { color: var(--ink-3); }
+.today-next p { margin: 0; color: var(--ink-2); font-size: var(--type-small); line-height: 1.8; }
+
+/* 持久化提示：不再用警戒色块占首屏，降级为一行脚注。 */
+.today-quiet { margin: 0; color: var(--ink-3); font-size: var(--type-meta); line-height: 1.7; }
+.today-quiet span { margin-right: 8px; color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .page--today { padding: 44px 0 80px; gap: 28px; }
+  .today-card { padding: 28px 22px 26px; }
+  .today-card__actions { gap: 16px; }
+}
+
+/* toast 原先固定在底部 28px，会盖住 onboarding 的提交按钮。
+   移到顶部，避开所有底部主操作。 */
+.toast-region { bottom: auto; top: 88px; transform: translate(-50%, -12px); }
+.toast-region.is-visible { transform: translate(-50%, 0); }
+
+/* 首页内容会滚到左下角坐标区之上：那里的「砺境 · 学习证据账本」
+   与页面自身的区块重叠。首页已在 hero 里给出日期与进度，这里直接隐去。 */
+.app-shell[data-current-route="/"] .world-stage__coordinates { display: none; }
+/* 纸卡上的次要链接要用纸面梯度，否则在浅底上对比不足。 */
+.today-card .text-link { color: var(--gold-on-paper); }
+.today-card .text-link:hover { color: var(--paper-1); }
+
+/* 学习页：表单之前先说清「今天默认做什么」，并把持久化提示降为一行。 */
+.study-focus__today { display: grid; gap: 6px; margin: 0 0 22px; padding: 16px 18px; border-left: 2px solid var(--gold-line); background: rgba(27, 37, 40, .05); }
+/* 这块在纸面上，必须用纸面梯度；深底那套 ink 色压在昊白纸上只有 1.08:1。 */
+.study-focus__today .section-kicker { color: var(--gold-on-paper); }
+.study-focus__today strong { color: var(--paper-1); font-family: var(--font-kai); font-size: var(--type-subhead); font-weight: 400; }
+.study-focus__today-meta { color: var(--paper-3); font-size: var(--type-meta); }
+.today-quiet--study { margin: 0 auto 14px; max-width: 1180px; }
+
+/* 同一条警告，换成不抢首屏的排布：一行小字、无底色、不描边。
+   文字与语义保留，只降低视觉权重。 */
+.persistence-notice--quiet { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 auto 14px; padding: 0 0 0 2px; background: none; border: 0; }
+.persistence-notice--quiet strong { color: var(--ink-3); font-size: var(--type-meta); font-weight: 500; letter-spacing: .06em; }
+.persistence-notice--quiet span { color: var(--ink-3); font-size: var(--type-meta); line-height: 1.6; }

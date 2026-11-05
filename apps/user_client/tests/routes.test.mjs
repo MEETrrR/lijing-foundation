@@ -694,16 +694,22 @@ test("material study state asks for real material before showing a diagnosis", (
   assert.doesNotMatch(html, /data-action="companion-check-in"/);
 });
 
-test("a real CET learner can use material diagnosis before creating a route", () => {
+test("a real CET learner lands on today's single action, and the material form lives on /study", () => {
   const state = structuredClone(DEMO_STATE);
   state.isDemo = false;
   state.goals.forEach((goal) => { goal.selected = goal.id === "goal-cet4"; });
   state.learningRoute = { draft: null, error: "" };
   state.companionCycle = { routeAvailable: false, screenState: "need_material", currentAction: null, task: null };
-  const html = renderPage("/", state);
-  assert.match(html, /data-demo-form="learning-artifact"/);
-  assert.match(html, /先把正在卡住的地方交出来/);
-  assert.doesNotMatch(html, /先建立目标路线/);
+  // 首页只给「今天这一件事」，不再要求填写材料表单。
+  const home = renderPage("/", state);
+  assert.match(home, /今天只做/);
+  assert.match(home, /data-route="\/study"/);
+  assert.doesNotMatch(home, /data-demo-form="learning-artifact"/);
+  assert.doesNotMatch(home, /先建立目标路线/);
+  // 材料诊断路径保留在 /study，能力没有丢失。
+  const study = renderPage("/study", state);
+  assert.match(study, /data-demo-form="learning-artifact"/);
+  assert.match(study, /先把正在卡住的地方交出来/);
 });
 
 test("material action cards expose citations and remove write controls for terminal actions", () => {
