@@ -1,4 +1,5 @@
 import { FEATURE_ITEMS, ROUTES, getRouteMeta } from "../data/routes.js";
+import { DEFAULT_GOAL_ID, TODAY_TASK_BANK } from "../data/today-tasks.js";
 import { assetUrl, getAsset } from "../data/assets.js";
 import { icon, mark } from "../components/icons.js";
 import { renderWorldMarker } from "../components/world-stage.js";
@@ -58,6 +59,19 @@ function persistenceNotice(state) {
   return `${persistence}${thinkingNotice}`;
 }
 
+function quietPersistenceNotice(state) {
+  const service = state?.service ?? {};
+  const notice = service.persistenceNotice || state?.companionCycle?.syncError;
+  if (state?.isDemo) return "";
+  const thinking = state?.pilot?.materialPending
+    ? `<div class="companion-thinking" role="status" aria-live="polite"><span class="companion-thinking__spinner" aria-hidden="true"></span><div><strong>AI 引路正在思考</strong><span>正在阅读你提交的材料并整理下一步行动，请稍候。</span></div></div>`
+    : "";
+  const warning = service.persistence === "durable" && service.api === "up" && !notice
+    ? ""
+    : `<div class="persistence-notice persistence-notice--quiet" role="status"><strong>数据保存状态需要确认</strong><span>${esc(notice || "当前为临时会话：服务重启后，这次记录不会保留。")}</span></div>`;
+  return `${warning}${thinking}`;
+}
+
 function progressBar(value, tone = "amber") {
   return `<div class="progress-line progress-line--${tone}" aria-label="完成度 ${value}%"><span style="--value:${value}%"></span></div>`;
 }
@@ -88,6 +102,75 @@ function pageHome(state) {
     <section class="home-overview" data-tour-target="daily-panel"><div class="home-overview__lead"><span class="section-kicker">${routeReady ? `今天 · ${state.today.completed}/${state.today.total} 项` : "下一步 · 建立第一条路线"}</span><h2>${routeReady ? "今天不必走完全程，<br><em>只要走好下一步。</em>" : "先把远方算清楚，<br><em>今天才有得走。</em>"}</h2><p>${routeReady ? `连续 ${state.today.streak} 日，你已经把坚持变成了山路的一部分。` : "你的入山信息已经保存。补充截止日期、当前基础和现实约束后，砺境会生成可核验的长期、年度、月度和每日计划。"}</p>${action(routeReady ? "进入当前学习" : "补充路线条件", routeReady ? "/study" : "/route", "button button--ink")}</div><div class="home-overview__stats">${metaLine("有效学习", `${state.today.minutes} 分钟`)}${metaLine("当前营地", state.mountain.nextCamp)}${metaLine("专注状态", `${state.balance.focus}%`)}<div class="home-overview__seal">${mark("☯")} <span>阴阳<br>有衡</span></div></div></section>
     <section class="home-route" data-tour-target="today-route"><div class="home-route__intro">${sectionTitle(routeReady ? "脚下的路" : "路线准备", routeReady ? "今天" : "还差最后一段输入", action(routeReady ? "查看完整计划" : "继续建立路线", routeReady ? "/plan" : "/route", "text-link", "arrow"))}<p>${routeReady ? "完成一件具体的小事，山路就会向上延伸。" : "系统不会拿示例计划冒充你的结果；你确认路线后，今天的任务才会出现。"}</p></div>${routeReady ? `<div class="task-list">${state.today.tasks.slice(0, 3).map(taskItem).join("")}</div>` : `<div class="home-route__empty"><strong>目标和节律已经带入</strong><span>下一页只需要补充截止日期、当前基础和现实约束。</span>${action("开始补充路线", "/route", "button button--primary")}</div>`}</section>
     <section class="home-bottom"><div class="quote-panel"><span class="quote-panel__eyebrow">行者箴言 · 07</span><span class="quote-panel__seal">「</span><blockquote>不要因为山高而忘记<br>脚下这一阶。</blockquote><span class="quote-panel__author">砺境 · 行者箴言</span></div><div class="home-next"><span class="home-next__stamp">云后 / 章节生成中</span><span class="section-kicker">云后 · 下一阶段</span><h2>人生副本<br><em>正在远处生成</em></h2><p>当你登上这一座峰，回望来路，新的山系会在云海尽头开启。</p>${action("查看路线图", "/map", "button button--outline")}</div></section>
+  </div>`;
+}
+
+function todayTaskBank(goalId) {
+  return TODAY_TASK_BANK[goalId] ?? TODAY_TASK_BANK[DEFAULT_GOAL_ID];
+}
+
+function todayMinutesFor(state) {
+  const minutes = Number(state.user?.dailyMinutes ?? state.onboarding?.profile?.dailyMinutes ?? 25);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 25;
+}
+
+function todayPlan(state) {
+  const currentAction = state.companionCycle?.currentAction ?? null;
+  if (currentAction) {
+    return {
+      source: "action",
+      title: currentAction.title,
+      why: currentAction.reason ?? "引路已经根据你提交的材料，整理好了这一步。",
+      minutes: Number(currentAction.estimated_minutes ?? 0) || todayMinutesFor(state),
+      href: "/study",
+      cta: "继续这一条",
+    };
+  }
+  const activeTask = state.today?.tasks?.find((task) => task.status === "active") ?? null;
+  if (activeTask) {
+    return {
+      source: "route",
+      title: activeTask.title,
+      why: `先完成「${activeTask.title}」里最小、能留下痕迹的一步。`,
+      minutes: Number(activeTask.estimated_minutes ?? 0) || todayMinutesFor(state),
+      href: "/study",
+      cta: "开始这一步",
+    };
+  }
+  const goal = state.goals?.find((item) => item.selected) ?? state.goals?.[0] ?? null;
+  const [title, why, minutes] = todayTaskBank(goal?.id)[0];
+  return { source: "default", title, why, minutes: minutes || todayMinutesFor(state), href: "/study", cta: "就做这个" };
+}
+
+function pageToday(state) {
+  if (state.isDemo) return pageHome(state);
+  const plan = todayPlan(state);
+  const goal = state.goals?.find((item) => item.selected) ?? state.goals?.[0] ?? null;
+  const alternatives = plan.source === "default" ? todayTaskBank(goal?.id).slice(1) : [];
+  const streak = Number(state.today?.streak ?? 0);
+  const completed = Number(state.today?.completed ?? 0);
+  const total = Number(state.today?.total ?? 0);
+  const progressLabel = total > 0 ? `今天已完成 ${completed}/${total}` : streak > 0 ? `已经连续 ${streak} 天` : "第 1 天";
+  const dateLabel = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
+  const service = state.service ?? {};
+  const quiet = service.persistence === "durable" && service.api === "up"
+    ? ""
+    : `<p class="today-quiet"><span>临时记录</span>${esc(service.persistenceNotice || "当前为临时会话：服务重启后，今天这条记录不会保留。")}</p>`;
+  return `<div class="page page--today" data-demo-state="false">
+    <section class="today-hero">
+      <span class="today-hero__kicker">${esc(dateLabel)} · ${esc(progressLabel)}</span>
+      <h1>今天只做<br><em>这一件事。</em></h1>
+      <p class="today-hero__note">${esc(goal?.title ?? "当前目标")} · 每天留 ${todayMinutesFor(state)} 分钟，做完就收工。</p>
+    </section>
+    <section class="today-card" aria-labelledby="today-card-title">
+      <div class="today-card__top"><span class="section-kicker">今天这一步</span><span class="today-card__minutes">${plan.minutes} 分钟</span></div>
+      <h2 id="today-card-title">${esc(plan.title)}</h2>
+      <p class="today-card__why">${esc(plan.why)}</p>
+      <div class="today-card__actions"><a class="button button--primary" href="${plan.href}" data-route="${plan.href}">${esc(plan.cta)} ${icon("arrow")}</a><a class="text-link" href="/review" data-route="/review">先回望 ${icon("arrow")}</a></div>
+    </section>
+    ${alternatives.length ? `<section class="today-alts"><span class="section-kicker">今天就换一件</span><div class="today-alts__list">${alternatives.map(([title, why, minutes]) => `<a class="today-alt" href="/study" data-route="/study"><span class="today-alt__title">${esc(title)}</span><span class="today-alt__meta">${esc(why)} · ${minutes} 分钟</span></a>`).join("")}</div></section>` : ""}
+    <section class="today-next"><span class="section-kicker">做完之后</span><p>留下一条证据——一句话就够。引路会用它给出明天的下一步，不需要写整篇总结。</p></section>
+    ${quiet}
   </div>`;
 }
 
@@ -296,7 +379,7 @@ function pageLearningRoute(state) {
       ? `<p class="route-adjustment__error" role="alert" aria-live="assertive">${esc(state.learningRoute.error)}</p>`
       : "";
     const submitLabel = state.learningRoute?.error ? "重新生成今天这一步" : "生成今天这一步";
-    return `<div class="page page--route page--route-quick" data-demo-state="${state.isDemo}">${intro("/route", state, "路线 · 只核对会影响今天的两件事")}<section class="route-quick"><div><span class="section-kicker">当前目标路线 · 第 2 步</span><h2>给出截止日期和<br><em>每周可用时间。</em></h2><p>完整路线会在后台展开；今天先从一条能完成的行动开始。</p></div><form class="route-form route-form--minimal" data-demo-form="learning-route">${error}${generationQuotaNotice(state)}<input name="goal_type" type="hidden" value="${esc(savedForm.goal_type ?? routeGoalType)}"><input name="goal_name" type="hidden" value="${esc(goalName)}"><input name="daily_minutes" type="hidden" value="${esc(state.user.dailyMinutes ?? 25)}"><label>目标日期<input name="target_date" type="date" min="${minimumDate}" value="${esc(targetDate)}" required></label><label class="route-hours">每周可投入 <strong><output data-route-hours-output>${weeklyHours}</output> 小时</strong><input data-route-hours name="weekly_hours" type="range" min="1" max="60" step="1" value="${weeklyHours}"><span><small>1 小时</small><small>60 小时</small></span></label><button class="button button--primary" type="submit" ${(quotaExhausted || quotaLoading) ? "disabled aria-disabled=\"true\"" : ""}>${quotaLoading ? "正在读取今日额度…" : submitLabel} ${icon("arrow")}</button><a class="text-link route-goal-link" href="/goals" data-route="/goals">调整目标方向 ${icon("arrow")}</a></form></section></div>`;
+    return `<div class="page page--route page--route-quick" data-demo-state="${state.isDemo}">${intro("/route", state, "路线 · 只核对会影响今天的两件事")}<section class="route-quick"><div><span class="section-kicker">当前目标路线 · 第 2 步</span><h2>给出截止日期和<br><em>每周可用时间。</em></h2><p>完整路线会在后台展开；今天先从一条能完成的行动开始。</p></div><form class="route-form route-form--minimal" data-demo-form="learning-route">${error}${generationQuotaNotice(state)}<input name="goal_type" type="hidden" value="${esc(savedForm.goal_type ?? routeGoalType)}"><input name="goal_name" type="hidden" value="${esc(goalName)}"><input name="daily_minutes" type="hidden" value="${esc(state.user.dailyMinutes ?? 25)}"><label>目标日期<input name="target_date" type="date" min="${minimumDate}" value="${esc(targetDate)}" required></label><label class="route-hours">每周可投入 <strong><output data-route-hours-output>${weeklyHours}</output> 小时</strong><input data-route-hours name="weekly_hours" type="range" min="1" max="60" step="1" value="${weeklyHours}"><span><small>1 小时</small><small>60 小时</small></span></label><button class="button button--primary" type="submit" ${(quotaExhausted || quotaLoading) ? "disabled aria-disabled=\"true\"" : ""}>${quotaLoading ? "正在读取今日额度…" : submitLabel} ${icon("arrow")}</button><a class="text-link route-goal-link" href="/goals" data-route="/goals">调整目标方向 ${icon("arrow")}</a><a class="text-link route-goal-link" href="/" data-route="/">先跳过，今天先开始 ${icon("arrow")}</a></form></section></div>`;
   }
   return `<div class="page page--route" data-demo-state="${state.isDemo}">${intro("/route", state, "路线 · 当前安排与可调整的长期方向")}<section class="route-layout">${learningRouteResult(draft, null, "")}</section>${routeAdjustmentForm(draft, state)}</div>`;
 }
@@ -479,7 +562,7 @@ function materialStudyPage(state) {
     : "";
 
   if (!currentAction) {
-    return `<div class="page page--study page--study-material" data-demo-state="${state.isDemo}">${intro("/study", state, "材料驱动 · 先把卡住的地方交给引路")}${persistenceNotice(state)}<div class="study-layout"><section class="study-focus study-focus--material"><div class="study-focus__top"><span class="section-kicker">${companion.screenState === "need_material" ? "等待你的材料" : "材料入口"}</span>${demoNote(state)}<span class="study-focus__timer">文字或图片</span></div><div class="study-focus__title"><span class="study-focus__gua">引</span><h2>先把正在卡住的地方交出来</h2><p>可以是一道题、一段笔记、作答草稿或错因说明。引路会基于提交内容整理下一步。</p></div><section class="study-action material-intake"><div class="study-action__heading"><span>第一步 · 留下可检索的材料</span><h3>材料 → 诊断 → 一条现在能完成的行动</h3><p>可以直接粘贴文字、上传题目或笔记截图，或在手机上直接拍摄。确认后的文字会按你的账号隔离，并保留引用位置。</p></div><form class="material-intake__form" data-demo-form="learning-artifact"><div class="material-intake__grid"><label>材料标题<input name="source_title" type="text" maxlength="160" placeholder="例如：极限题 12 · 洛必达条件混淆"></label><label>科目<select data-material-subject name="subject"><option value="数学二" selected>数学二</option><option value="数学一">数学一</option><option value="数学三">数学三</option><option value="408">408</option><option value="计算机自命题">计算机自命题</option><option value="英语一">英语一</option><option value="英语二">英语二</option><option value="政治">政治</option><option value="其他主题">其他主题</option></select></label><label data-material-custom-subject-field hidden>主题名称<input data-material-custom-subject name="custom_subject" type="text" maxlength="80" placeholder="例如：Python、物理或英语口语"></label><label>材料类型<select name="kind"><option value="question" selected>题目</option><option value="note">笔记</option><option value="attempt_draft">作答草稿</option><option value="answer_reference">错因说明 / 参考答案</option></select></label></div><label>粘贴材料<textarea name="content_text" rows="10" maxlength="12000" placeholder="把题干、你的思路、写到哪一步、哪里不确定一起贴进来……"></textarea></label><label class="material-photo">拍照 / 上传图片<input name="material_image" data-material-image type="file" accept="image/jpeg,image/png,image/gif" capture="environment"><span data-material-image-name>选择图片、上传文件或直接拍摄</span></label><p class="material-photo__notice">支持 JPEG、PNG、GIF，最大 20 MB。图片仅用于本次识别，不会保存；识别后请确认文字再交给引路。</p><p class="material-photo__uncertain" data-material-image-uncertain hidden></p><div class="material-intake__footer"><span>建议包含：题目条件、你的尝试、卡住的位置。</span><button class="button button--ink material-intake__submit" type="submit"><span class="material-submit-label material-submit-label--default">交给引路</span><span class="material-submit-label material-submit-label--confirm">确认文字并交给引路</span> ${icon("arrow")}</button></div></form>${artifacts.length ? `<div class="material-library"><div class="material-library__head"><span>已保存材料</span><strong>${artifacts.length} 份</strong></div><div class="material-library__list">${artifacts.slice(0, 4).map((artifact) => `<article><span>${esc(artifact.kind)}</span><strong>${esc(artifact.source_title)}</strong><small>${esc(artifact.subject)} · ${esc(artifact.updated_at ? new Date(artifact.updated_at).toLocaleDateString("zh-CN") : "刚刚")}</small></article>`).join("")}</div></div>` : ""}</section><aside class="study-aside"><section class="study-aside__tip"><span class="study-aside__tip-mark">知</span><div class="study-aside__tip-copy"><span>引路的边界</span><p>没有材料，就没有诊断；没有证据，就不把一次完成写成掌握。</p><a href="/assistant" data-route="/assistant">先问一个问题 ${icon("arrow")}</a></div></section></aside></div></div>`;
+    return `<div class="page page--study page--study-material" data-demo-state="${state.isDemo}">${intro("/study", state, "今天这一步 · 交给引路")}${quietPersistenceNotice(state)}<div class="study-layout"><section class="study-focus study-focus--material"><div class="study-focus__top"><span class="section-kicker">${companion.screenState === "need_material" ? "等待你的材料" : "材料入口"}</span>${demoNote(state)}<span class="study-focus__timer">文字或图片</span></div><div class="study-focus__title"><span class="study-focus__gua">引</span><h2>先把正在卡住的地方交出来</h2><p>可以是一道题、一段笔记、作答草稿或错因说明。引路会基于提交内容整理下一步。</p></div><div class="study-focus__today"><span class="section-kicker">今天这一步</span><strong>${esc(todayPlan(state).title)}</strong><span class="study-focus__today-meta">${todayPlan(state).minutes} 分钟 · 做完留下一条证据</span></div><section class="study-action material-intake"><div class="study-action__heading"><span>第一步 · 留下可检索的材料</span><h3>材料 → 诊断 → 一条现在能完成的行动</h3><p>可以直接粘贴文字、上传题目或笔记截图，或在手机上直接拍摄。确认后的文字会按你的账号隔离，并保留引用位置。</p></div><form class="material-intake__form" data-demo-form="learning-artifact"><div class="material-intake__grid"><label>材料标题<input name="source_title" type="text" maxlength="160" placeholder="例如：极限题 12 · 洛必达条件混淆"></label><label>科目<select data-material-subject name="subject"><option value="数学二" selected>数学二</option><option value="数学一">数学一</option><option value="数学三">数学三</option><option value="408">408</option><option value="计算机自命题">计算机自命题</option><option value="英语一">英语一</option><option value="英语二">英语二</option><option value="政治">政治</option><option value="其他主题">其他主题</option></select></label><label data-material-custom-subject-field hidden>主题名称<input data-material-custom-subject name="custom_subject" type="text" maxlength="80" placeholder="例如：Python、物理或英语口语"></label><label>材料类型<select name="kind"><option value="question" selected>题目</option><option value="note">笔记</option><option value="attempt_draft">作答草稿</option><option value="answer_reference">错因说明 / 参考答案</option></select></label></div><label>粘贴材料<textarea name="content_text" rows="10" maxlength="12000" placeholder="把题干、你的思路、写到哪一步、哪里不确定一起贴进来……"></textarea></label><label class="material-photo">拍照 / 上传图片<input name="material_image" data-material-image type="file" accept="image/jpeg,image/png,image/gif" capture="environment"><span data-material-image-name>选择图片、上传文件或直接拍摄</span></label><p class="material-photo__notice">支持 JPEG、PNG、GIF，最大 20 MB。图片仅用于本次识别，不会保存；识别后请确认文字再交给引路。</p><p class="material-photo__uncertain" data-material-image-uncertain hidden></p><div class="material-intake__footer"><span>建议包含：题目条件、你的尝试、卡住的位置。</span><button class="button button--ink material-intake__submit" type="submit"><span class="material-submit-label material-submit-label--default">交给引路</span><span class="material-submit-label material-submit-label--confirm">确认文字并交给引路</span> ${icon("arrow")}</button></div></form>${artifacts.length ? `<div class="material-library"><div class="material-library__head"><span>已保存材料</span><strong>${artifacts.length} 份</strong></div><div class="material-library__list">${artifacts.slice(0, 4).map((artifact) => `<article><span>${esc(artifact.kind)}</span><strong>${esc(artifact.source_title)}</strong><small>${esc(artifact.subject)} · ${esc(artifact.updated_at ? new Date(artifact.updated_at).toLocaleDateString("zh-CN") : "刚刚")}</small></article>`).join("")}</div></div>` : ""}</section><aside class="study-aside"><section class="study-aside__tip"><span class="study-aside__tip-mark">知</span><div class="study-aside__tip-copy"><span>引路的边界</span><p>没有材料，就没有诊断；没有证据，就不把一次完成写成掌握。</p><a href="/assistant" data-route="/assistant">先问一个问题 ${icon("arrow")}</a></div></section></aside></div></div>`;
   }
 
   const terminal = ["completed", "superseded", "skipped"].includes(currentAction.status);
@@ -877,7 +960,7 @@ function pageLegal(route, state) {
 
 export const PAGE_RENDERERS = {
   "/features": pageFeatures,
-  "/": pageHome,
+  "/": pageToday,
   "/auth": pageAuth,
   "/404": pageNotFound,
   "/privacy": (state) => pageLegal("/privacy", state),

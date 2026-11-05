@@ -48,7 +48,7 @@ export function renderShell(currentRoute, state, content = "") {
       ${isLoading ? "" : renderTopbar(meta, state, currentRoute)}
       <main id="main-content" tabindex="-1"><div class="page-view" data-page="${currentRoute}">${content}</div></main>
     </div>
-    <div class="shell-status">${isAuth || isOnboarding || isLoading ? "" : renderStatusAxis(state)}</div>
+    <div class="shell-status">${isAuth || isOnboarding || isLoading || currentRoute === "/" ? "" : renderStatusAxis(state)}</div>
     ${isLoading ? "" : '<div class="toast-region" aria-live="polite" aria-atomic="true"></div>'}
     ${currentRoute === "/" && state.tour?.active ? renderInterfaceTour(state) : ""}
     ${isLoading ? "" : renderAscensionIntro()}
